@@ -1,0 +1,159 @@
+<!-- register.html -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Create an account</title>
+  <link rel="stylesheet" href="register.css" />
+</head>
+
+<body>
+  <main class="page">
+    <header class="topbar">
+      <div>
+        <h1>Create an account</h1>
+        <p class="hint">
+          <span class="dot" aria-hidden="true"></span>
+          Please provide your personal information below. Fields with (<span class="req">*</span>) is required.
+        </p>
+      </div>
+
+      <a class="home" href="index.html">
+        <span class="home__icon" aria-hidden="true">⌂</span> Return to Home
+      </a>
+    </header>
+
+    <section class="card">
+      <form class="form" action="#" method="post" id="registerForm">
+        <!-- Account Type -->
+        <div class="field full">
+          <label class="label">Account Type <span class="req">*</span></label>
+
+          <div class="radioPanel" role="radiogroup" aria-label="Account type">
+            <label class="radio">
+              <input type="radio" name="accountType" value="Individual" checked required />
+              <span>Individual</span>
+            </label>
+
+            <label class="radio">
+              <input type="radio" name="accountType" value="Institution" required />
+              <span>Institution</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Names -->
+        <div class="field">
+          <label class="label">First Name <span class="req">*</span></label>
+          <input class="input" type="text" name="firstName" placeholder="First name" required />
+        </div>
+
+        <div class="field">
+          <label class="label">Last Name <span class="req">*</span></label>
+          <input class="input" type="text" name="lastName" placeholder="Last name" required />
+        </div>
+
+        <div class="field">
+          <label class="label">Middle(other) Name</label>
+          <input class="input" type="text" name="middleName" placeholder="Other name" />
+        </div>
+
+        <div class="field">
+          <label class="label">Gender <span class="req">*</span></label>
+          <select class="input" name="gender" required>
+            <option value="" selected disabled>-- Select Gender --</option>
+            <option>Male</option>
+            <option>Female</option>
+            <option>Other</option>
+          </select>
+        </div>
+
+        <!-- ID -->
+        <div class="field">
+          <label class="label">ID Type <span class="req">*</span></label>
+          <select class="input" name="idType" required>
+            <option value="" selected disabled>-- Select ID Type --</option>
+            <option>Ghana Card</option>
+            <option>Passport</option>
+            <option>Voter ID</option>
+            <option>Driver's License</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label class="label">ID Number <span class="req">*</span></label>
+          <input class="input" type="text" name="idNumber" placeholder="" required />
+        </div>
+
+        <!-- Email + Country -->
+        <div class="field">
+          <label class="label">Email <span class="req">*</span></label>
+          <input class="input" type="email" name="email" placeholder="jane.doe@gmail.com" required />
+          <p class="note">We’ll never share your email with anyone else.</p>
+        </div>
+
+        <div class="field">
+          <label class="label">Country <span class="req">*</span></label>
+          <select class="input" name="country" required>
+            <option selected>Ghana</option>
+            <option>Nigeria</option>
+            <option>Togo</option>
+            <option>Benin</option>
+            <option>Other</option>
+          </select>
+        </div>
+
+        <!-- Address -->
+        <div class="field full">
+          <label class="label">Address <span class="req">*</span></label>
+          <input class="input" type="text" name="address" placeholder="" required />
+        </div>
+
+        <!-- Phone (code + number) -->
+        <div class="field full">
+          <label class="label">Phone Number <span class="req">*</span></label>
+          <div class="phoneRow">
+            <select class="input phoneCode" name="phoneCode" required>
+              <option value="+233" selected>Ghana (+233)</option>
+              <option value="+234">Nigeria (+234)</option>
+              <option value="+228">Togo (+228)</option>
+            </select>
+            <input class="input" type="tel" name="phone" placeholder="Eg. 020xxxxxxxx" required />
+          </div>
+        </div>
+
+        <!-- Contacts -->
+        <div class="field">
+          <label class="label">Contact Person</label>
+          <input class="input" type="text" name="contactPerson" placeholder="" />
+        </div>
+
+        <div class="field">
+          <label class="label">Contact Person's Phone</label>
+          <input class="input" type="tel" name="contactPhone" placeholder="Eg. 020xxxxxxxx" />
+        </div>
+
+        <!-- Terms + Button -->
+        <div class="bottom full">
+          <label class="terms">
+            <input type="checkbox" required />
+            <span>I have read and agree on the <a class="tlink" href="terms.html">Terms &amp; Conditions</a>.</span>
+          </label>
+
+          <button class="btn" type="submit">Next: Confirmation</button>
+        </div>
+      </form>
+    </section>
+  </main>
+
+  <script>
+    // Demo submit (remove when backend is ready)
+    document.getElementById("registerForm").addEventListener("submit", function(e){
+      e.preventDefault();
+      alert("Submitted (demo). Next: Confirmation page.");
+      // window.location.href = "confirm.html";
+    });
+  </script>
+</body>
+</html>

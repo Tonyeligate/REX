@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Job Status</title>
+  <link rel="stylesheet" href="dashboard.css" />
+</head>
+
+<body>
+  <main class="shell">
+    <!-- Top Search Bar -->
+    <header class="top">
+      <div class="top__left">
+        <h1>Search Job Status</h1>
+
+        <div class="searchbar">
+          <span class="searchbar__icon" aria-hidden="true">🔍</span>
+          <input id="jobInput" type="text" placeholder="LS-2024-464" />
+        </div>
+
+        <div class="chips">
+          <span class="chips__label">Quick search:</span>
+          <button class="chip" type="button" data-job="LS-2024-461">LS-2024-461</button>
+          <button class="chip" type="button" data-job="LS-2024-462">LS-2024-462</button>
+          <button class="chip" type="button" data-job="LS-2024-463">LS-2024-463</button>
+          <button class="chip" type="button" data-job="LS-2024-464">LS-2024-464</button>
+          <button class="chip" type="button" data-job="LS-2024-465">LS-2024-465</button>
+        </div>
+      </div>
+
+      <button class="btn btn--primary" id="searchBtn" type="button">Search</button>
+    </header>
+
+    <!-- ✅ Empty State (shows before search) -->
+    <div class="empty" id="emptyState">
+      <h2>No Job Loaded</h2>
+      <p>Enter your Regional/Job Number and click <b>Search</b> to view workflow progress.</p>
+    </div>
+
+    <!-- ✅ Results Area (hidden until search) -->
+    <section class="grid hidden" id="resultArea">
+      <!-- Left: Workflow Progress -->
+      <section class="card card--large">
+        <div class="card__head">
+          <h2>Workflow Progress</h2>
+        </div>
+
+        <div class="steps" id="steps"></div>
+
+        <div class="progress">
+          <div class="progress__meta">
+            <span>Overall Progress</span>
+            <b id="progressPct">0%</b>
+          </div>
+          <div class="bar">
+            <div class="bar__fill" id="barFill"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right: Details -->
+      <aside class="side">
+        <section class="card">
+          <div class="card__head">
+            <h3>Current Status</h3>
+          </div>
+
+          <div class="status">
+            <div class="status__row">
+              <span class="pill pill--blue" id="statusStep">Step 0 of 0</span>
+              <span class="pill pill--green" id="statusFinal">In Progress</span>
+            </div>
+
+            <div class="status__kv">
+              <div>
+                <span>Assigned to:</span>
+                <b id="assignedTo">—</b>
+              </div>
+              <div>
+                <span>Est. Time:</span>
+                <b id="estTime">—</b>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card__head">
+            <h3>Job Information</h3>
+          </div>
+
+          <div class="info">
+            <div class="info__row"><span>Job ID:</span> <b id="jobId">—</b></div>
+            <div class="info__row"><span>Job Type:</span> <b id="jobType">—</b></div>
+            <div class="info__row"><span>Client:</span> <b id="client">—</b></div>
+            <div class="info__row"><span>Submitted:</span> <b id="submitted">—</b></div>
+            <div class="info__row">
+              <span>Priority:</span>
+              <span class="pill pill--amber" id="priority">Standard</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card__head">
+            <h3>Timeline</h3>
+          </div>
+
+          <ol class="timeline" id="timeline"></ol>
+        </section>
+
+        <div class="side__actions">
+          <button class="btn btn--primary" type="button">View Full Details</button>
+          <button class="btn btn--ghost" type="button" id="downloadBtn">Download Report</button>
+        </div>
+      </aside>
+    </section>
+  </main>
+
+  <script>
+    // ===== Demo data (replace later with DB/API) =====
+    const JOBS = {
+      "LS-2024-464": {
+        jobId: "LS-2024-464",
+        jobType: "Land Survey",
+        client: "ABC Development Corp.",
+        submitted: "Feb 10, 2026",
+        priority: "Standard",
+        assignedTo: "Client Service",
+        estTime: "1 day",
+        currentIndex: 7, // 1-based step index currently active
+        steps: [
+          { title:"Client → L/S 461", note:"Client submits job request", state:"done" },
+          { title:"L/S 461 → CSAU", note:"Job submitted to Client Service Access Unit", state:"done" },
+          { title:"CSAU → SMD Examination", note:"Job forwarded for technical examination", state:"done" },
+          { title:"SMD Examination → SMD Region", note:"Examined job sent to the SMD Regional Office", state:"done" },
+          { title:"SMD Region → CSAU", note:"Cleared job returned to CSAU", state:"done" },
+          { title:"CSAU → L/S 461 (Verification 1)", note:"First verification: Quality assurance check", state:"done" },
+          { title:"CSAU → L/S 461 (Verification 2)", note:"Second verification: Final certification approval", state:"done" },
+          { title:"L/S 461 → Client", note:"Approved job delivered to the client", state:"current" },
+        ],
+        timeline: [
+          { label:"Client Submission", sub:"Client Service", state:"done" },
+          { label:"CSAU Review", sub:"CSAU Team", state:"done" },
+          { label:"Technical Examination", sub:"SMD Examination", state:"done" },
+          { label:"Regional Review", sub:"SMD Regional Office", state:"done" },
+          { label:"Clearance Processing", sub:"CSAU Team", state:"done" },
+          { label:"First Verification", sub:"Quality Assurance", state:"done" },
+          { label:"Second Verification", sub:"Final Certification", state:"done" },
+          { label:"Final Delivery", sub:"Client Service", state:"current" },
+        ]
+      },
+
+      // quick examples
+      "LS-2024-461": { ...null },
+      "LS-2024-462": { ...null },
+      "LS-2024-463": { ...null },
+      "LS-2024-465": { ...null },
+    };
+
+    // Fill quick examples with same structure but different progress
+    function makeJob(id, currentIndex){
+      const base = JSON.parse(JSON.stringify(JOBS["LS-2024-464"]));
+      base.jobId = id;
+      base.currentIndex = currentIndex;
+      base.steps = base.steps.map((s, i) => {
+        const idx = i + 1;
+        return {
+          ...s,
+          state: idx < currentIndex ? "done" : (idx === currentIndex ? "current" : "todo")
+        };
+      });
+      base.timeline = base.timeline.map((t, i) => {
+        const idx = i + 1;
+        return {
+          ...t,
+          state: idx < currentIndex ? "done" : (idx === currentIndex ? "current" : "todo")
+        };
+      });
+      return base;
+    }
+    JOBS["LS-2024-461"] = makeJob("LS-2024-461", 3);
+    JOBS["LS-2024-462"] = makeJob("LS-2024-462", 5);
+    JOBS["LS-2024-463"] = makeJob("LS-2024-463", 6);
+    JOBS["LS-2024-465"] = makeJob("LS-2024-465", 2);
+
+    // ===== Render helpers =====
+    const stepsEl = document.getElementById("steps");
+    const timelineEl = document.getElementById("timeline");
+    const resultArea = document.getElementById("resultArea");
+    const emptyState = document.getElementById("emptyState");
+
+    function render(job){
+      document.getElementById("jobId").textContent = job.jobId;
+      document.getElementById("jobType").textContent = job.jobType;
+      document.getElementById("client").textContent = job.client;
+      document.getElementById("submitted").textContent = job.submitted;
+      document.getElementById("priority").textContent = job.priority;
+
+      document.getElementById("assignedTo").textContent = job.assignedTo;
+      document.getElementById("estTime").textContent = job.estTime;
+
+      const total = job.steps.length;
+      document.getElementById("statusStep").textContent = `Step ${job.currentIndex} of ${total}`;
+      document.getElementById("statusFinal").textContent = job.currentIndex === total ? "Final Delivery" : "In Progress";
+
+      const doneCount = job.steps.filter(s => s.state === "done").length;
+      const pct = Math.round((doneCount / total) * 100);
+      document.getElementById("progressPct").textContent = `${pct}%`;
+      document.getElementById("barFill").style.width = `${pct}%`;
+
+      stepsEl.innerHTML = job.steps.map((s, i) => {
+        const idx = i + 1;
+        const cls = s.state === "done" ? "step step--done"
+                  : s.state === "current" ? "step step--current"
+                  : "step step--todo";
+
+        const badge = s.state === "current" ? `<span class="pill pill--blue">Current</span>` : "";
+        return `
+          <div class="${cls}">
+            <div class="step__left">
+              <div class="dot ${s.state}"></div>
+              <div>
+                <div class="step__top">
+                  <span class="pill pill--green">Step ${idx}</span>
+                  ${badge}
+                </div>
+                <h4>${s.title}</h4>
+                <p>${s.note}</p>
+              </div>
+            </div>
+            <div class="step__right">
+              <span class="tick" aria-hidden="true">${s.state === "done" ? "✓" : (s.state === "current" ? "•" : "")}</span>
+            </div>
+          </div>
+          ${idx !== job.steps.length ? `<div class="connector"></div>` : ``}
+        `;
+      }).join("");
+
+      timelineEl.innerHTML = job.timeline.map(t => {
+        const liCls = t.state === "done" ? "t t--done" : (t.state === "current" ? "t t--current" : "t t--todo");
+        return `
+          <li class="${liCls}">
+            <span class="t__dot"></span>
+            <div class="t__text">
+              <b>${t.label}</b>
+              <span>${t.sub}</span>
+            </div>
+          </li>
+        `;
+      }).join("");
+    }
+
+    function search(){
+      const id = document.getElementById("jobInput").value.trim().toUpperCase();
+
+      if(!id){
+        alert("Please enter your Regional/Job Number.");
+        return;
+      }
+
+      const job = JOBS[id];
+      if(!job){
+        alert("Job not found. Please check the number and try again.");
+        return;
+      }
+
+      // ✅ show results only after successful search
+      render(job);
+      resultArea.classList.remove("hidden");
+      emptyState.classList.add("hidden");
+    }
+
+    // events
+    document.getElementById("searchBtn").addEventListener("click", search);
+    document.getElementById("jobInput").addEventListener("keydown", (e) => {
+      if(e.key === "Enter"){ e.preventDefault(); search(); }
+    });
+    document.querySelectorAll(".chip").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.getElementById("jobInput").value = btn.dataset.job;
+        search();
+      });
+    });
+
+    document.getElementById("downloadBtn").addEventListener("click", () => {
+      alert("Download Report (demo). Later: generate PDF from backend.");
+    });
+
+    // ✅ DO NOT auto render anything on load
+  </script>
+</body>
+</html>

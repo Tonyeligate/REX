@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Login</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+
+<body class="modal-open">
+  <!-- Dark overlay like the first image -->
+  <div class="backdrop" id="backdrop"></div>
+
+  <main class="modal" id="loginModal" role="dialog" aria-modal="true" aria-label="Login to Your Account">
+    <button class="close" type="button" aria-label="Close">×</button>
+
+    <h1>Login to Your Account</h1>
+    <p class="sub">
+      Please enter your email and password to access your<br />
+      account. If you don't have an account, click "Sign Up" below<br />
+      to create one.
+    </p>
+
+    <!-- ✅ Added onsubmit here -->
+    <form class="form" action="#" method="post" onsubmit="login(event)">
+      <input class="input" type="email" name="email" placeholder="Email*" required />
+      <input class="input" type="password" name="password" placeholder="Password*" required />
+
+      <div class="row">
+        <label class="remember">
+          <input class="cb" type="checkbox" />
+          <span>Remember me?</span>
+        </label>
+
+        <a class="forgot" href="#">
+          <span class="q">?</span>
+          <span>Forgot Password</span>
+        </a>
+      </div>
+
+      <button class="btn" type="submit">Login</button>
+
+      <p class="footer">
+        Don't have an account?
+        <a class="signup" href="register.html">Sign Up</a>
+      </p>
+    </form>
+  </main>
+
+  <script>
+    const backdrop = document.getElementById("backdrop");
+    const modal = document.getElementById("loginModal");
+    const closeBtn = modal.querySelector(".close");
+
+    function closeModal(){
+      modal.style.display = "none";
+      backdrop.style.display = "none";
+      document.body.classList.remove("modal-open");
+    }
+
+    closeBtn.addEventListener("click", closeModal);
+    backdrop.addEventListener("click", closeModal);
+
+    /* ✅ LOGIN REDIRECT */
+    function login(e){
+      e.preventDefault();               // stop form reload
+      window.location.href = "dashboard.html";
+    }
+  </script>
+</body>
+</html>

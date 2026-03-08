@@ -1,0 +1,183 @@
+@import url('https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,200..1000;1,200..1000&display=swap');
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  --font-sans: "Nunito", ui-sans-serif, system-ui, sans-serif;
+
+  --color-background: #f4f7f6;
+  --color-foreground: #1f2937;
+
+  --color-card: #ffffff;
+  --color-card-foreground: #1f2937;
+
+  --color-popover: #ffffff;
+  --color-popover-foreground: #1f2937;
+
+  --color-primary: #F07000;
+  --color-primary-foreground: #ffffff;
+
+  --color-secondary: #FFF5EB;
+  --color-secondary-foreground: #F07000;
+
+  --color-muted: #f8f9fa;
+  --color-muted-foreground: #9ca3af;
+
+  --color-accent: #FFF5EB;
+  --color-accent-foreground: #F07000;
+
+  --color-destructive: #ef4444;
+  --color-destructive-foreground: #ffffff;
+
+  --color-border: #e5e7eb;
+  --color-input: #e5e7eb;
+  --color-ring: #F07000;
+
+  --color-success: #22c55e;
+  --color-danger: #ef4444;
+
+  --color-sidebar: #ffffff;
+  --color-sidebar-foreground: #4b5563;
+  --color-sidebar-primary: #F07000;
+  --color-sidebar-primary-foreground: #ffffff;
+  --color-sidebar-accent: #FFF5EB;
+  --color-sidebar-accent-foreground: #F07000;
+  --color-sidebar-border: #e5e7eb;
+  --color-sidebar-ring: #F07000;
+
+  --radius-lg: 0.75rem;
+  --radius-md: 0.5rem;
+  --radius-sm: 0.25rem;
+
+  --shadow-card: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+
+  @keyframes accordion-down {
+    from {
+      height: 0;
+    }
+    to {
+      height: var(--radix-accordion-content-height);
+    }
+  }
+  @keyframes accordion-up {
+    from {
+      height: var(--radix-accordion-content-height);
+    }
+    to {
+      height: 0;
+    }
+  }
+}
+
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: #e5e7eb;
+  }
+
+  :root {
+    --background: #f4f7f6;
+    --foreground: #1f2937;
+    --card: #ffffff;
+    --card-foreground: #1f2937;
+    --popover: #ffffff;
+    --popover-foreground: #1f2937;
+    --primary: #F07000;
+    --primary-foreground: #ffffff;
+    --secondary: #FFF5EB;
+    --secondary-foreground: #F07000;
+    --muted: #f8f9fa;
+    --muted-foreground: #9ca3af;
+    --accent: #FFF5EB;
+    --accent-foreground: #F07000;
+    --destructive: #ef4444;
+    --destructive-foreground: #ffffff;
+    --border: #e5e7eb;
+    --input: #e5e7eb;
+    --ring: #F07000;
+    --radius: 0.75rem;
+    --sidebar-background: #ffffff;
+    --sidebar-foreground: #4b5563;
+    --sidebar-primary: #F07000;
+    --sidebar-primary-foreground: #ffffff;
+    --sidebar-accent: #FFF5EB;
+    --sidebar-accent-foreground: #F07000;
+    --sidebar-border: #e5e7eb;
+    --sidebar-ring: #F07000;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background-color: var(--background);
+    color: var(--foreground);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-weight: 700;
+    color: #1f2937;
+  }
+
+  h1 { font-size: 24px; }
+  h2 { font-size: 20px; }
+  h3 { font-size: 18px; }
+
+  a {
+    text-decoration: none;
+    color: inherit;
+    transition: color 0.3s ease;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  .text-muted-small {
+    font-size: 12px;
+    color: var(--color-muted-foreground);
+  }
+  
+  .card-shadow {
+    box-shadow: var(--shadow-card);
+  }
+
+  .sidebar-width {
+    width: 280px;
+  }
+
+  .header-blur {
+    backdrop-filter: blur(5px);
+    background-color: rgba(255, 255, 255, 0.8);
+  }
+}
+
+/* Hide Next.js error overlay portal */
+nextjs-portal {
+  display: none !important;
+}

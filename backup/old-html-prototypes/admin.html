@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Admin • Work Progress</title>
+  <link rel="stylesheet" href="admin.css" />
+</head>
+
+<body>
+  <header class="topbar">
+    <div>
+      <h1>Admin Portal</h1>
+      <p>Update job progress. Clients will see changes instantly on their portal (demo uses LocalStorage).</p>
+    </div>
+
+    <div class="actions">
+      <button class="btn ghost" id="exportBtn" type="button">Export JSON</button>
+      <button class="btn danger" id="clearBtn" type="button">Clear All</button>
+    </div>
+  </header>
+
+  <main class="grid">
+    <!-- Create / Update Job -->
+    <section class="card">
+      <h2>Create / Update Job</h2>
+
+      <form id="jobForm" class="form">
+        <div class="row2">
+          <div>
+            <label>Job ID *</label>
+            <input id="jobId" placeholder="LS-2024-464" required />
+          </div>
+          <div>
+            <label>Job Type *</label>
+            <input id="jobType" placeholder="Land Survey" required />
+          </div>
+        </div>
+
+        <div class="row2">
+          <div>
+            <label>Client *</label>
+            <input id="client" placeholder="ABC Development Corp." required />
+          </div>
+          <div>
+            <label>Priority</label>
+            <select id="priority">
+              <option>Standard</option>
+              <option>Urgent</option>
+              <option>High</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="row2">
+          <div>
+            <label>Assigned To</label>
+            <input id="assignedTo" placeholder="Client Service" />
+          </div>
+          <div>
+            <label>Estimated Time</label>
+            <input id="estTime" placeholder="1 day" />
+          </div>
+        </div>
+
+        <div class="row2">
+          <div>
+            <label>Submitted Date</label>
+            <input id="submitted" placeholder="Feb 10, 2026" />
+          </div>
+          <div>
+            <label>Current Step (1–8) *</label>
+            <input id="currentIndex" type="number" min="1" max="8" value="1" required />
+          </div>
+        </div>
+
+        <button class="btn primary" type="submit">Save Job</button>
+        <p class="hint">Tip: Update the Current Step to move the job forward.</p>
+      </form>
+    </section>
+
+    <!-- Steps Editor -->
+    <section class="card">
+      <h2>Workflow Steps</h2>
+      <p class="muted">Edit step titles/notes. Step status is calculated from “Current Step”.</p>
+
+      <div id="stepsEditor" class="stepsEditor"></div>
+
+      <button class="btn primary" id="saveStepsBtn" type="button">Save Steps</button>
+    </section>
+
+    <!-- Jobs List -->
+    <section class="card">
+      <h2>Jobs</h2>
+      <div class="list" id="jobsList"></div>
+    </section>
+
+    <!-- Timeline Add -->
+    <section class="card">
+      <h2>Add Timeline Entry</h2>
+      <form id="timelineForm" class="form">
+        <label>Job ID *</label>
+        <input id="tJobId" placeholder="LS-2024-464" required />
+
+        <div class="row2">
+          <div>
+            <label>Label *</label>
+            <input id="tLabel" placeholder="CSAU Review" required />
+          </div>
+          <div>
+            <label>Subtext *</label>
+            <input id="tSub" placeholder="CSAU Team" required />
+          </div>
+        </div>
+
+        <button class="btn primary" type="submit">Add Entry</button>
+        <p class="muted small">Client timeline will show this entry in order.</p>
+      </form>
+    </section>
+  </main>
+
+  <script>
+    // ===== LocalStorage DB (demo) =====
+    const KEY = "work_progress_jobs_v1";
+
+    const DEFAULT_STEPS = [
+      { title:"Client → L/S 461", note:"Client submits job request" },
+      { title:"L/S 461 → CSAU", note:"Job submitted to Client Service Access Unit" },
+      { title:"CSAU → SMD Examination", note:"Job forwarded for technical examination" },
+      { title:"SMD Examination → SMD Region", note:"Examined job sent to the SMD Regional Office" },
+      { title:"SMD Region → CSAU", note:"Cleared job returned to CSAU" },
+      { title:"CSAU → L/S 461 (Verification 1)", note:"First verification: Quality assurance check" },
+      { title:"CSAU → L/S 461 (Verification 2)", note:"Second verification: Final certification approval" },
+      { title:"L/S 461 → Client", note:"Approved job delivered to the client" },
+    ];
+
+    function loadDB(){
+      try{
+        return JSON.parse(localStorage.getItem(KEY)) || {};
+      }catch(e){
+        return {};
+      }
+    }
+    function saveDB(db){
+      localStorage.setItem(KEY, JSON.stringify(db));
+    }
+
+    // ===== UI refs =====
+    const jobForm = document.getElementById("jobForm");
+    const stepsEditor = document.getElementById("stepsEditor");
+    const jobsList = document.getElementById("jobsList");
+
+    let editingJobId = null;
+    let editingSteps = JSON.parse(JSON.stringify(DEFAULT_STEPS));
+
+    function buildStepsEditor(){
+      stepsEditor.innerHTML = editingSteps.map((s, i) => `
+        <div class="stepRow">
+          <div class="badge">Step ${i+1}</div>
+          <div class="fields">
+            <input data-i="${i}" data-k="title" value="${escapeHtml(s.title)}" />
+            <input data-i="${i}" data-k="note" value="${escapeHtml(s.note)}" />
+          </div>
+        </div>
+      `).join("");
+
+      stepsEditor.querySelectorAll("input").forEach(inp => {
+        inp.addEventListener("input", (e) => {
+          const i = Number(e.target.dataset.i);
+          const k = e.target.dataset.k;
+          editingSteps[i][k] = e.target.value;
+        });
+      });
+    }
+
+    function escapeHtml(str){
+      return String(str).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;");
+    }
+
+    function renderJobs(){
+      const db = loadDB();
+      const ids = Object.keys(db).sort();
+
+      if(ids.length === 0){
+        jobsList.innerHTML = `<p class="muted">No jobs yet. Create one.</p>`;
+        return;
+      }
+
+      jobsList.innerHTML = ids.map(id => {
+        const j = db[id];
+        return `
+          <div class="jobItem">
+            <div>
+              <b>${j.jobId}</b>
+              <div class="muted small">${j.client} • Step ${j.currentIndex}/${j.steps.length}</div>
+            </div>
+            <div class="jobBtns">
+              <button class="btn tiny" data-act="edit" data-id="${id}">Edit</button>
+              <button class="btn tiny ghost" data-act="delete" data-id="${id}">Delete</button>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      jobsList.querySelectorAll("button").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const act = btn.dataset.act;
+          const id = btn.dataset.id;
+          if(act === "edit") loadIntoForm(id);
+          if(act === "delete") deleteJob(id);
+        });
+      });
+    }
+
+    function loadIntoForm(id){
+      const db = loadDB();
+      const j = db[id];
+      if(!j) return;
+
+      editingJobId = id;
+
+      document.getElementById("jobId").value = j.jobId;
+      document.getElementById("jobType").value = j.jobType;
+      document.getElementById("client").value = j.client;
+      document.getElementById("priority").value = j.priority || "Standard";
+      document.getElementById("assignedTo").value = j.assignedTo || "";
+      document.getElementById("estTime").value = j.estTime || "";
+      document.getElementById("submitted").value = j.submitted || "";
+      document.getElementById("currentIndex").value = j.currentIndex;
+
+      editingSteps = j.steps.map(s => ({ title:s.title, note:s.note }));
+      buildStepsEditor();
+
+      // sync timeline job id helper
+      document.getElementById("tJobId").value = j.jobId;
+      window.scrollTo({ top: 0, behavior:"smooth" });
+    }
+
+    function deleteJob(id){
+      const db = loadDB();
+      if(!db[id]) return;
+      delete db[id];
+      saveDB(db);
+      renderJobs();
+    }
+
+    // Save Job (create/update)
+    jobForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+
+      const jobId = document.getElementById("jobId").value.trim().toUpperCase();
+      const jobType = document.getElementById("jobType").value.trim();
+      const client = document.getElementById("client").value.trim();
+      const priority = document.getElementById("priority").value;
+      const assignedTo = document.getElementById("assignedTo").value.trim();
+      const estTime = document.getElementById("estTime").value.trim();
+      const submitted = document.getElementById("submitted").value.trim();
+      const currentIndex = Number(document.getElementById("currentIndex").value);
+
+      if(!jobId || !jobType || !client) return;
+
+      const total = editingSteps.length;
+      const safeIndex = Math.min(Math.max(currentIndex, 1), total);
+
+      // compute step states
+      const steps = editingSteps.map((s, i) => {
+        const idx = i + 1;
+        return {
+          title: s.title,
+          note: s.note,
+          state: idx < safeIndex ? "done" : (idx === safeIndex ? "current" : "todo")
+        };
+      });
+
+      const db = loadDB();
+      db[jobId] = db[jobId] || { timeline: [] };
+
+      db[jobId] = {
+        ...db[jobId],
+        jobId,
+        jobType,
+        client,
+        priority,
+        assignedTo,
+        estTime,
+        submitted,
+        currentIndex: safeIndex,
+        steps
+      };
+
+      // if timeline empty, seed it from steps
+      if(!db[jobId].timeline || db[jobId].timeline.length === 0){
+        db[jobId].timeline = steps.map((s, i) => ({
+          label: s.title.replaceAll("→","→"),
+          sub: "System",
+          state: i+1 < safeIndex ? "done" : (i+1 === safeIndex ? "current" : "todo")
+        }));
+      }else{
+        // update timeline states to match currentIndex
+        db[jobId].timeline = db[jobId].timeline.map((t, i) => ({
+          ...t,
+          state: i+1 < safeIndex ? "done" : (i+1 === safeIndex ? "current" : "todo")
+        }));
+      }
+
+      saveDB(db);
+      renderJobs();
+
+      alert("Saved. Client portal will show the updated progress.");
+    });
+
+    // Save Steps only (without saving job meta)
+    document.getElementById("saveStepsBtn").addEventListener("click", () => {
+      const jobId = document.getElementById("jobId").value.trim().toUpperCase();
+      if(!jobId){
+        alert("Enter Job ID first, then save.");
+        return;
+      }
+      const db = loadDB();
+      if(!db[jobId]){
+        alert("Create the job first, then save steps.");
+        return;
+      }
+
+      const total = editingSteps.length;
+      const safeIndex = Math.min(Math.max(Number(db[jobId].currentIndex || 1), 1), total);
+
+      db[jobId].steps = editingSteps.map((s, i) => {
+        const idx = i + 1;
+        return {
+          title: s.title,
+          note: s.note,
+          state: idx < safeIndex ? "done" : (idx === safeIndex ? "current" : "todo")
+        };
+      });
+
+      saveDB(db);
+      renderJobs();
+      alert("Steps updated.");
+    });
+
+    // Add timeline entry
+    document.getElementById("timelineForm").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const jobId = document.getElementById("tJobId").value.trim().toUpperCase();
+      const label = document.getElementById("tLabel").value.trim();
+      const sub = document.getElementById("tSub").value.trim();
+
+      const db = loadDB();
+      if(!db[jobId]){
+        alert("Job not found. Create it first.");
+        return;
+      }
+
+      db[jobId].timeline = db[jobId].timeline || [];
+      db[jobId].timeline.push({ label, sub, state:"todo" });
+      saveDB(db);
+      alert("Timeline entry added.");
+      document.getElementById("tLabel").value = "";
+      document.getElementById("tSub").value = "";
+    });
+
+    // Export JSON
+    document.getElementById("exportBtn").addEventListener("click", () => {
+      const db = loadDB();
+      const blob = new Blob([JSON.stringify(db, null, 2)], { type:"application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "jobs-export.json";
+      a.click();
+      URL.revokeObjectURL(a.href);
+    });
+
+    // Clear all
+    document.getElementById("clearBtn").addEventListener("click", () => {
+      if(confirm("Clear all jobs?")){
+        localStorage.removeItem(KEY);
+        renderJobs();
+      }
+    });
+
+    // init
+    buildStepsEditor();
+    renderJobs();
+  </script>
+</body>
+</html>

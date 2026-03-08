@@ -1,0 +1,209 @@
+:root{
+  --text:#2f3b45;
+  --muted:#7a8a99;
+  --border:#cfd8e3;
+  --border2:#d6dde7;
+  --btn:#3aa500;      /* green like the image */
+  --signup:#17a7a4;   /* teal link */
+  --danger:#e11d2e;   /* red ? icon */
+}
+
+*{ box-sizing:border-box; }
+
+body{
+  margin:0;
+  min-height:100vh;
+  background:#ffffff;  /* page behind modal */
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  color:var(--text);
+}
+
+/* Modal card */
+.modal{
+  width: 640px;
+  max-width: calc(100vw - 40px);
+  background:#fff;
+  border-radius: 8px;
+  padding: 34px 46px 30px;
+  box-shadow: 0 12px 26px rgba(0,0,0,.08);
+  position:relative;
+}
+
+/* Close X */
+.close{
+  position:absolute;
+  top:16px;
+  right:18px;
+  width:34px;
+  height:34px;
+  border:none;
+  background:transparent;
+  color:#7e8a96;
+  font-size:28px;
+  line-height:1;
+  cursor:pointer;
+}
+.close:hover{ color:#4e5964; }
+
+h1{
+  margin:0 0 12px;
+  text-align:center;
+  font-size:28px;     /* not too bold */
+  font-weight:700;
+  color:#2f3b45;
+}
+
+.sub{
+  margin:0 0 26px;
+  text-align:center;
+  color:var(--muted);
+  font-size:18px;
+  line-height:1.35;
+}
+
+/* Inputs */
+.form{ margin-top:6px; }
+
+.input{
+  width:100%;
+  height:58px;
+  border:1.6px solid var(--border);
+  border-radius:8px;
+  padding:0 22px;
+  font-size:18px;
+  outline:none;
+  background:#fff;
+  margin: 0 0 18px;
+}
+.input::placeholder{
+  color:#b3bfcc;
+}
+.input:focus{
+  border-color:#b7c6d8;
+  box-shadow: 0 0 0 4px rgba(120,150,200,.12);
+}
+
+/* Row: remember + forgot */
+.row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  margin: 6px 0 18px;
+}
+
+.remember{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  color:#6f7f8d;
+  font-size:18px;
+}
+
+/* Custom checkbox to match light style */
+.cb{
+  appearance:none;
+  -webkit-appearance:none;
+  width:18px;
+  height:18px;
+  border:1.6px solid var(--border2);
+  border-radius:4px;
+  background:#fff;
+  display:inline-grid;
+  place-items:center;
+  cursor:pointer;
+}
+.cb:checked{
+  border-color:var(--btn);
+  background:var(--btn);
+}
+.cb:checked::after{
+  content:"";
+  width:8px;
+  height:4px;
+  border-left:2px solid #fff;
+  border-bottom:2px solid #fff;
+  transform:rotate(-45deg);
+  margin-top:-1px;
+}
+
+/* Forgot password link */
+.forgot{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  color:#6f7f8d;
+  font-size:18px;
+  text-decoration:underline;
+}
+.forgot:hover{ color:#3d4a55; }
+
+.q{
+  width:18px;
+  height:18px;
+  border-radius:50%;
+  background:var(--danger);
+  color:#fff;
+  display:grid;
+  place-items:center;
+  font-weight:700;
+  font-size:12px;
+  line-height:1;
+}
+
+/* Button */
+.btn{
+  width:100%;
+  height:58px;
+  border:none;
+  border-radius:999px;
+  background:var(--btn);
+  color:#fff;
+  font-size:18px;
+  font-weight:700;
+  cursor:pointer;
+}
+.btn:hover{ filter:brightness(.96); }
+.btn:active{ transform:translateY(1px); }
+
+/* Footer */
+.footer{
+  margin: 26px 0 0;
+  text-align:center;
+  color:#7a8a99;
+  font-size:18px;
+}
+.signup{
+  color:var(--signup);
+  text-decoration:none;
+  font-weight:700;
+}
+.signup:hover{ text-decoration:underline; }
+
+/* Responsive */
+@media (max-width:520px){
+  .modal{ padding: 26px 18px 22px; }
+  .sub{ font-size:16px; }
+  .row{ flex-direction:column; gap:12px; align-items:flex-start; }
+}
+
+/* ==========================================================
+   NEW: Overlay + true modal positioning (Image 1 look)
+   ========================================================== */
+.backdrop{
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.45);  /* adjust 0.35 - 0.55 if needed */
+  z-index: 10;
+}
+
+.modal{
+  position: fixed;                 /* float on top of overlay */
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 11;
+}
+
+body.modal-open{
+  overflow: hidden;                /* stop background scrolling */
+}
