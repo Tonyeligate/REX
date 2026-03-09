@@ -29,8 +29,8 @@ const REGISTER_STAGE_COLS: {
   { key: "at_csau_payment", label: "CSAU", subLabel: "Payment", stepIndex: 6 },
   { key: "examination_smd", label: "Examination", subLabel: "Checking", stepIndex: 8 },
   { key: "certified_smd", label: "Examination", subLabel: "Cert.", stepIndex: 9 },
-  { key: "at_region", label: "Registry", subLabel: "Region No.", stepIndex: 11 },
-  { key: "delivered_to_client", label: "Registry", subLabel: "Reg. Book", stepIndex: 13 },
+  { key: "at_region", label: "Region", subLabel: "Region No.", stepIndex: 11 },
+  { key: "delivered_to_client", label: "Region", subLabel: "Reg. Book", stepIndex: 13 },
 ];
 
 type CellState = "done" | "active" | "queried" | "pending";
@@ -54,11 +54,16 @@ function getQueryStatusForStage(stepIndex: number): BackendStatus {
 }
 
 function getRegisterName(job: Job): string {
+  const clientName = (job.clientName ?? "").trim();
+  if (clientName && clientName !== "—") {
+    return clientName;
+  }
+
   const parts = (job.jobType ?? "")
     .split(/[–-]/)
     .map((part) => part.trim())
     .filter(Boolean);
-  return parts[0] || job.clientName || job.jobType || "—";
+  return parts[0] || job.jobType || "—";
 }
 
 function getRegisterReference(job: Job): string {
@@ -313,7 +318,7 @@ export default function JobsRegisterPage() {
 
     const headers = [
       "#",
-      "Name",
+      "Client Name",
       "RNR",
       "Actual Regional Number",
       "Job Production",
@@ -329,7 +334,7 @@ export default function JobsRegisterPage() {
     const rows = filteredJobs.map((job, index) => {
       const row: Record<string, string | number> = {
         "#": index + 1,
-        Name: getRegisterName(job),
+        "Client Name": getRegisterName(job),
         RNR: job.jobId ?? "",
         "Actual Regional Number": getActualRegionalNumber(job),
       };
@@ -355,7 +360,7 @@ export default function JobsRegisterPage() {
 
     const ws = XLSX.utils.json_to_sheet(rows, { header: headers });
     ws["!cols"] = headers.map((header) =>
-      header === "Name" || header === "Status / Notes"
+      header === "Client Name" || header === "Status / Notes"
         ? { wch: 30 }
         : header === "RNR" || header === "Actual Regional Number"
           ? { wch: 18 }
@@ -379,7 +384,7 @@ export default function JobsRegisterPage() {
         <div>
           <h3 className="text-[22px] font-bold text-[#1f2937]">Job Management Register</h3>
           <p className="text-[13px] text-[#9ca3af]">
-            Presented like the physical register: names first, reference numbers next, then stage-by-stage checks.
+            Presented like the physical register: client names first, reference numbers next, then stage-by-stage checks.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -447,14 +452,14 @@ export default function JobsRegisterPage() {
             <thead>
               <tr className="bg-[#1f2937] text-white">
                 <th rowSpan={2} className="border border-[#374151] px-3 py-2 text-center font-bold w-8">#</th>
-                <th rowSpan={2} className="border border-[#374151] px-3 py-2 text-left font-bold w-[200px]">Name</th>
+                <th rowSpan={2} className="border border-[#374151] px-3 py-2 text-left font-bold w-[200px]">Client Name</th>
                 <th rowSpan={2} className="border border-[#374151] px-3 py-2 text-left font-bold w-[135px]">RNR</th>
                 <th rowSpan={2} className="border border-[#374151] px-3 py-2 text-left font-bold w-[150px]">Act. Regional No.</th>
                 <th colSpan={1} className="border border-[#374151] px-3 py-1.5 text-center font-bold bg-[#374151]">Job Production</th>
                 <th colSpan={1} className="border border-[#374151] px-3 py-1.5 text-center font-bold bg-[#1e3a5f]">L/S Cert.</th>
                 <th colSpan={1} className="border border-[#374151] px-3 py-1.5 text-center font-bold bg-[#374151]">CSAU</th>
                 <th colSpan={2} className="border border-[#374151] px-3 py-1.5 text-center font-bold bg-[#1e3a5f]">Examination</th>
-                <th colSpan={2} className="border border-[#374151] px-3 py-1.5 text-center font-bold bg-[#374151]">Registry</th>
+                <th colSpan={2} className="border border-[#374151] px-3 py-1.5 text-center font-bold bg-[#374151]">Region</th>
               </tr>
               <tr className="bg-[#374151] text-[#d1d5db] text-[11px]">
                 <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold w-[58px]">Done</th>

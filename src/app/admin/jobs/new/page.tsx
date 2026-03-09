@@ -51,6 +51,7 @@ export default function NewJobPage() {
         rn: data.rn,
         title: composedTitle,
         description: [
+          `Client: ${data.clientName.trim()}`,
           data.description,
           data.contactPhone ? `Phone: ${data.contactPhone}` : "",
           data.contactEmail ? `Email: ${data.contactEmail}` : "",

@@ -257,6 +257,24 @@ WORKFLOW_STATUSES.forEach((s, i) => {
 STATUS_STEP_MAP["queried_ls461"] = 5; // L/S 461 examination
 STATUS_STEP_MAP["queried_smd"] = 9; // SMD examination
 
+function extractClientNameFromDescription(description?: string): string | undefined {
+  if (!description) return undefined;
+
+  const match = description.match(/(?:^|\n)Client:\s*(.+?)(?:\n|$)/i);
+  return match?.[1]?.trim() || undefined;
+}
+
+function extractClientNameFromTitle(title?: string): string | undefined {
+  if (!title) return undefined;
+
+  const parts = title
+    .split(/[–-]/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  return parts[0] || undefined;
+}
+
 /** Human-readable step definitions. */
 export const WORKFLOW_STEP_DEFS: Array<{
   status: BackendStatus;
@@ -392,13 +410,18 @@ export function mapBackendJob(
         : "IN_PROGRESS";
 
   const detail = bj as BackendJobDetail;
+  const clientName =
+    extractClientNameFromDescription(detail.description) ||
+    extractClientNameFromTitle(bj.title) ||
+    bj.title ||
+    "—";
 
   return {
     id: String(bj.id),
     jobId: bj.rn,
     jobType: bj.title || "Land Survey",
     clientId: detail.submitted_by ? String(detail.submitted_by) : "",
-    clientName: bj.title || "—",
+    clientName,
     priority: "STANDARD",
     assignedTo: detail.assigned_to ? String(detail.assigned_to) : undefined,
     estimatedTime: undefined,
