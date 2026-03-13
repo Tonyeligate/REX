@@ -9,6 +9,8 @@
  */
 
 /* ─── Base URLs ───────────────────────────────────────────── */
+import type { JobRegisterRecord, UpdateJobRegisterPayload } from "@/types/register";
+
 const BACKEND_URL = "/backend-api"; // Proxied → Railway backend
 const LOCAL_URL = "/api"; // Local Next.js API routes
 
@@ -719,6 +721,24 @@ export const jobsApi = {
       : items;
     return { jobs: filtered.map(mapBackendJob) };
   },
+};
+
+export const registerFieldsApi = {
+  list: async (jobIds?: string[]) => {
+    const query = jobIds && jobIds.length > 0
+      ? `?jobIds=${jobIds.map((jobId) => encodeURIComponent(jobId)).join(",")}`
+      : "";
+    return localRequest<{ records: Record<string, JobRegisterRecord> }>(`/jobs/register${query}`);
+  },
+
+  get: async (jobId: string) =>
+    localRequest<{ record: JobRegisterRecord | null }>(`/jobs/register/${encodeURIComponent(jobId)}`),
+
+  update: async (jobId: string, payload: UpdateJobRegisterPayload) =>
+    localRequest<{ record: JobRegisterRecord }>(`/jobs/register/${encodeURIComponent(jobId)}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
 };
 
 /* ═══════════════════════════════════════════════════════════

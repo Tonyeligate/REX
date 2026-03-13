@@ -8,6 +8,7 @@
 import type { User } from "@/types/user";
 import type { Job } from "@/types/job";
 import type { Member, SmsMessage, DuesPayment } from "@/types/member";
+import type { JobRegisterRecord } from "@/types/register";
 import { createDefaultSteps } from "@/lib/workflow-engine";
 
 // ─── Users ───────────────────────────────────────
@@ -122,6 +123,8 @@ export const jobs: Job[] = [
   buildDemoJob("j5", "LS-2024-465", "Savanna Holdings", 2, "HIGH"),
   buildDemoJob("j6", "LS-2024-466", "Kwame Boateng", 14, "STANDARD", "COMPLETED"),
 ];
+
+export const jobRegisterRecords: Record<string, JobRegisterRecord> = {};
 
 // ─── Members ─────────────────────────────────────
 export const members: Member[] = [

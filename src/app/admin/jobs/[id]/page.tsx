@@ -3,12 +3,12 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import { motion } from "framer-motion";
 import {
   ArrowLeft,
   CheckCircle2,
   Circle,
   Clock,
-  AlertTriangle,
   PlayCircle,
   Send,
   Loader2,
@@ -16,22 +16,16 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { jobsApi, type BackendStatus } from "@/lib/api";
-import type { Job, TimelineEntry, WorkflowStep } from "@/types/job";
+import { getJobProgressSummary } from "@/lib/job-progress";
+import type { Job, TimelineEntry } from "@/types/job";
 import { useAuthStore } from "@/lib/auth-store";
+import { WorkflowTimeline } from "@/components/sections/workflow-timeline";
 
 const statusColors: Record<string, string> = {
   IN_PROGRESS: "bg-orange-100 text-orange-700",
   COMPLETED: "bg-green-100 text-green-700",
   QUERIED: "bg-amber-100 text-amber-700",
   CANCELLED: "bg-red-100 text-red-700",
-};
-
-const stepStatusIcons: Record<string, React.ReactNode> = {
-  COMPLETED: <CheckCircle2 size={18} className="text-green-500" />,
-  ACTIVE: <PlayCircle size={18} className="text-orange-500" />,
-  QUERIED: <AlertTriangle size={18} className="text-amber-500" />,
-  PENDING: <Circle size={18} className="text-gray-300" />,
-  SKIPPED: <Circle size={18} className="text-gray-200" />,
 };
 
 export default function JobDetailPage() {
@@ -117,7 +111,7 @@ export default function JobDetailPage() {
     return <div className="flex items-center justify-center h-64 text-[#9ca3af]"><Loader2 size={24} className="animate-spin mr-2" /> Loading job...</div>;
   }
 
-  const progress = Math.round(((job.currentStep - 1) / job.steps.length) * 100);
+  const progress = getJobProgressSummary(job);
 
   return (
     <div>
@@ -146,8 +140,8 @@ export default function JobDetailPage() {
           {/* Quick info cards */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             {[
-              { label: "Current Step", value: `${job.currentStep} / ${job.steps.length}`, icon: ChevronRight },
-              { label: "Progress", value: `${progress}%`, icon: Clock },
+              { label: "Current Step", value: progress.currentStepLabel, icon: ChevronRight },
+              { label: "Progress", value: `${progress.progressPercent}%`, icon: Clock },
               { label: "Regional No.", value: job.regionalNumber || "N/A", icon: Edit },
               { label: "Parcel Size", value: job.parcelSize || "N/A", icon: Edit },
             ].map((item, i) => (
@@ -158,38 +152,25 @@ export default function JobDetailPage() {
             ))}
           </div>
 
-          {/* Progress bar */}
-          <div className="bg-white border border-[#e5e7eb] rounded-xl p-5">
-            <h4 className="text-[14px] font-bold text-[#1f2937] mb-3">Workflow Progress</h4>
-            <div className="w-full bg-gray-200 rounded-full h-3 mb-4">
-              <div className="bg-[#F07000] h-3 rounded-full transition-all" style={{ width: `${progress}%` }} />
+          <div className="bg-white border border-[#F0E6DA] rounded-[16px] shadow-sm p-5">
+            <div className="flex items-center gap-3 mb-4">
+              <span className="text-[12px] font-[600] text-[#64748b] shrink-0">Overall Progress</span>
+              <div className="flex-1 h-3 bg-[#f1f5f9] rounded-full overflow-hidden">
+                <motion.div
+                  className="h-full bg-gradient-to-r from-[#F07000] to-[#FF9A3C] rounded-full"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${progress.progressPercent}%` }}
+                  transition={{ duration: 1.2, ease: "easeOut", delay: 0.2 }}
+                />
+              </div>
+              <span className="text-[14px] font-[800] text-[#F07000] shrink-0">{progress.progressPercent}%</span>
             </div>
 
-            {/* Step list */}
-            <div className="space-y-1">
-              {job.steps.map((step: WorkflowStep) => (
-                <div
-                  key={step.stepNumber}
-                  className={`flex items-center gap-3 p-3 rounded-lg transition-colors ${
-                    step.status === "ACTIVE" ? "bg-orange-50 border border-orange-200" :
-                    step.status === "QUERIED" ? "bg-amber-50 border border-amber-200" :
-                    "hover:bg-gray-50"
-                  }`}
-                >
-                  {stepStatusIcons[step.status]}
-                  <div className="flex-grow min-w-0">
-                    <p className={`text-[13px] font-semibold ${step.status === "COMPLETED" ? "text-green-700" : step.status === "ACTIVE" ? "text-orange-700" : "text-[#4b5563]"}`}>
-                      Step {step.stepNumber}: {step.title}
-                    </p>
-                    <p className="text-[11px] text-[#9ca3af] truncate">{step.note}</p>
-                  </div>
-                  <div className="flex-shrink-0 text-right">
-                    {step.completedAt && <p className="text-[10px] text-[#9ca3af]">{step.completedAt}</p>}
-                    {step.completedBy && <p className="text-[10px] text-[#9ca3af]">by {step.completedBy}</p>}
-                  </div>
-                </div>
-              ))}
-            </div>
+            <p className="m-0 mt-2 mb-5 text-[12px] text-[#94a3b8]">
+              {progress.completedSteps} of {progress.totalSteps} steps completed
+            </p>
+
+            <WorkflowTimeline steps={job.steps} />
 
             {/* Advance step */}
             {job.status === "IN_PROGRESS" && job.currentStep <= job.steps.length && (
