@@ -383,6 +383,7 @@ export interface BackendJobListItem {
   client?: BackendClient;
   parcel_acreage: string | null;
   payment_amount: string | null;
+  step_decisions?: BackendStepDecision[];
   created_at: string;
   updated_at: string;
 }
@@ -513,6 +514,7 @@ import type { User, Role } from "@/types/user";
 import type {
   Job,
   JobStatus,
+  JobStepDecision,
   WorkflowStep,
   StepStatus,
   TimelineEntry,
@@ -575,6 +577,17 @@ export function mapBackendJob(
   const stepDecisions = Array.isArray(detail.step_decisions)
     ? detail.step_decisions
     : [];
+  const mappedStepDecisions: JobStepDecision[] = stepDecisions.map((decision) => ({
+    id: decision.id,
+    step: decision.step,
+    stepDisplay: decision.step_display,
+    decision: decision.decision,
+    decisionDisplay: decision.decision_display,
+    comment: decision.comment || undefined,
+    decidedBy: decision.decided_by_employee_username || undefined,
+    createdAt: decision.created_at,
+    updatedAt: decision.updated_at,
+  }));
   for (const decision of stepDecisions) {
     const decisionStepNumber = STATUS_STEP_MAP[decision.step];
     if (!decisionStepNumber) continue;
@@ -693,6 +706,7 @@ export function mapBackendJob(
     batchName: detail.batch_name || undefined,
     description: detail.description || undefined,
     documents: detail.documents || undefined,
+    stepDecisions: mappedStepDecisions,
     steps,
     timeline,
     createdAt: bj.created_at,

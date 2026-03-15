@@ -17,6 +17,18 @@ export interface WorkflowStep {
   attachments?: string[];
 }
 
+export interface JobStepDecision {
+  id: number;
+  step: string;
+  stepDisplay?: string;
+  decision: string;
+  decisionDisplay?: string;
+  comment?: string;
+  decidedBy?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface TimelineEntry {
   id: string;
   label: string;
@@ -54,6 +66,8 @@ export interface Job {
   description?: string;
   /** Documents from backend */
   documents?: Array<{ id: number; file: string; name: string; uploaded_at: string }>;
+  /** Raw per-step decisions from backend (book-like granular workflow). */
+  stepDecisions?: JobStepDecision[];
   steps: WorkflowStep[];
   timeline: TimelineEntry[];
   createdAt: string;

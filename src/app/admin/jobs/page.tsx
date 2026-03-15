@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { WORKFLOW_STATUSES, jobsApi, registerFieldsApi, type BackendStatus } from "@/lib/api";
 import { getRegisterProgressSummary } from "@/lib/register-progress";
-import type { Job } from "@/types/job";
+import type { Job, JobStepDecision } from "@/types/job";
 import type {
   JobRegisterRecord,
   RegisterStageEntry,
@@ -27,6 +27,13 @@ import type {
   RegisterStageOutcome,
   RegisterStageValue,
 } from "@/types/register";
+
+type RegisterStageSource = "backend" | "local" | "none";
+
+type ResolvedRegisterStage = {
+  entry?: RegisterStageEntry;
+  source: RegisterStageSource;
+};
 
 const REGISTER_STAGE_COLS: {
   key: string;
@@ -56,6 +63,16 @@ const REGISTER_STAGE_LABELS: Record<RegisterStageKey, string> = {
 
 const REGISTER_STAGE_KEYS = Object.keys(REGISTER_STAGE_LABELS) as RegisterStageKey[];
 
+const BACKEND_REGISTER_STEP_CODE_MAP: Record<RegisterStageKey, string> = {
+  jobProductionLsCertification: "4_ls_cert",
+  examinationReceived: "5_csau_payment",
+  examinationChecking: "6_1_checking",
+  examinationCertified: "6_2_certified",
+  regionChecked: "7_1_checked",
+  regionApproved: "7_2_approved",
+  regionBatched: "7_3_barcoded",
+};
+
 function normalizeRegisterStage(value?: RegisterStageValue): RegisterStageEntry | undefined {
   if (value === true) {
     return { outcome: "accept" };
@@ -80,6 +97,107 @@ function getRegisterStageDisplay(value?: RegisterStageValue): string {
     : stage.outcome === "query"
       ? "Queried"
       : "Rejected";
+}
+
+function toRegisterOutcomeFromDecision(decision?: string): RegisterStageOutcome | undefined {
+  const normalized = (decision ?? "").trim().toLowerCase();
+  if (!normalized) return undefined;
+  if (["approve", "approved", "accept", "accepted", "complete", "completed"].includes(normalized)) {
+    return "accept";
+  }
+  if (["query", "queried"].includes(normalized)) {
+    return "query";
+  }
+  if (["reject", "rejected"].includes(normalized)) {
+    return "reject";
+  }
+  return undefined;
+}
+
+function getLatestBackendDecisionByStep(job: Job): Map<string, JobStepDecision> {
+  const latestByStep = new Map<string, JobStepDecision>();
+
+  for (const decision of job.stepDecisions ?? []) {
+    const stepCode = decision.step?.trim();
+    if (!stepCode) continue;
+
+    const existing = latestByStep.get(stepCode);
+    if (!existing) {
+      latestByStep.set(stepCode, decision);
+      continue;
+    }
+
+    const existingTime = Date.parse(existing.updatedAt || existing.createdAt || "");
+    const incomingTime = Date.parse(decision.updatedAt || decision.createdAt || "");
+    if (!Number.isFinite(existingTime) || incomingTime >= existingTime) {
+      latestByStep.set(stepCode, decision);
+    }
+  }
+
+  return latestByStep;
+}
+
+function toRegisterEntryFromBackendDecision(decision?: JobStepDecision): RegisterStageEntry | undefined {
+  if (!decision) return undefined;
+
+  const outcome = toRegisterOutcomeFromDecision(decision.decisionDisplay || decision.decision);
+  if (!outcome) return undefined;
+
+  return {
+    outcome,
+    comment: decision.comment,
+    updatedAt: decision.updatedAt || decision.createdAt,
+  };
+}
+
+function resolveRegisterStages(
+  job: Job,
+  record?: JobRegisterRecord
+): Record<RegisterStageKey, ResolvedRegisterStage> {
+  const latestByStep = getLatestBackendDecisionByStep(job);
+
+  return REGISTER_STAGE_KEYS.reduce((acc, key) => {
+    const backendStepCode = BACKEND_REGISTER_STEP_CODE_MAP[key];
+    const backendDecision = latestByStep.get(backendStepCode);
+    if (backendDecision) {
+      acc[key] = {
+        entry: toRegisterEntryFromBackendDecision(backendDecision),
+        source: "backend",
+      };
+      return acc;
+    }
+
+    const localEntry = normalizeRegisterStage(record?.stages[key]);
+    if (localEntry) {
+      acc[key] = { entry: localEntry, source: "local" };
+      return acc;
+    }
+
+    acc[key] = { entry: undefined, source: "none" };
+    return acc;
+  }, {} as Record<RegisterStageKey, ResolvedRegisterStage>);
+}
+
+function buildResolvedRegisterRecord(
+  job: Job,
+  record?: JobRegisterRecord
+): JobRegisterRecord {
+  const resolvedStages = resolveRegisterStages(job, record);
+  const stages: Partial<Record<RegisterStageKey, RegisterStageValue>> = {};
+
+  for (const key of REGISTER_STAGE_KEYS) {
+    const resolvedEntry = resolvedStages[key].entry;
+    if (resolvedEntry) {
+      stages[key] = resolvedEntry;
+    }
+  }
+
+  return {
+    jobId: job.jobId,
+    actualRegionalNumber: record?.actualRegionalNumber,
+    stages,
+    updatedAt: record?.updatedAt ?? job.updatedAt,
+  };
 }
 
 function getStepIndex(status: string): number {
@@ -116,10 +234,25 @@ function getActualRegionalNumber(job: Job, record?: JobRegisterRecord): string {
   return job.regionalNumber?.trim() || record?.actualRegionalNumber?.trim() || "";
 }
 
-function RegisterStageCell({ stage, onClick }: { stage?: RegisterStageEntry; onClick: () => void }) {
+function RegisterStageCell({
+  stage,
+  source,
+  onClick,
+}: {
+  stage?: RegisterStageEntry;
+  source: RegisterStageSource;
+  onClick: () => void;
+}) {
   const [showComment, setShowComment] = useState(false);
   const comment = stage?.comment?.trim();
   const commentPreview = comment || "No comment for this step yet.";
+
+  const sourceBadge =
+    source === "backend"
+      ? { label: "B", title: "Backend decision", tone: "bg-[#dbeafe] text-[#1d4ed8] border-[#bfdbfe]" }
+      : source === "local"
+        ? { label: "L", title: "Local browser register data", tone: "bg-[#f3f4f6] text-[#4b5563] border-[#d1d5db]" }
+        : null;
 
   const renderCommentButton = (buttonClassName: string) => (
     <>
@@ -138,6 +271,14 @@ function RegisterStageCell({ stage, onClick }: { stage?: RegisterStageEntry; onC
         <div className="absolute z-20 bottom-full right-1 mb-1 w-44 rounded-lg bg-[#111827] px-2 py-1.5 text-left text-[10px] leading-4 text-white shadow-lg">
           {commentPreview}
         </div>
+      )}
+      {sourceBadge && (
+        <span
+          className={`absolute top-1 left-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full border px-1 text-[9px] font-[800] ${sourceBadge.tone}`}
+          title={sourceBadge.title}
+        >
+          {sourceBadge.label}
+        </span>
       )}
     </>
   );
@@ -181,7 +322,7 @@ function RegisterStageCell({ stage, onClick }: { stage?: RegisterStageEntry; onC
     <td
       className="relative text-center px-1 py-2 border border-[#e5e7eb] bg-white cursor-pointer hover:bg-orange-50 transition-colors"
       onClick={onClick}
-      title="Click to enter this stage"
+      title={source === "backend" ? "Backend decision is currently pending for this stage." : "No backend decision yet. Click to enter local fallback record."}
     >
       {renderCommentButton("border-[#d1d5db] bg-white text-[#9ca3af] hover:bg-gray-100")}
     </td>
@@ -520,7 +661,7 @@ function RegisterRowModal({
           </div>
 
           <div className="rounded-xl border border-dashed border-[#f59e0b] bg-[#fffbeb] px-4 py-3 text-[12px] text-[#92400e]">
-            These handwritten-book stage decisions and comments are saved in this browser as register metadata until backend register fields are available.
+            These register edits are saved only in this browser and are used as fallback values. When backend step decisions exist for a column, backend values are shown first.
           </div>
 
           {error && <p className="text-red-600 text-[12px]">{error}</p>}
@@ -622,7 +763,9 @@ export default function JobsRegisterPage() {
 
     const rows = filteredJobs.map((job, index) => {
       const record = registerRecords[job.jobId];
-      const registerProgress = getRegisterProgressSummary(record);
+      const resolvedRecord = buildResolvedRegisterRecord(job, record);
+      const resolvedStages = resolveRegisterStages(job, record);
+      const registerProgress = getRegisterProgressSummary(resolvedRecord);
       const row: Record<string, string | number> = {
         "#": index + 1,
         "Client Name": getRegisterName(job),
@@ -630,13 +773,13 @@ export default function JobsRegisterPage() {
         "Regional Number": getActualRegionalNumber(job, record),
       };
 
-      row["Job Production / L/S Certification"] = getRegisterStageDisplay(record?.stages.jobProductionLsCertification);
-      row["CSAU"] = getRegisterStageDisplay(record?.stages.examinationReceived);
-      row["Examination Checking"] = getRegisterStageDisplay(record?.stages.examinationChecking);
-      row["Examination Cert."] = getRegisterStageDisplay(record?.stages.examinationCertified);
-      row["Region Checked"] = getRegisterStageDisplay(record?.stages.regionChecked);
-      row["Region Approved"] = getRegisterStageDisplay(record?.stages.regionApproved);
-      row["Region Barcode"] = getRegisterStageDisplay(record?.stages.regionBatched);
+      row["Job Production / L/S Certification"] = getRegisterStageDisplay(resolvedStages.jobProductionLsCertification.entry);
+      row["CSAU"] = getRegisterStageDisplay(resolvedStages.examinationReceived.entry);
+      row["Examination Checking"] = getRegisterStageDisplay(resolvedStages.examinationChecking.entry);
+      row["Examination Cert."] = getRegisterStageDisplay(resolvedStages.examinationCertified.entry);
+      row["Region Checked"] = getRegisterStageDisplay(resolvedStages.regionChecked.entry);
+      row["Region Approved"] = getRegisterStageDisplay(resolvedStages.regionApproved.entry);
+      row["Region Barcode"] = getRegisterStageDisplay(resolvedStages.regionBatched.entry);
       row["Workflow Status / Notes"] = [registerProgress.currentStatusLabel, `${registerProgress.progressPercent}%`, registerProgress.workflowLabel, getRegisterReference(job), job.queryReason]
         .filter(Boolean)
         .join(" | ");
@@ -729,9 +872,9 @@ export default function JobsRegisterPage() {
             <span className="font-semibold text-orange-600">Active: {counts.inProgress}</span>
             <span className="font-semibold text-amber-600">Queried: {counts.queried}</span>
             <span className="font-semibold text-green-600">Done: {counts.completed}</span>
-            <span className="flex items-center gap-1.5"><CheckCircle size={13} className="text-green-600" /> Tick saved in register</span>
-            <span className="flex items-center gap-1.5"><Clock size={13} className="text-orange-500" /> Workflow still uses backend stage</span>
-            <span className="flex items-center gap-1.5"><AlertTriangle size={13} className="text-amber-500" /> Use Workflow for accept/query/reject</span>
+            <span className="flex items-center gap-1.5"><span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full border border-[#bfdbfe] bg-[#dbeafe] px-1 text-[10px] font-[800] text-[#1d4ed8]">B</span> Backend decision value</span>
+            <span className="flex items-center gap-1.5"><span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full border border-[#d1d5db] bg-[#f3f4f6] px-1 text-[10px] font-[800] text-[#4b5563]">L</span> Local browser fallback</span>
+            <span className="flex items-center gap-1.5"><AlertTriangle size={13} className="text-amber-500" /> Local value is used only when no backend step decision exists</span>
           </div>
         </div>
       </div>
@@ -778,7 +921,10 @@ export default function JobsRegisterPage() {
                   const registerName = getRegisterName(job);
                   const registerReference = getRegisterReference(job);
                   const record = registerRecords[job.jobId];
-                  const registerProgress = getRegisterProgressSummary(record);
+                  const resolvedStages = resolveRegisterStages(job, record);
+                  const registerProgress = getRegisterProgressSummary(
+                    buildResolvedRegisterRecord(job, record)
+                  );
 
                   return (
                     <tr key={job.id} className={`hover:bg-orange-50/40 transition-colors ${isEven ? "bg-white" : "bg-[#fafafa]"}`}>
@@ -836,11 +982,13 @@ export default function JobsRegisterPage() {
                         {getActualRegionalNumber(job, record) || <span className="text-[#9ca3af] font-sans text-[11px]">Not assigned</span>}
                       </td>
                       {REGISTER_STAGE_COLS.map((col) => {
-                        const stage = normalizeRegisterStage(record?.stages[col.key as RegisterStageKey]);
+                        const key = col.key as RegisterStageKey;
+                        const resolvedStage = resolvedStages[key];
                         return (
                           <RegisterStageCell
                             key={col.key}
-                            stage={stage}
+                            stage={resolvedStage.entry}
+                            source={resolvedStage.source}
                             onClick={() => setRegisterModalJob(job)}
                           />
                         );
