@@ -58,6 +58,8 @@ export default function NewJobPage() {
         ].filter(Boolean).join("\n"),
         parcel_acreage: data.parcel_acreage || undefined,
         clientName: data.clientName,
+        contactPhone: data.contactPhone,
+        contactEmail: data.contactEmail,
       });
       router.push(`/admin/jobs/${encodeURIComponent(response.job.jobId)}`);
     } catch (err: unknown) {

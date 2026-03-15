@@ -1,19 +1,31 @@
 import { NextResponse } from "next/server";
-import { members } from "@/lib/demo-db";
 
-// GET /api/members/export — returns CSV
-export async function GET() {
-  const headers = ["ID", "First Name", "Surname", "DOB", "Region", "Constituency", "Polling Station", "Ghana Card", "Voter ID", "Phone", "Method", "Active", "Total Dues"];
-  const rows = members.map((m) =>
-    [m.id, m.firstName, m.surname, m.dateOfBirth, m.region, m.constituency, m.pollingStation, m.ghanaCard ?? "", m.voterIdNumber ?? "", m.phone, m.registrationMethod, m.isActive, m.totalDuesPaid].join(",")
-  );
-
-  const csv = [headers.join(","), ...rows].join("\n");
-
-  return new NextResponse(csv, {
-    headers: {
-      "Content-Type": "text/csv",
-      "Content-Disposition": "attachment; filename=members-export.csv",
+function notAvailable() {
+  return NextResponse.json(
+    {
+      error:
+        "Mock route removed. This endpoint is not implemented on the Railway backend yet.",
     },
-  });
+    { status: 501 }
+  );
+}
+
+export async function GET() {
+  return notAvailable();
+}
+
+export async function POST() {
+  return notAvailable();
+}
+
+export async function PUT() {
+  return notAvailable();
+}
+
+export async function PATCH() {
+  return notAvailable();
+}
+
+export async function DELETE() {
+  return notAvailable();
 }

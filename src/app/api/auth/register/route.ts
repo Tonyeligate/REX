@@ -1,40 +1,31 @@
 import { NextResponse } from "next/server";
-import { users, passwords, nextId, sessions } from "@/lib/demo-db";
-import type { User } from "@/types/user";
 
-export async function POST(req: Request) {
-  const body = await req.json();
+function notAvailable() {
+  return NextResponse.json(
+    {
+      error:
+        "Mock route removed. This endpoint is not implemented on the Railway backend yet.",
+    },
+    { status: 501 }
+  );
+}
 
-  if (users.find((u) => u.email === body.email)) {
-    return NextResponse.json({ error: "Email already registered" }, { status: 409 });
-  }
+export async function GET() {
+  return notAvailable();
+}
 
-  const newUser: User = {
-    id: nextId("u"),
-    email: body.email,
-    firstName: body.firstName,
-    lastName: body.lastName,
-    middleName: body.middleName,
-    gender: body.gender,
-    idType: body.idType,
-    idNumber: body.idNumber,
-    phone: body.phone,
-    phoneCode: body.phoneCode ?? "+233",
-    country: body.country ?? "Ghana",
-    address: body.address,
-    role: "CLIENT",
-    accountType: body.accountType ?? "Individual",
-    contactPerson: body.contactPerson,
-    contactPhone: body.contactPhone,
-    isActive: true,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
+export async function POST() {
+  return notAvailable();
+}
 
-  users.push(newUser);
-  passwords[newUser.email] = body.password;
+export async function PUT() {
+  return notAvailable();
+}
 
-  const token = Buffer.from(`${newUser.id}:${Date.now()}`).toString("base64");
-  sessions[token] = newUser.id;
-  return NextResponse.json({ user: newUser, token }, { status: 201 });
+export async function PATCH() {
+  return notAvailable();
+}
+
+export async function DELETE() {
+  return notAvailable();
 }

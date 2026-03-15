@@ -1,12 +1,31 @@
 import { NextResponse } from "next/server";
-import { users, sessions } from "@/lib/demo-db";
 
-export async function GET(req: Request) {
-  const authHeader = req.headers.get("authorization") ?? "";
-  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
-  const userId = token ? sessions[token] : undefined;
-  const user = userId ? users.find((u) => u.id === userId) : undefined;
+function notAvailable() {
+  return NextResponse.json(
+    {
+      error:
+        "Mock route removed. This endpoint is not implemented on the Railway backend yet.",
+    },
+    { status: 501 }
+  );
+}
 
-  if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-  return NextResponse.json({ user });
+export async function GET() {
+  return notAvailable();
+}
+
+export async function POST() {
+  return notAvailable();
+}
+
+export async function PUT() {
+  return notAvailable();
+}
+
+export async function PATCH() {
+  return notAvailable();
+}
+
+export async function DELETE() {
+  return notAvailable();
 }

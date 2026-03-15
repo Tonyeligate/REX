@@ -1,8 +1,31 @@
 import { NextResponse } from "next/server";
-import { duesPayments } from "@/lib/demo-db";
 
-// GET /api/dues
+function notAvailable() {
+  return NextResponse.json(
+    {
+      error:
+        "Mock route removed. This endpoint is not implemented on the Railway backend yet.",
+    },
+    { status: 501 }
+  );
+}
+
 export async function GET() {
-  const sorted = [...duesPayments].sort((a, b) => new Date(b.paidAt).getTime() - new Date(a.paidAt).getTime());
-  return NextResponse.json({ payments: sorted, total: sorted.length });
+  return notAvailable();
+}
+
+export async function POST() {
+  return notAvailable();
+}
+
+export async function PUT() {
+  return notAvailable();
+}
+
+export async function PATCH() {
+  return notAvailable();
+}
+
+export async function DELETE() {
+  return notAvailable();
 }

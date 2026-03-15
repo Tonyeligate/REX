@@ -7,13 +7,9 @@ import {
   CheckCircle2,
   AlertTriangle,
   Clock,
-  Users,
-  DollarSign,
-  MessageSquare,
   ArrowUpRight,
-  TrendingUp,
 } from "lucide-react";
-import { reportsApi, smsApi } from "@/lib/api";
+import { reportsApi } from "@/lib/api";
 import { useAuthStore, getUserDisplayName } from "@/lib/auth-store";
 
 interface JobStats {
@@ -24,24 +20,12 @@ interface JobStats {
   byStep: Record<number, number>;
 }
 
-interface MemberStats {
-  totalMembers: number;
-  activeMembers: number;
-  newThisMonth: number;
-  duesCollected: number;
-  byRegion: Record<string, number>;
-}
-
 export default function DashboardHome() {
   const user = useAuthStore((s) => s.user);
   const [jobStats, setJobStats] = useState<JobStats | null>(null);
-  const [memberStats, setMemberStats] = useState<MemberStats | null>(null);
-  const [smsCount, setSmsCount] = useState<number | null>(null);
 
   useEffect(() => {
     reportsApi.jobStats().then(setJobStats).catch(console.error);
-    reportsApi.membershipStats().then(setMemberStats).catch(console.error);
-    smsApi.history().then(({ total }) => setSmsCount(total)).catch(console.error);
   }, []);
 
   return (
@@ -92,43 +76,6 @@ export default function DashboardHome() {
         />
       </div>
 
-      {/* Membership Stats Cards */}
-      <h4 className="text-[16px] font-bold text-[#1f2937] mb-3">Membership Overview</h4>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <StatCard
-          icon={<Users size={20} />}
-          iconBg="bg-indigo-100 text-indigo-600"
-          label="Total Members"
-          value={memberStats?.totalMembers ?? "-"}
-          sub={`${memberStats?.activeMembers ?? 0} active`}
-          href="/membership/members"
-        />
-        <StatCard
-          icon={<TrendingUp size={20} />}
-          iconBg="bg-teal-100 text-teal-600"
-          label="New This Month"
-          value={memberStats?.newThisMonth ?? "-"}
-          sub="Registrations"
-          href="/membership/members"
-        />
-        <StatCard
-          icon={<DollarSign size={20} />}
-          iconBg="bg-emerald-100 text-emerald-600"
-          label="Dues Collected"
-          value={memberStats?.duesCollected ? `GH₵${memberStats.duesCollected.toFixed(2)}` : "-"}
-          sub="All time"
-          href="/membership/dues"
-        />
-        <StatCard
-          icon={<MessageSquare size={20} />}
-          iconBg="bg-pink-100 text-pink-600"
-          label="SMS Broadcasts"
-          value={smsCount ?? "-"}
-          sub="Messages sent"
-          href="/membership/sms"
-        />
-      </div>
-
       {/* Quick Actions */}
       <h4 className="text-[16px] font-bold text-[#1f2937] mb-3">Quick Actions</h4>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -145,10 +92,10 @@ export default function DashboardHome() {
           color="bg-emerald-600"
         />
         <QuickAction
-          title="Send SMS Broadcast"
-          desc="Notify all party members via SMS"
-          href="/membership/sms"
-          color="bg-purple-600"
+          title="Open Job Register"
+          desc="Review, search and update workflow register rows"
+          href="/admin/jobs"
+          color="bg-slate-700"
         />
       </div>
     </div>

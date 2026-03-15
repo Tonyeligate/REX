@@ -1,18 +1,31 @@
 import { NextResponse } from "next/server";
-import { jobs } from "@/lib/demo-db";
 
-// GET /api/reports/jobs
+function notAvailable() {
+  return NextResponse.json(
+    {
+      error:
+        "Mock route removed. This endpoint is not implemented on the Railway backend yet.",
+    },
+    { status: 501 }
+  );
+}
+
 export async function GET() {
-  const total = jobs.length;
-  const inProgress = jobs.filter((j) => j.status === "IN_PROGRESS").length;
-  const completed = jobs.filter((j) => j.status === "COMPLETED").length;
-  const queried = jobs.filter((j) => j.status === "QUERIED").length;
+  return notAvailable();
+}
 
-  // Count jobs by current step
-  const byStep: Record<number, number> = {};
-  for (const j of jobs) {
-    byStep[j.currentStep] = (byStep[j.currentStep] || 0) + 1;
-  }
+export async function POST() {
+  return notAvailable();
+}
 
-  return NextResponse.json({ total, inProgress, completed, queried, byStep });
+export async function PUT() {
+  return notAvailable();
+}
+
+export async function PATCH() {
+  return notAvailable();
+}
+
+export async function DELETE() {
+  return notAvailable();
 }

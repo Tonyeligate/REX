@@ -113,7 +113,7 @@ function getRegisterReference(job: Job): string {
 }
 
 function getActualRegionalNumber(job: Job, record?: JobRegisterRecord): string {
-  return record?.actualRegionalNumber?.trim() || job.regionalNumber || "";
+  return job.regionalNumber?.trim() || record?.actualRegionalNumber?.trim() || "";
 }
 
 function RegisterStageCell({ stage, onClick }: { stage?: RegisterStageEntry; onClick: () => void }) {
@@ -520,7 +520,7 @@ function RegisterRowModal({
           </div>
 
           <div className="rounded-xl border border-dashed border-[#f59e0b] bg-[#fffbeb] px-4 py-3 text-[12px] text-[#92400e]">
-            These handwritten-book step decisions and comments are saved in the local mock register store until backend support is added for them.
+            These handwritten-book stage decisions and comments are saved in this browser as register metadata until backend register fields are available.
           </div>
 
           {error && <p className="text-red-600 text-[12px]">{error}</p>}

@@ -1,21 +1,31 @@
 import { NextResponse } from "next/server";
-import { users, passwords, sessions, emailAliases } from "@/lib/demo-db";
 
-export async function POST(req: Request) {
-  const body = await req.json();
-  const rawEmail: string = (body.email ?? "").trim().toLowerCase();
-  // Resolve any legacy email aliases to the canonical address
-  const email = emailAliases[rawEmail] ?? rawEmail;
-  const password: string = body.password ?? "";
+function notAvailable() {
+  return NextResponse.json(
+    {
+      error:
+        "Mock route removed. This endpoint is not implemented on the Railway backend yet.",
+    },
+    { status: 501 }
+  );
+}
 
-  const user = users.find((u) => u.email === email);
-  if (!user || passwords[email] !== password) {
-    return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
-  }
+export async function GET() {
+  return notAvailable();
+}
 
-  // Demo token — replace with JWT in production
-  const token = Buffer.from(`${user.id}:${Date.now()}`).toString("base64");
-  sessions[token] = user.id;
+export async function POST() {
+  return notAvailable();
+}
 
-  return NextResponse.json({ user, token });
+export async function PUT() {
+  return notAvailable();
+}
+
+export async function PATCH() {
+  return notAvailable();
+}
+
+export async function DELETE() {
+  return notAvailable();
 }

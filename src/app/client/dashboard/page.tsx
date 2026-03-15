@@ -1,12 +1,10 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { Job } from "@/types/job";
-import { jobsApi, registerFieldsApi } from "@/lib/api";
-import { getRegisterProgressSummary } from "@/lib/register-progress";
+import { jobsApi } from "@/lib/api";
 import { WorkflowTimeline } from "@/components/sections/workflow-timeline";
-import type { JobRegisterRecord } from "@/types/register";
 
 /* ── Quick-Search Chips (loaded from API) ── */
 // Chips are loaded dynamically from the jobs list on mount
@@ -28,37 +26,36 @@ const stagger = {
 export default function ClientDashboardPage() {
   const [query, setQuery] = useState("");
   const [job, setJob] = useState<Job | null>(null);
-  const [registerRecord, setRegisterRecord] = useState<JobRegisterRecord | null>(null);
   const [searched, setSearched] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [searchError, setSearchError] = useState("");
   const [animKey, setAnimKey] = useState(0);
 
   const doSearch = useCallback(async (q: string) => {
-    const trimmed = q.trim().toUpperCase();
+    const trimmed = q.trim();
     if (!trimmed) return;
     setLoading(true);
     setJob(null);
-    setRegisterRecord(null);
+    setSearchError("");
     try {
       const { jobs } = await jobsApi.search(trimmed);
       await new Promise((r) => setTimeout(r, 250));
       if (jobs.length > 0) {
-        const match = jobs[0];
-        const [jobDetail, registerDetail] = await Promise.all([
-          jobsApi.get(match.jobId),
-          registerFieldsApi.get(match.jobId),
-        ]);
-        setJob(jobDetail.job);
-        setRegisterRecord(registerDetail.record);
+        setJob(jobs[0]);
+        setSearchError("");
       } else {
         setJob(null);
-        setRegisterRecord(null);
+        setSearchError("");
       }
       setSearched(true);
       setAnimKey((k) => k + 1);
-    } catch {
+    } catch (err: unknown) {
       setJob(null);
-      setRegisterRecord(null);
+      setSearchError(
+        err instanceof Error && err.message
+          ? err.message
+          : "Unable to search jobs right now."
+      );
       setSearched(true);
     } finally {
       setLoading(false);
@@ -69,15 +66,48 @@ export default function ClientDashboardPage() {
   const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === "Enter") { e.preventDefault(); handleSearch(); } };
 
   // Computed
-  const registerSummary = getRegisterProgressSummary(registerRecord);
+  const workflowSummary = useMemo(() => {
+    if (!job) {
+      return {
+        approvedCount: 0,
+        totalStages: 0,
+        progressPercent: 0,
+        currentStatusLabel: "Not started",
+        workflowLabel: "In Progress",
+      };
+    }
+
+    const totalStages = job.steps.length;
+    const approvedCount = job.steps.filter((step) => step.status === "COMPLETED").length;
+    const progressPercent =
+      totalStages > 0 ? Math.round((approvedCount / totalStages) * 100) : 0;
+
+    const workflowLabel =
+      job.status === "COMPLETED"
+        ? "Completed"
+        : job.status === "QUERIED"
+          ? "Queried"
+          : "In Progress";
+
+    const activeStep =
+      job.steps.find((step) => step.status === "ACTIVE" || step.status === "QUERIED") ||
+      job.steps[job.steps.length - 1];
+
+    return {
+      approvedCount,
+      totalStages,
+      progressPercent,
+      currentStatusLabel: job.statusDisplay || activeStep?.title || job.status,
+      workflowLabel,
+    };
+  }, [job]);
+
   const registerWorkflowAccent =
-    registerSummary.workflowLabel === "Completed"
+    workflowSummary.workflowLabel === "Completed"
       ? "text-[#16a34a]"
-      : registerSummary.workflowLabel === "Queried"
+      : workflowSummary.workflowLabel === "Queried"
         ? "text-[#B45309]"
-        : registerSummary.workflowLabel === "Rejected"
-          ? "text-[#B91C1C]"
-          : "text-[#F07000]";
+        : "text-[#F07000]";
 
   return (
     <div className="w-[min(820px,calc(100vw-32px))] mx-auto py-8 px-1">
@@ -92,7 +122,7 @@ export default function ClientDashboardPage() {
           Track Your <span className="text-[#F07000]">Job Status</span>
         </h1>
         <p className="m-0 text-[#64748b] text-[15px] max-w-[480px] mx-auto mb-6">
-          Enter your Regional Number or Job ID below to view the complete certification workflow progress.
+          Enter your RNR, actual regional number, or job title to view the latest backend workflow progress.
         </p>
 
         {/* Search bar */}
@@ -106,7 +136,7 @@ export default function ClientDashboardPage() {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="e.g. LS-2024-464 or Regional Number"
+                placeholder="e.g. RN-GAR-2026-001 or ARN/Regional Number"
                 className="border-none outline-none w-full text-[15px] bg-transparent text-[#0f172a] placeholder:text-[#b0b8c4]"
               />
             </div>
@@ -146,7 +176,7 @@ export default function ClientDashboardPage() {
             </div>
             <h2 className="m-0 mb-2 text-[18px] font-[800] text-[#0f172a]">Search for Your Job</h2>
             <p className="m-0 text-[#64748b] text-[14px] max-w-[380px] mx-auto">
-              Enter your Regional Number or Job ID above and click <b>Search</b> to view the full certification workflow progress on one page.
+              Enter your RNR or actual regional number above and click <b>Search</b> to view the full certification workflow progress on one page.
             </p>
           </motion.div>
         )}
@@ -180,7 +210,7 @@ export default function ClientDashboardPage() {
             </div>
             <h2 className="m-0 mb-2 text-[18px] font-[800] text-[#0f172a]">Job Not Found</h2>
             <p className="m-0 text-[#64748b] text-[14px]">
-              No job matches that number. Please check and try again.
+              {searchError || "No job matches that number. Please check and try again."}
             </p>
           </motion.div>
         )}
@@ -199,9 +229,9 @@ export default function ClientDashboardPage() {
             <motion.div variants={fadeUp} className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {[
                 { label: "Job ID", value: job.jobId, accent: "text-[#0f172a]" },
-                { label: "Current Status", value: registerSummary.currentStatusLabel, accent: registerWorkflowAccent },
-                { label: "Progress", value: `${registerSummary.progressPercent}%`, accent: "text-[#F07000]" },
-                { label: "Workflow", value: registerSummary.workflowLabel, accent: registerWorkflowAccent },
+                { label: "Current Status", value: workflowSummary.currentStatusLabel, accent: registerWorkflowAccent },
+                { label: "Progress", value: `${workflowSummary.progressPercent}%`, accent: "text-[#F07000]" },
+                { label: "Workflow", value: workflowSummary.workflowLabel, accent: registerWorkflowAccent },
               ].map((stat) => (
                 <div key={stat.label} className="bg-white border border-[#F0E6DA] rounded-[16px] p-4 shadow-sm">
                   <p className="m-0 text-[11px] font-[600] text-[#94a3b8] uppercase tracking-wider mb-1">{stat.label}</p>
@@ -218,21 +248,21 @@ export default function ClientDashboardPage() {
                   <motion.div
                     className="h-full bg-gradient-to-r from-[#F07000] to-[#FF9A3C] rounded-full"
                     initial={{ width: 0 }}
-                    animate={{ width: `${registerSummary.progressPercent}%` }}
+                    animate={{ width: `${workflowSummary.progressPercent}%` }}
                     transition={{ duration: 1.2, ease: "easeOut", delay: 0.3 }}
                   />
                 </div>
                 <motion.span
-                  key={registerSummary.progressPercent}
+                  key={workflowSummary.progressPercent}
                   initial={{ scale: 1.3 }}
                   animate={{ scale: 1 }}
                   className="text-[14px] font-[800] text-[#F07000] shrink-0"
                 >
-                  {registerSummary.progressPercent}%
+                  {workflowSummary.progressPercent}%
                 </motion.span>
               </div>
               <p className="m-0 mt-2 text-[12px] text-[#94a3b8]">
-                {registerSummary.approvedCount} of {registerSummary.totalStages} stages approved
+                {workflowSummary.approvedCount} of {workflowSummary.totalStages} stages approved
               </p>
             </motion.div>
 
@@ -240,42 +270,63 @@ export default function ClientDashboardPage() {
               <h3 className="m-0 text-[15px] font-[800] text-[#0f172a] pb-3 mb-4 border-b border-[#f5f0ea]">
                 Job Process Stages
               </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {registerSummary.stages.map((stage) => {
-                  const tone =
-                    stage.entry?.outcome === "accept"
-                      ? "border-[#bbf7d0] bg-[#f0fdf4]"
-                      : stage.entry?.outcome === "query"
-                        ? "border-[#fde68a] bg-[#fffbeb]"
-                        : stage.entry?.outcome === "reject"
-                          ? "border-[#fecaca] bg-[#fef2f2]"
-                          : "border-[#e2e8f0] bg-[#fafafa]";
-                  const badgeTone =
-                    stage.entry?.outcome === "accept"
-                      ? "bg-[#dcfce7] text-[#15803d]"
-                      : stage.entry?.outcome === "query"
-                        ? "bg-[#FEF3C7] text-[#B45309]"
-                        : stage.entry?.outcome === "reject"
-                          ? "bg-[#FEE2E2] text-[#B91C1C]"
-                          : "bg-[#f1f5f9] text-[#94a3b8]";
+              <div className="overflow-x-auto">
+                <table className="min-w-full border-separate border-spacing-0 text-[13px]">
+                  <thead>
+                    <tr>
+                      <th className="text-left font-[700] text-[#64748b] bg-[#FFF8F1] px-4 py-3 border-y border-[#F0E6DA] border-l rounded-tl-[10px]">
+                        Job Step/Stage Type
+                      </th>
+                      <th className="text-left font-[700] text-[#64748b] bg-[#FFF8F1] px-4 py-3 border-y border-[#F0E6DA]">
+                        Status
+                      </th>
+                      <th className="text-left font-[700] text-[#64748b] bg-[#FFF8F1] px-4 py-3 border-y border-[#F0E6DA] border-r rounded-tr-[10px]">
+                        Comment
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {job.steps.map((step, index) => {
+                      const statusLabel =
+                        step.status === "COMPLETED"
+                          ? "Approved"
+                          : step.status === "QUERIED"
+                            ? "Queried"
+                            : step.status === "ACTIVE"
+                              ? "In Review"
+                              : "Pending";
+                      const badgeTone =
+                        step.status === "COMPLETED"
+                          ? "bg-[#dcfce7] text-[#15803d]"
+                          : step.status === "QUERIED"
+                            ? "bg-[#FEF3C7] text-[#B45309]"
+                            : step.status === "ACTIVE"
+                              ? "bg-[#ffedd5] text-[#c2410c]"
+                              : "bg-[#f1f5f9] text-[#94a3b8]";
 
-                  return (
-                    <div key={stage.key} className={`rounded-[16px] border p-4 ${tone}`}>
-                      <div className="flex items-start justify-between gap-2 mb-2">
-                        <div>
-                          <p className="m-0 text-[11px] font-[700] text-[#94a3b8] uppercase tracking-wider">Stage {stage.index}/{registerSummary.totalStages}</p>
-                          <h4 className="m-0 mt-1 text-[14px] font-[800] text-[#0f172a]">{stage.label}</h4>
-                        </div>
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-[700] ${badgeTone}`}>
-                          {stage.outcomeLabel}
-                        </span>
-                      </div>
-                      <p className="m-0 text-[12px] text-[#64748b] leading-relaxed">
-                        {stage.entry?.comment?.trim() || "No admin note for this stage yet."}
-                      </p>
-                    </div>
-                  );
-                })}
+                      return (
+                        <tr key={`${step.stepNumber}-${index}`} className="align-top odd:bg-[#fffdfa]">
+                          <td className="px-4 py-3 border-b border-l border-[#F4EBDD]">
+                            <p className="m-0 text-[11px] font-[700] text-[#94a3b8] uppercase tracking-wider">
+                              Stage {index + 1}/{workflowSummary.totalStages}
+                            </p>
+                            <p className="m-0 mt-1 text-[14px] font-[700] text-[#0f172a]">
+                              {step.title}
+                            </p>
+                          </td>
+                          <td className="px-4 py-3 border-b border-[#F4EBDD]">
+                            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-[700] ${badgeTone}`}>
+                              {statusLabel}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 border-b border-r border-[#F4EBDD] text-[#475569] leading-relaxed">
+                            {step.comment || step.note || "No admin note for this stage yet."}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             </motion.div>
 
@@ -288,7 +339,7 @@ export default function ClientDashboardPage() {
                 {[
                   { label: "Job ID", value: job.jobId },
                   { label: "Title", value: job.jobType },
-                  { label: "Status", value: registerSummary.currentStatusLabel },
+                  { label: "Status", value: workflowSummary.currentStatusLabel },
                   { label: "Regional No.", value: job.regionalNumber ?? "—" },
                   { label: "Parcel Size", value: job.parcelSize ?? "—" },
                   { label: "Created", value: new Date(job.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) },

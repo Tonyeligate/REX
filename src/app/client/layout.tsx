@@ -14,7 +14,8 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
               alt="Recs Geomatics Consult"
               width={200}
               height={48}
-              className="h-[48px] w-auto object-contain"
+              style={{ width: "auto", height: "auto", maxHeight: "48px" }}
+              className="object-contain"
               priority
             />
           </Link>

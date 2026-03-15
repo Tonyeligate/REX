@@ -1,32 +1,31 @@
-import { NextRequest, NextResponse } from "next/server";
-import { settings, sessions } from "@/lib/demo-db";
-import type { AppSettings } from "@/lib/demo-db";
+import { NextResponse } from "next/server";
 
-// GET /api/settings — retrieve current settings
-export async function GET(req: NextRequest) {
-  const token = req.headers.get("authorization")?.replace("Bearer ", "");
-  if (!token) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  return NextResponse.json({ settings });
+function notAvailable() {
+  return NextResponse.json(
+    {
+      error:
+        "Mock route removed. This endpoint is not implemented on the Railway backend yet.",
+    },
+    { status: 501 }
+  );
 }
 
-// PUT /api/settings — update settings
-export async function PUT(req: NextRequest) {
-  const token = req.headers.get("authorization")?.replace("Bearer ", "");
-  if (!token) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+export async function GET() {
+  return notAvailable();
+}
 
-  const body: Partial<AppSettings> = await req.json();
+export async function POST() {
+  return notAvailable();
+}
 
-  // Merge incoming fields into settings (mutate in-memory object)
-  for (const key of Object.keys(body) as (keyof AppSettings)[]) {
-    if (key in settings) {
-      (settings as Record<string, unknown>)[key] = body[key];
-    }
-  }
+export async function PUT() {
+  return notAvailable();
+}
 
-  return NextResponse.json({ settings });
+export async function PATCH() {
+  return notAvailable();
+}
+
+export async function DELETE() {
+  return notAvailable();
 }

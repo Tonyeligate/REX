@@ -1,11 +1,11 @@
 /**
  * API client — two backends:
  *
- * 1) BACKEND_URL → Railway Django REST API (Auth · Jobs · Batches)
+ * 1) BACKEND_URL → Railway Django REST API (Auth · Jobs · Batches · Clients)
  *    Proxied through Next.js rewrites to avoid CORS.
  *
- * 2) LOCAL_URL → Next.js local API routes (Members · SMS · Dues · Reports · Settings)
- *    These still use the in-memory demo-db until the backend adds the endpoints.
+ * 2) LOCAL_URL → Next.js local API routes (SMS · Dues · Settings · register fields)
+ *    These remain local until equivalent backend endpoints are available.
  */
 
 /* ─── Base URLs ───────────────────────────────────────────── */
@@ -18,49 +18,203 @@ const LOCAL_URL = "/api"; // Local Next.js API routes
    Generic request helpers
    ═══════════════════════════════════════════════════════════ */
 
-/* ── Service-client helper (admin job-creation fallback) ── */
-const SVC_CREDS_KEY = "_svc_client_creds";
+/* ── Member metadata helper (extra fields not in backend Clients schema) ── */
+const MEMBER_META_KEY = "_member_meta_by_client_id";
+const REGISTER_FIELDS_KEY = "_register_fields_by_job_id";
 
-async function getServiceClientToken(): Promise<string | null> {
-  // 1. Try cached credentials
-  const raw =
-    typeof window !== "undefined" ? localStorage.getItem(SVC_CREDS_KEY) : null;
-  if (raw) {
-    try {
-      const { username, password } = JSON.parse(raw);
-      const r = await fetch(`${BACKEND_URL}/auth/token/`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
-      });
-      if (r.ok) return (await r.json()).access as string;
-    } catch {
-      /* fall through – re-register */
-    }
-  }
+interface BackendClient {
+  id: number;
+  name: string;
+  email: string;
+  phone: string;
+  created_at: string;
+  updated_at: string;
+}
 
-  // 2. Register a new throw-away client account
-  const username = `_svc_${Date.now()}`;
-  const password = `SvcP@ss${Date.now()}!`;
+interface MemberMeta {
+  dateOfBirth?: string;
+  region?: string;
+  constituency?: string;
+  pollingStation?: string;
+  ghanaCard?: string;
+  voterIdNumber?: string;
+  registrationMethod?: "USSD" | "MANUAL" | "IMPORT";
+  isActive?: boolean;
+  totalDuesPaid?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+function normalizePhone(phone?: string): string {
+  const value = (phone ?? "").trim();
+  return value || "0000000000";
+}
+
+function toLocalFallbackEmail(name: string, phone: string): string {
+  const slug = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ".")
+    .replace(/^\.+|\.+$/g, "") || "client";
+  const digits = phone.replace(/\D/g, "") || `${Date.now()}`;
+  return `${slug}.${digits.slice(-6)}@recsgeo.local`;
+}
+
+function splitDisplayName(fullName: string): { firstName: string; surname: string } {
+  const parts = fullName
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  const firstName = parts[0] ?? "Member";
+  const surname = parts.slice(1).join(" ") || "—";
+  return { firstName, surname };
+}
+
+function readMemberMetaMap(): Record<string, MemberMeta> {
+  if (typeof window === "undefined") return {};
   try {
-    const reg = await fetch(`${BACKEND_URL}/auth/register/`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password, role: "client" }),
-    });
-    if (!reg.ok) return null;
-    if (typeof window !== "undefined")
-      localStorage.setItem(SVC_CREDS_KEY, JSON.stringify({ username, password }));
-    const tok = await fetch(`${BACKEND_URL}/auth/token/`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
-    });
-    if (!tok.ok) return null;
-    return (await tok.json()).access as string;
+    const raw = localStorage.getItem(MEMBER_META_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
   } catch {
-    return null;
+    return {};
   }
+}
+
+function writeMemberMetaMap(data: Record<string, MemberMeta>) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(MEMBER_META_KEY, JSON.stringify(data));
+}
+
+function upsertMemberMeta(clientId: string, patch: MemberMeta) {
+  const current = readMemberMetaMap();
+  const next = {
+    ...current,
+    [clientId]: {
+      ...current[clientId],
+      ...patch,
+      updatedAt: new Date().toISOString(),
+    },
+  };
+  writeMemberMetaMap(next);
+}
+
+function readRegisterFieldsMap(): Record<string, JobRegisterRecord> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(REGISTER_FIELDS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeRegisterFieldsMap(data: Record<string, JobRegisterRecord>) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(REGISTER_FIELDS_KEY, JSON.stringify(data));
+}
+
+function extractMemberMetaFromPayload(
+  payload: Partial<import("@/types/member").Member>
+): MemberMeta {
+  const meta: MemberMeta = {};
+  if (payload.dateOfBirth !== undefined) meta.dateOfBirth = payload.dateOfBirth;
+  if (payload.region !== undefined) meta.region = payload.region;
+  if (payload.constituency !== undefined) meta.constituency = payload.constituency;
+  if (payload.pollingStation !== undefined) meta.pollingStation = payload.pollingStation;
+  if (payload.ghanaCard !== undefined) meta.ghanaCard = payload.ghanaCard;
+  if (payload.voterIdNumber !== undefined) meta.voterIdNumber = payload.voterIdNumber;
+  if (payload.registrationMethod !== undefined)
+    meta.registrationMethod = payload.registrationMethod;
+  if (payload.isActive !== undefined) meta.isActive = payload.isActive;
+  if (payload.totalDuesPaid !== undefined) meta.totalDuesPaid = payload.totalDuesPaid;
+  if (payload.createdAt !== undefined) meta.createdAt = payload.createdAt;
+  if (payload.updatedAt !== undefined) meta.updatedAt = payload.updatedAt;
+  return meta;
+}
+
+function mapBackendClientToMember(
+  client: BackendClient
+): import("@/types/member").Member {
+  const id = String(client.id);
+  const meta = readMemberMetaMap()[id] ?? {};
+  const { firstName, surname } = splitDisplayName(client.name);
+
+  return {
+    id,
+    firstName,
+    surname,
+    dateOfBirth: meta.dateOfBirth ?? "",
+    region: meta.region ?? "Greater Accra",
+    constituency: meta.constituency ?? "",
+    pollingStation: meta.pollingStation ?? "",
+    ghanaCard: meta.ghanaCard,
+    voterIdNumber: meta.voterIdNumber,
+    phone: client.phone,
+    registrationMethod: meta.registrationMethod ?? "MANUAL",
+    isActive: meta.isActive ?? true,
+    totalDuesPaid: meta.totalDuesPaid ?? 0,
+    createdAt: meta.createdAt ?? client.created_at,
+    updatedAt: meta.updatedAt ?? client.updated_at,
+  };
+}
+
+function extractDescriptionField(
+  description: string | undefined,
+  fieldName: string
+): string | undefined {
+  if (!description) return undefined;
+  const escaped = fieldName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = description.match(new RegExp(`(?:^|\\n)${escaped}:\\s*(.+?)(?:\\n|$)`, "i"));
+  return match?.[1]?.trim() || undefined;
+}
+
+async function ensureBackendClientId(payload: {
+  clientId?: unknown;
+  clientName?: string;
+  title?: string;
+  description?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+}): Promise<number> {
+  if (typeof payload.clientId === "number" && Number.isFinite(payload.clientId)) {
+    return payload.clientId;
+  }
+
+  if (typeof payload.clientId === "string" && payload.clientId.trim() !== "") {
+    const parsed = Number(payload.clientId);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+
+  const name = (
+    payload.clientName?.trim() ||
+    extractClientNameFromDescription(payload.description) ||
+    extractClientNameFromTitle(payload.title) ||
+    "Client"
+  ).trim();
+  const phone = normalizePhone(
+    payload.contactPhone?.trim() || extractDescriptionField(payload.description, "Phone")
+  );
+  const emailFromPayload = payload.contactEmail?.trim() || extractDescriptionField(payload.description, "Email");
+  const email =
+    emailFromPayload && emailFromPayload.includes("@")
+      ? emailFromPayload
+      : toLocalFallbackEmail(name, phone);
+
+  const clients = await backendRequest<BackendClient[]>("/clients/");
+  const byEmail = clients.find((c) => c.email.toLowerCase() === email.toLowerCase());
+  if (byEmail) return byEmail.id;
+
+  const byName = clients.find((c) => c.name.toLowerCase() === name.toLowerCase());
+  if (byName) return byName.id;
+
+  const created = await backendRequest<BackendClient>("/clients/", {
+    method: "POST",
+    body: JSON.stringify({ name, email, phone }),
+  });
+  return created.id;
 }
 
 async function refreshAccessToken(): Promise<string | null> {
@@ -92,15 +246,28 @@ async function backendRequest<T>(
   options?: RequestInit
 ): Promise<T> {
   const url = `${BACKEND_URL}${path}`;
-  const token =
+  const isPublicAuthPath =
+    path === "/auth/token/" ||
+    path === "/auth/token/refresh/";
+
+  let token =
     typeof window !== "undefined"
       ? localStorage.getItem("access_token")
       : null;
+  if (!token && !isPublicAuthPath) {
+    token = await refreshAccessToken();
+  }
+
   const headers = new Headers(options?.headers);
   if (!(options?.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
   }
+  const hasAuthorizationHeader = headers.has("Authorization");
   if (token) headers.set("Authorization", `Bearer ${token}`);
+
+  if (!token && !hasAuthorizationHeader && !isPublicAuthPath) {
+    throw new Error("Not authenticated. Please log in.");
+  }
 
   let res = await fetch(url, { ...options, headers });
 
@@ -110,7 +277,14 @@ async function backendRequest<T>(
     if (newToken) {
       headers.set("Authorization", `Bearer ${newToken}`);
       res = await fetch(url, { ...options, headers });
+    } else if (typeof window !== "undefined") {
+      localStorage.removeItem("access_token");
+      localStorage.removeItem("refresh_token");
     }
+  }
+
+  if (res.status === 401 && !isPublicAuthPath) {
+    throw new Error("Session expired. Please log in again.");
   }
 
   if (!res.ok) {
@@ -175,6 +349,13 @@ export interface BackendUser {
 }
 
 export type BackendStatus =
+  | "1_rnr"
+  | "2_regional_number"
+  | "3_job_production"
+  | "4_ls_cert"
+  | "5_csau_payment"
+  | "6_examination"
+  | "7_region"
   | "request_received"
   | "rn_assigned"
   | "in_production"
@@ -195,9 +376,11 @@ export type BackendStatus =
 export interface BackendJobListItem {
   id: number;
   rn: string;
+  regional_number?: string | null;
   title: string;
   status: BackendStatus;
   status_display: string;
+  client?: BackendClient;
   parcel_acreage: string | null;
   payment_amount: string | null;
   created_at: string;
@@ -209,6 +392,8 @@ export interface BackendJobDetail extends BackendJobListItem {
   query_reason: string;
   submitted_by: number | null;
   assigned_to: number | null;
+  submitted_by_employee_username?: string | null;
+  assigned_to_employee_username?: string | null;
   batch: number | null;
   batch_name: string | null;
   documents: Array<{
@@ -258,6 +443,13 @@ WORKFLOW_STATUSES.forEach((s, i) => {
 // Query statuses → the step they belong to
 STATUS_STEP_MAP["queried_ls461"] = 5; // L/S 461 examination
 STATUS_STEP_MAP["queried_smd"] = 9; // SMD examination
+STATUS_STEP_MAP["1_rnr"] = 1;
+STATUS_STEP_MAP["2_regional_number"] = 2;
+STATUS_STEP_MAP["3_job_production"] = 3;
+STATUS_STEP_MAP["4_ls_cert"] = 6;
+STATUS_STEP_MAP["5_csau_payment"] = 7;
+STATUS_STEP_MAP["6_examination"] = 9;
+STATUS_STEP_MAP["7_region"] = 12;
 
 function extractClientNameFromDescription(description?: string): string | undefined {
   if (!description) return undefined;
@@ -413,6 +605,7 @@ export function mapBackendJob(
 
   const detail = bj as BackendJobDetail;
   const clientName =
+    detail.client?.name ||
     extractClientNameFromDescription(detail.description) ||
     extractClientNameFromTitle(bj.title) ||
     bj.title ||
@@ -422,17 +615,20 @@ export function mapBackendJob(
     id: String(bj.id),
     jobId: bj.rn,
     jobType: bj.title || "Land Survey",
-    clientId: detail.submitted_by ? String(detail.submitted_by) : "",
+    clientId: detail.client?.id ? String(detail.client.id) : "",
     clientName,
     priority: "STANDARD",
-    assignedTo: detail.assigned_to ? String(detail.assigned_to) : undefined,
+    assignedTo:
+      detail.assigned_to
+        ? String(detail.assigned_to)
+        : detail.assigned_to_employee_username || undefined,
     estimatedTime: undefined,
     submittedDate: bj.created_at,
     currentStep: stepNum,
     status: jobStatus,
     backendStatus: bj.status,
     statusDisplay: bj.status_display,
-    regionalNumber: bj.rn,
+    regionalNumber: bj.regional_number || bj.rn,
     parcelSize: bj.parcel_acreage || undefined,
     paymentAmount: bj.payment_amount || undefined,
     queryReason: detail.query_reason || undefined,
@@ -444,6 +640,32 @@ export function mapBackendJob(
     createdAt: bj.created_at,
     updatedAt: bj.updated_at,
   };
+}
+
+function matchesBackendJobQuery(
+  job: BackendJobListItem | BackendJobDetail,
+  query: string
+): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return false;
+
+  const fields: Array<string | undefined | null> = [
+    job.rn,
+    job.regional_number,
+    job.title,
+    job.status_display,
+    job.client?.name,
+    job.client?.email,
+    job.client?.phone,
+  ];
+
+  if ("description" in job) {
+    fields.push(job.description);
+  }
+
+  return fields
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .some((value) => value.toLowerCase().includes(q));
 }
 
 function mapHistoryToTimeline(
@@ -466,6 +688,22 @@ function mapHistoryToTimeline(
 export function getNextStatus(
   current: BackendStatus
 ): BackendStatus | null {
+  const currentSchemaFlow: BackendStatus[] = [
+    "1_rnr",
+    "2_regional_number",
+    "3_job_production",
+    "4_ls_cert",
+    "5_csau_payment",
+    "6_examination",
+    "7_region",
+  ];
+  const currentIdx = currentSchemaFlow.indexOf(current);
+  if (currentIdx >= 0) {
+    return currentIdx >= currentSchemaFlow.length - 1
+      ? null
+      : currentSchemaFlow[currentIdx + 1];
+  }
+
   if (current === "queried_ls461") return "certified_ls461";
   if (current === "queried_smd") return "certified_smd";
   const idx = WORKFLOW_STATUSES.indexOf(current);
@@ -503,23 +741,10 @@ export const authApi = {
   },
 
   /** Register a new client account, then auto-login. */
-  register: async (payload: import("@/types/user").RegisterPayload) => {
-    const username = payload.email;
-    await backendRequest<{ username: string; email: string }>(
-      "/auth/register/",
-      {
-        method: "POST",
-        body: JSON.stringify({
-          username,
-          email: payload.email,
-          password: payload.password,
-          first_name: payload.firstName ?? "",
-          last_name: payload.lastName ?? "",
-          role: "client",
-        }),
-      }
+  register: async (_payload: import("@/types/user").RegisterPayload) => {
+    throw new Error(
+      "Self-registration is not enabled on the backend. Please contact an administrator for account setup."
     );
-    return authApi.login({ email: username, password: payload.password });
   },
 
   /** Get current authenticated user. */
@@ -593,6 +818,9 @@ export const jobsApi = {
     title?: string;
     description?: string;
     parcel_acreage?: string;
+    clientId?: number | string;
+    contactEmail?: string;
+    contactPhone?: string;
     jobId?: string;
     jobType?: string;
     clientName?: string;
@@ -600,46 +828,28 @@ export const jobsApi = {
     parcelSize?: string;
     [key: string]: unknown;
   }) => {
+    const client_id = await ensureBackendClientId({
+      clientId: payload.clientId,
+      clientName: payload.clientName,
+      title: payload.title ?? payload.jobType,
+      description: payload.description,
+      contactEmail: payload.contactEmail,
+      contactPhone: payload.contactPhone,
+    });
+
     const body = {
       rn: payload.rn ?? payload.jobId ?? payload.regionalNumber ?? "",
       title: payload.title ?? payload.jobType ?? payload.clientName ?? "",
       description: payload.description ?? "",
       parcel_acreage: payload.parcel_acreage ?? payload.parcelSize ?? null,
+      client_id,
     };
 
-    try {
-      const created = await backendRequest<BackendJobDetail>("/jobs/", {
-        method: "POST",
-        body: JSON.stringify(body),
-      });
-      return { job: mapBackendJob(created) };
-    } catch (err: unknown) {
-      // Backend restricts POST /jobs/ to client users.
-      // Fallback: use a service-client token so admins can still create jobs.
-      const msg = err instanceof Error ? err.message : "";
-      if (msg.includes("Only clients") || msg.includes("do not have permission")) {
-        const svcToken = await getServiceClientToken();
-        if (svcToken) {
-          const res = await fetch(`${BACKEND_URL}/jobs/`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${svcToken}`,
-            },
-            body: JSON.stringify(body),
-          });
-          if (res.ok) {
-            const created: BackendJobDetail = await res.json();
-            return { job: mapBackendJob(created) };
-          }
-          const errBody = await res.json().catch(() => ({}));
-          throw new Error(
-            errBody.detail ?? errBody.error ?? `Service-client creation failed: ${res.status}`
-          );
-        }
-      }
-      throw err;
-    }
+    const created = await backendRequest<BackendJobDetail>("/jobs/", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    return { job: mapBackendJob(created) };
   },
 
   update: async (rnOrId: string, payload: Record<string, unknown>) => {
@@ -710,35 +920,89 @@ export const jobsApi = {
   },
 
   search: async (query: string) => {
-    const items = await backendRequest<BackendJobListItem[]>("/jobs/");
-    const q = query.trim().toLowerCase();
-    const filtered = q
-      ? items.filter(
-          (j) =>
-            j.rn.toLowerCase().includes(q) ||
-            (j.title ?? "").toLowerCase().includes(q)
-        )
-      : items;
-    return { jobs: filtered.map(mapBackendJob) };
+    const rawQuery = query.trim();
+    if (!rawQuery) return { jobs: [] as Job[] };
+
+    // Anonymous-first lookup path: use the server-side public proxy route.
+    // This keeps end users from needing to log in to track their jobs.
+    const res = await fetch(`${LOCAL_URL}/public/jobs/${encodeURIComponent(rawQuery)}`);
+
+    if (res.status === 404) return { jobs: [] as Job[] };
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      const errorMessage =
+        typeof body === "object" && body && "error" in body && typeof body.error === "string"
+          ? body.error
+          : `Public job lookup failed: ${res.status}`;
+
+      if (errorMessage.toLowerCase().includes("service credentials are not configured")) {
+        throw new Error("Public job tracking is temporarily unavailable. Please try again shortly.");
+      }
+
+      throw new Error(errorMessage);
+    }
+
+    const body = (await res.json()) as {
+      job?: BackendJobDetail | BackendJobListItem | null;
+      jobs?: BackendJobListItem[];
+    };
+
+    if (Array.isArray(body.jobs)) {
+      return { jobs: body.jobs.map(mapBackendJob) };
+    }
+    if (!body.job) return { jobs: [] as Job[] };
+    return { jobs: [mapBackendJob(body.job)] };
   },
 };
 
 export const registerFieldsApi = {
   list: async (jobIds?: string[]) => {
-    const query = jobIds && jobIds.length > 0
-      ? `?jobIds=${jobIds.map((jobId) => encodeURIComponent(jobId)).join(",")}`
-      : "";
-    return localRequest<{ records: Record<string, JobRegisterRecord> }>(`/jobs/register${query}`);
+    const allRecords = readRegisterFieldsMap();
+    if (!jobIds || jobIds.length === 0) return { records: allRecords };
+
+    const records: Record<string, JobRegisterRecord> = {};
+    for (const jobId of jobIds) {
+      if (allRecords[jobId]) records[jobId] = allRecords[jobId];
+    }
+    return { records };
   },
 
-  get: async (jobId: string) =>
-    localRequest<{ record: JobRegisterRecord | null }>(`/jobs/register/${encodeURIComponent(jobId)}`),
+  get: async (jobId: string) => {
+    const records = readRegisterFieldsMap();
+    return { record: records[jobId] ?? null };
+  },
 
-  update: async (jobId: string, payload: UpdateJobRegisterPayload) =>
-    localRequest<{ record: JobRegisterRecord }>(`/jobs/register/${encodeURIComponent(jobId)}`, {
-      method: "PUT",
-      body: JSON.stringify(payload),
-    }),
+  update: async (jobId: string, payload: UpdateJobRegisterPayload) => {
+    const records = readRegisterFieldsMap();
+    const existing = records[jobId] ?? {
+      jobId,
+      actualRegionalNumber: "",
+      stages: {},
+      updatedAt: new Date().toISOString(),
+    };
+
+    const mergedStages = { ...existing.stages };
+    for (const [key, value] of Object.entries(payload.stages ?? {})) {
+      if (value === null) {
+        delete mergedStages[key as keyof typeof mergedStages];
+      } else {
+        mergedStages[key as keyof typeof mergedStages] = value;
+      }
+    }
+
+    const record: JobRegisterRecord = {
+      ...existing,
+      actualRegionalNumber:
+        payload.actualRegionalNumber?.trim() ?? existing.actualRegionalNumber,
+      stages: mergedStages,
+      updatedAt: new Date().toISOString(),
+    };
+
+    records[jobId] = record;
+    writeRegisterFieldsMap(records);
+    return { record };
+  },
 };
 
 /* ═══════════════════════════════════════════════════════════
@@ -834,38 +1098,174 @@ export const usersApi = {
 };
 
 /* ═══════════════════════════════════════════════════════════
-   Members API  (→ Local)
+   Members API  (→ Backend Clients + local metadata for extra fields)
    ═══════════════════════════════════════════════════════════ */
 
 export const membersApi = {
-  list: (params?: Record<string, string>) => {
-    const qs = params ? "?" + new URLSearchParams(params).toString() : "";
-    return localRequest<{
-      members: import("@/types/member").Member[];
-      total: number;
-    }>(`/members${qs}`);
+  list: async (params?: Record<string, string>) => {
+    const clients = await backendRequest<BackendClient[]>("/clients/");
+    let members = clients.map(mapBackendClientToMember);
+
+    if (params?.region) {
+      members = members.filter((member) => member.region === params.region);
+    }
+
+    if (params?.q) {
+      const q = params.q.toLowerCase();
+      members = members.filter((member) =>
+        [
+          member.firstName,
+          member.surname,
+          member.phone,
+          member.ghanaCard,
+          member.voterIdNumber,
+        ]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(q))
+      );
+    }
+
+    return { members, total: members.length };
   },
-  get: (id: string) =>
-    localRequest<{ member: import("@/types/member").Member }>(`/members/${id}`),
-  create: (payload: import("@/types/member").CreateMemberPayload) =>
-    localRequest<{ member: import("@/types/member").Member }>("/members", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }),
-  update: (id: string, payload: Partial<import("@/types/member").Member>) =>
-    localRequest<{ member: import("@/types/member").Member }>(
-      `/members/${id}`,
-      { method: "PUT", body: JSON.stringify(payload) }
-    ),
-  import: (file: File) => {
-    const formData = new FormData();
-    formData.append("file", file);
-    return fetch(`${LOCAL_URL}/members/import`, {
-      method: "POST",
-      body: formData,
-    }).then((r) => r.json());
+
+  get: async (id: string) => {
+    const client = await backendRequest<BackendClient>(`/clients/${encodeURIComponent(id)}/`);
+    return { member: mapBackendClientToMember(client) };
   },
-  export: () => fetch(`${LOCAL_URL}/members/export`).then((r) => r.blob()),
+
+  create: async (payload: import("@/types/member").CreateMemberPayload) => {
+    const name = `${payload.firstName} ${payload.surname}`.trim();
+    const phone = normalizePhone(payload.phone);
+    const created = await backendRequest<BackendClient>("/clients/", {
+      method: "POST",
+      body: JSON.stringify({
+        name,
+        phone,
+        email: toLocalFallbackEmail(name, phone),
+      }),
+    });
+
+    upsertMemberMeta(String(created.id), {
+      dateOfBirth: payload.dateOfBirth,
+      region: payload.region,
+      constituency: payload.constituency,
+      pollingStation: payload.pollingStation,
+      ghanaCard: payload.ghanaCard,
+      voterIdNumber: payload.voterIdNumber,
+      registrationMethod: payload.registrationMethod ?? "MANUAL",
+      isActive: true,
+      totalDuesPaid: 0,
+      createdAt: created.created_at,
+      updatedAt: created.updated_at,
+    });
+
+    return { member: mapBackendClientToMember(created) };
+  },
+
+  update: async (id: string, payload: Partial<import("@/types/member").Member>) => {
+    const client = await backendRequest<BackendClient>(`/clients/${encodeURIComponent(id)}/`);
+
+    const currentName = client.name;
+    const current = splitDisplayName(currentName);
+    const name = `${payload.firstName ?? current.firstName} ${payload.surname ?? current.surname}`.trim();
+    const phone = payload.phone ?? client.phone;
+    const patch: Partial<Pick<BackendClient, "name" | "phone">> = {};
+    if (name !== client.name) patch.name = name;
+    if (phone !== client.phone) patch.phone = phone;
+
+    const updatedClient =
+      Object.keys(patch).length > 0
+        ? await backendRequest<BackendClient>(`/clients/${encodeURIComponent(id)}/`, {
+            method: "PATCH",
+            body: JSON.stringify(patch),
+          })
+        : client;
+
+    upsertMemberMeta(String(updatedClient.id), extractMemberMetaFromPayload(payload));
+    return { member: mapBackendClientToMember(updatedClient) };
+  },
+
+  import: async (file: File) => {
+    const XLSX = await import("xlsx");
+    const content = await file.arrayBuffer();
+    const wb = XLSX.read(content, { type: "array" });
+    const firstSheet = wb.SheetNames[0];
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[firstSheet], {
+      defval: "",
+    });
+
+    let imported = 0;
+    for (const row of rows) {
+      const firstName = String(row.firstName ?? row["First Name"] ?? "").trim();
+      const surname = String(row.surname ?? row.Surname ?? row.lastName ?? "").trim();
+      const phone = String(row.phone ?? row.Phone ?? "").trim();
+      if (!firstName || !surname || !phone) continue;
+
+      try {
+        await membersApi.create({
+          firstName,
+          surname,
+          dateOfBirth: String(row.dateOfBirth ?? row["Date of Birth"] ?? ""),
+          region: String(row.region ?? row.Region ?? "Greater Accra"),
+          constituency: String(row.constituency ?? row.Constituency ?? ""),
+          pollingStation: String(row.pollingStation ?? row["Polling Station"] ?? ""),
+          ghanaCard: String(row.ghanaCard ?? row["Ghana Card"] ?? "") || undefined,
+          voterIdNumber: String(row.voterIdNumber ?? row["Voter ID"] ?? "") || undefined,
+          phone,
+          registrationMethod: "IMPORT",
+        });
+        imported++;
+      } catch {
+        // Continue importing remaining rows even if a row fails.
+      }
+    }
+
+    return { imported, failed: rows.length - imported, total: rows.length };
+  },
+
+  export: async () => {
+    const { members } = await membersApi.list();
+    const headers = [
+      "firstName",
+      "surname",
+      "dateOfBirth",
+      "region",
+      "constituency",
+      "pollingStation",
+      "ghanaCard",
+      "voterIdNumber",
+      "phone",
+      "registrationMethod",
+    ];
+    const csvEscape = (value: string) => {
+      if (value.includes(",") || value.includes("\"") || value.includes("\n")) {
+        return `"${value.replace(/\"/g, '""')}"`;
+      }
+      return value;
+    };
+
+    const lines = [
+      headers.join(","),
+      ...members.map((member) =>
+        [
+          member.firstName,
+          member.surname,
+          member.dateOfBirth,
+          member.region,
+          member.constituency,
+          member.pollingStation,
+          member.ghanaCard ?? "",
+          member.voterIdNumber ?? "",
+          member.phone,
+          member.registrationMethod,
+        ]
+          .map((cell) => csvEscape(String(cell ?? "")))
+          .join(",")
+      ),
+    ];
+
+    return new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
+  },
 };
 
 /* ═══════════════════════════════════════════════════════════
@@ -944,14 +1344,29 @@ export const reportsApi = {
     }
   },
 
-  membershipStats: () =>
-    localRequest<{
-      totalMembers: number;
-      activeMembers: number;
-      newThisMonth: number;
-      duesCollected: number;
-      byRegion: Record<string, number>;
-    }>("/reports/membership"),
+  membershipStats: async () => {
+    const { members } = await membersApi.list();
+    const totalMembers = members.length;
+    const activeMembers = members.filter((m) => m.isActive).length;
+    const now = new Date();
+    const newThisMonth = members.filter((m) => {
+      const created = new Date(m.createdAt);
+      return (
+        created.getMonth() === now.getMonth() &&
+        created.getFullYear() === now.getFullYear()
+      );
+    }).length;
+    const duesCollected = members.reduce(
+      (sum, member) => sum + (member.totalDuesPaid ?? 0),
+      0
+    );
+    const byRegion: Record<string, number> = {};
+    for (const member of members) {
+      const region = member.region || "Unknown";
+      byRegion[region] = (byRegion[region] ?? 0) + 1;
+    }
+    return { totalMembers, activeMembers, newThisMonth, duesCollected, byRegion };
+  },
 };
 
 /* ═══════════════════════════════════════════════════════════
