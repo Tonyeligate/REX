@@ -43,6 +43,8 @@ function PulseDot({ color = "#F07000" }: { color?: string }) {
 function TimelineStep({ step, index, total, isLast }: { step: WorkflowStep; index: number; total: number; isLast: boolean }) {
   const state = stepState(step);
   const dept = getDeptStyle(step.department);
+  const decisionValue = (step.decision ?? "").toLowerCase();
+  const isRejected = decisionValue === "rejected" || decisionValue === "reject";
 
   return (
     <motion.div variants={fadeUp} className="flex gap-4 sm:gap-6">
@@ -52,7 +54,7 @@ function TimelineStep({ step, index, total, isLast }: { step: WorkflowStep; inde
             "relative w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center text-[15px] sm:text-[17px] font-[900] shrink-0 transition-all",
             state === "done" ? "bg-[#16a34a] text-white shadow-[0_0_0_4px_rgba(22,163,74,0.15)]" : "",
             state === "current" ? "bg-[#F07000] text-white shadow-[0_0_0_4px_rgba(240,112,0,0.18)]" : "",
-            state === "queried" ? "bg-[#f59e0b] text-white shadow-[0_0_0_4px_rgba(245,158,11,0.18)]" : "",
+            state === "queried" ? (isRejected ? "bg-[#dc2626] text-white shadow-[0_0_0_4px_rgba(220,38,38,0.18)]" : "bg-[#f59e0b] text-white shadow-[0_0_0_4px_rgba(245,158,11,0.18)]") : "",
             state === "todo" ? "bg-[#f1f5f9] text-[#94a3b8] border-2 border-[#e2e8f0]" : "",
           ].join(" ")}
         >
@@ -66,7 +68,7 @@ function TimelineStep({ step, index, total, isLast }: { step: WorkflowStep; inde
           {state === "current" && <PulseDot />}
         </div>
         {!isLast && (
-          <div className={`w-0.5 flex-1 min-h-[24px] ${state === "done" ? "bg-[#16a34a]" : state === "queried" ? "bg-[#f59e0b]" : "bg-[#e2e8f0]"}`} />
+          <div className={`w-0.5 flex-1 min-h-[24px] ${state === "done" ? "bg-[#16a34a]" : state === "queried" ? (isRejected ? "bg-[#dc2626]" : "bg-[#f59e0b]") : "bg-[#e2e8f0]"}`} />
         )}
       </div>
 
@@ -76,7 +78,7 @@ function TimelineStep({ step, index, total, isLast }: { step: WorkflowStep; inde
             "rounded-[16px] border p-4 sm:p-5 transition-all",
             state === "done" ? "border-[#bbf7d0] bg-white" : "",
             state === "current" ? "border-[#F07000]/30 bg-white shadow-[0_4px_24px_rgba(240,112,0,0.08)]" : "",
-            state === "queried" ? "border-[#fde68a] bg-[#fffbeb]" : "",
+            state === "queried" ? (isRejected ? "border-[#fecaca] bg-[#fef2f2]" : "border-[#fde68a] bg-[#fffbeb]") : "",
             state === "todo" ? "border-[#e2e8f0] bg-[#fafafa]" : "",
           ].join(" ")}
         >
@@ -85,7 +87,11 @@ function TimelineStep({ step, index, total, isLast }: { step: WorkflowStep; inde
               <span className="text-[11px] font-[700] text-[#94a3b8] uppercase tracking-wider">Step {index + 1}/{total}</span>
               {state === "done" && <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-[700] bg-[#dcfce7] text-[#15803d]">Completed</span>}
               {state === "current" && <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-[700] bg-[#FFF0E0] text-[#C05500]">In Progress</span>}
-              {state === "queried" && <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-[700] bg-[#FEF3C7] text-[#B45309]">Queried</span>}
+              {state === "queried" && (
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-[700] ${isRejected ? "bg-[#fee2e2] text-[#b91c1c]" : "bg-[#FEF3C7] text-[#B45309]"}`}>
+                  {isRejected ? "Rejected" : "Queried"}
+                </span>
+              )}
               {state === "todo" && <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-[700] bg-[#f1f5f9] text-[#94a3b8]">Pending</span>}
             </div>
             <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-[700] border shrink-0 ${dept.bg} ${dept.text} ${dept.border}`}>
@@ -94,11 +100,11 @@ function TimelineStep({ step, index, total, isLast }: { step: WorkflowStep; inde
             </span>
           </div>
 
-          <h3 className={`m-0 text-[15px] sm:text-[17px] font-[800] leading-tight mb-1.5 ${state === "current" ? "text-[#0f172a]" : state === "done" ? "text-[#1e293b]" : state === "queried" ? "text-[#92400e]" : "text-[#94a3b8]"}`}>
+          <h3 className={`m-0 text-[15px] sm:text-[17px] font-[800] leading-tight mb-1.5 ${state === "current" ? "text-[#0f172a]" : state === "done" ? "text-[#1e293b]" : state === "queried" ? (isRejected ? "text-[#991b1b]" : "text-[#92400e]") : "text-[#94a3b8]"}`}>
             {step.title}
           </h3>
 
-          <p className={`m-0 text-[13px] leading-relaxed ${state === "todo" ? "text-[#cbd5e1]" : state === "queried" ? "text-[#a16207]" : "text-[#64748b]"}`}>
+          <p className={`m-0 text-[13px] leading-relaxed ${state === "todo" ? "text-[#cbd5e1]" : state === "queried" ? (isRejected ? "text-[#b91c1c]" : "text-[#a16207]") : "text-[#64748b]"}`}>
             {step.note}
           </p>
 

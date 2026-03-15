@@ -287,16 +287,24 @@ export default function ClientDashboardPage() {
                   </thead>
                   <tbody>
                     {job.steps.map((step, index) => {
+                      const decisionValue = (step.decision ?? "").toLowerCase();
+                      const isRejectedDecision =
+                        decisionValue === "rejected" || decisionValue === "reject";
                       const statusLabel =
-                        step.status === "COMPLETED"
+                        step.decisionDisplay ||
+                        (step.status === "COMPLETED"
                           ? "Approved"
                           : step.status === "QUERIED"
-                            ? "Queried"
+                            ? isRejectedDecision
+                              ? "Rejected"
+                              : "Queried"
                             : step.status === "ACTIVE"
                               ? "In Review"
-                              : "Pending";
+                              : "Pending");
                       const badgeTone =
-                        step.status === "COMPLETED"
+                        isRejectedDecision
+                          ? "bg-[#fee2e2] text-[#b91c1c]"
+                          : step.status === "COMPLETED"
                           ? "bg-[#dcfce7] text-[#15803d]"
                           : step.status === "QUERIED"
                             ? "bg-[#FEF3C7] text-[#B45309]"
@@ -320,7 +328,7 @@ export default function ClientDashboardPage() {
                             </span>
                           </td>
                           <td className="px-4 py-3 border-b border-r border-[#F4EBDD] text-[#475569] leading-relaxed">
-                            {step.comment || step.note || "No admin note for this stage yet."}
+                            {step.comment?.trim() || "No backend comment for this stage yet."}
                           </td>
                         </tr>
                       );

@@ -8,6 +8,8 @@ export interface WorkflowStep {
   note: string;
   department?: string;
   status: StepStatus;
+  decision?: string;
+  decisionDisplay?: string;
   assignedTo?: string;
   comment?: string;
   completedAt?: string;

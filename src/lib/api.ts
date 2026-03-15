@@ -402,6 +402,19 @@ export interface BackendJobDetail extends BackendJobListItem {
     name: string;
     uploaded_at: string;
   }>;
+  step_decisions?: BackendStepDecision[];
+}
+
+export interface BackendStepDecision {
+  id: number;
+  step: string;
+  step_display: string;
+  decision: string;
+  decision_display: string;
+  comment: string;
+  decided_by_employee_username?: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface BackendHistoryEntry {
@@ -555,6 +568,29 @@ export function mapBackendJob(
   const isQueried =
     bj.status === "queried_ls461" || bj.status === "queried_smd";
   const stepNum = STATUS_STEP_MAP[bj.status] ?? 1;
+  const detail = bj as BackendJobDetail;
+
+  // Keep the latest decision per step from backend decision history.
+  const latestStepDecisionByNumber = new Map<number, BackendStepDecision>();
+  const stepDecisions = Array.isArray(detail.step_decisions)
+    ? detail.step_decisions
+    : [];
+  for (const decision of stepDecisions) {
+    const decisionStepNumber = STATUS_STEP_MAP[decision.step];
+    if (!decisionStepNumber) continue;
+
+    const existing = latestStepDecisionByNumber.get(decisionStepNumber);
+    if (!existing) {
+      latestStepDecisionByNumber.set(decisionStepNumber, decision);
+      continue;
+    }
+
+    const existingTime = Date.parse(existing.updated_at || existing.created_at || "");
+    const incomingTime = Date.parse(decision.updated_at || decision.created_at || "");
+    if (!Number.isFinite(existingTime) || incomingTime >= existingTime) {
+      latestStepDecisionByNumber.set(decisionStepNumber, decision);
+    }
+  }
 
   // Build the 14 workflow steps
   const steps: WorkflowStep[] = WORKFLOW_STEP_DEFS.map((def, i) => {
@@ -569,13 +605,36 @@ export function mapBackendJob(
     } else {
       status = "PENDING";
     }
+
+    const stepDecision = latestStepDecisionByNumber.get(num);
+    const decisionValue = (stepDecision?.decision ?? "").trim().toLowerCase();
+
+    if (decisionValue === "approved" || decisionValue === "accept" || decisionValue === "accepted") {
+      status = "COMPLETED";
+    } else if (decisionValue === "query" || decisionValue === "queried") {
+      status = "QUERIED";
+    } else if (decisionValue === "reject" || decisionValue === "rejected") {
+      status = "QUERIED";
+    }
+
+    const decisionComment = stepDecision?.comment?.trim();
+    const queryReason =
+      isQueried && num === stepNum ? detail.query_reason?.trim() : undefined;
+
     return {
       stepNumber: num,
       title: def.title,
       note: def.note,
       department: def.department,
       status,
-      completedAt: status === "COMPLETED" ? bj.updated_at : undefined,
+      decision: stepDecision?.decision,
+      decisionDisplay: stepDecision?.decision_display,
+      comment: decisionComment || queryReason || undefined,
+      completedBy: stepDecision?.decided_by_employee_username || undefined,
+      completedAt:
+        status === "COMPLETED"
+          ? stepDecision?.updated_at || stepDecision?.created_at || bj.updated_at
+          : undefined,
     };
   });
 
@@ -603,7 +662,6 @@ export function mapBackendJob(
         ? "QUERIED"
         : "IN_PROGRESS";
 
-  const detail = bj as BackendJobDetail;
   const clientName =
     detail.client?.name ||
     extractClientNameFromDescription(detail.description) ||

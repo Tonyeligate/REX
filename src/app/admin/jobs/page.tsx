@@ -34,24 +34,24 @@ const REGISTER_STAGE_COLS: {
   subLabel?: string;
 }[] = [
   { key: "jobProductionLsCertification", label: "Job Production /", subLabel: "L/S Certification" },
-  { key: "examinationReceived", label: "Examination", subLabel: "CSAU" },
+  { key: "examinationReceived", label: "CSAU", subLabel: "Received" },
   { key: "examinationChecking", label: "Examination", subLabel: "Checking" },
   { key: "examinationCertified", label: "Examination", subLabel: "Cert." },
   { key: "regionChecked", label: "Region", subLabel: "Checked" },
   { key: "regionApproved", label: "Region", subLabel: "Approved" },
-  { key: "regionBatched", label: "Region", subLabel: "Batched" },
+  { key: "regionBatched", label: "Region", subLabel: "Barcode" },
 ];
 
 type CellState = "done" | "active" | "queried" | "pending";
 
 const REGISTER_STAGE_LABELS: Record<RegisterStageKey, string> = {
   jobProductionLsCertification: "Job Production / L/S Certification",
-  examinationReceived: "Examination CSAU",
+  examinationReceived: "CSAU Received",
   examinationChecking: "Examination Checking",
   examinationCertified: "Examination Certification",
   regionChecked: "Region Checked",
   regionApproved: "Region Approved",
-  regionBatched: "Region Batched",
+  regionBatched: "Region Barcode",
 };
 
 const REGISTER_STAGE_KEYS = Object.keys(REGISTER_STAGE_LABELS) as RegisterStageKey[];
@@ -611,12 +611,12 @@ export default function JobsRegisterPage() {
       "RNR",
       "Regional Number",
       "Job Production / L/S Certification",
-      "Examination CSAU",
+      "CSAU",
       "Examination Checking",
       "Examination Cert.",
       "Region Checked",
       "Region Approved",
-      "Region Batched",
+      "Region Barcode",
       "Workflow Status / Notes",
     ];
 
@@ -631,12 +631,12 @@ export default function JobsRegisterPage() {
       };
 
       row["Job Production / L/S Certification"] = getRegisterStageDisplay(record?.stages.jobProductionLsCertification);
-      row["Examination CSAU"] = getRegisterStageDisplay(record?.stages.examinationReceived);
+      row["CSAU"] = getRegisterStageDisplay(record?.stages.examinationReceived);
       row["Examination Checking"] = getRegisterStageDisplay(record?.stages.examinationChecking);
       row["Examination Cert."] = getRegisterStageDisplay(record?.stages.examinationCertified);
       row["Region Checked"] = getRegisterStageDisplay(record?.stages.regionChecked);
       row["Region Approved"] = getRegisterStageDisplay(record?.stages.regionApproved);
-      row["Region Batched"] = getRegisterStageDisplay(record?.stages.regionBatched);
+      row["Region Barcode"] = getRegisterStageDisplay(record?.stages.regionBatched);
       row["Workflow Status / Notes"] = [registerProgress.currentStatusLabel, `${registerProgress.progressPercent}%`, registerProgress.workflowLabel, getRegisterReference(job), job.queryReason]
         .filter(Boolean)
         .join(" | ");
@@ -746,16 +746,16 @@ export default function JobsRegisterPage() {
                 <th rowSpan={2} className="border border-[#374151] px-3 py-2 text-left font-bold w-[135px]">RNR</th>
                 <th rowSpan={2} className="border border-[#374151] px-3 py-2 text-left font-bold w-[150px]">Regional Number</th>
                 <th rowSpan={2} className="border border-[#374151] px-3 py-2 text-center font-bold bg-[#374151] w-[92px]">Job Production /<br />L/S Certification</th>
-                <th colSpan={3} className="border border-[#374151] px-3 py-1.5 text-center font-bold bg-[#1e3a5f]">Examination</th>
+                <th rowSpan={2} className="border border-[#374151] px-3 py-2 text-center font-bold bg-[#1e3a5f] w-[58px]">CSAU</th>
+                <th colSpan={2} className="border border-[#374151] px-3 py-1.5 text-center font-bold bg-[#1e3a5f]">Examination</th>
                 <th colSpan={3} className="border border-[#374151] px-3 py-1.5 text-center font-bold bg-[#374151]">Region</th>
               </tr>
               <tr className="bg-[#374151] text-[#d1d5db] text-[11px]">
-                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold bg-[#1e3a5f] w-[58px]">CSAU</th>
                 <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold bg-[#1e3a5f] w-[58px]">Checking</th>
                 <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold bg-[#1e3a5f] w-[58px]">Cert.</th>
                 <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold w-[58px]">Checked</th>
                 <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold w-[58px]">Approved</th>
-                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold w-[58px]">Batched</th>
+                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold w-[58px]">Barcode</th>
               </tr>
             </thead>
             <tbody>
