@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
@@ -15,10 +15,18 @@ import {
   RefreshCw,
   Search,
   Send,
+  Upload,
   X,
 } from "lucide-react";
 import { WORKFLOW_STATUSES, jobsApi, registerFieldsApi, type BackendStatus } from "@/lib/api";
+import {
+  BACKEND_REGISTER_STEP_CODE_MAP,
+  REGISTER_STAGE_COLS,
+  REGISTER_STAGE_KEYS,
+  REGISTER_STAGE_LABELS,
+} from "@/lib/register-stage-mapping";
 import { getRegisterProgressSummary } from "@/lib/register-progress";
+import { getJobProgressSummary } from "@/lib/job-progress";
 import type { Job, JobStepDecision } from "@/types/job";
 import type {
   JobRegisterRecord,
@@ -35,43 +43,7 @@ type ResolvedRegisterStage = {
   source: RegisterStageSource;
 };
 
-const REGISTER_STAGE_COLS: {
-  key: string;
-  label: string;
-  subLabel?: string;
-}[] = [
-  { key: "jobProductionLsCertification", label: "Job Production /", subLabel: "L/S Certification" },
-  { key: "examinationReceived", label: "CSAU", subLabel: "Received" },
-  { key: "examinationChecking", label: "Examination", subLabel: "Checking" },
-  { key: "examinationCertified", label: "Examination", subLabel: "Cert." },
-  { key: "regionChecked", label: "Region", subLabel: "Checked" },
-  { key: "regionApproved", label: "Region", subLabel: "Approved" },
-  { key: "regionBatched", label: "Region", subLabel: "Barcode" },
-];
-
 type CellState = "done" | "active" | "queried" | "pending";
-
-const REGISTER_STAGE_LABELS: Record<RegisterStageKey, string> = {
-  jobProductionLsCertification: "Job Production / L/S Certification",
-  examinationReceived: "CSAU Received",
-  examinationChecking: "Examination Checking",
-  examinationCertified: "Examination Certification",
-  regionChecked: "Region Checked",
-  regionApproved: "Region Approved",
-  regionBatched: "Region Barcode",
-};
-
-const REGISTER_STAGE_KEYS = Object.keys(REGISTER_STAGE_LABELS) as RegisterStageKey[];
-
-const BACKEND_REGISTER_STEP_CODE_MAP: Record<RegisterStageKey, string> = {
-  jobProductionLsCertification: "4_ls_cert",
-  examinationReceived: "5_csau_payment",
-  examinationChecking: "6_1_checking",
-  examinationCertified: "6_2_certified",
-  regionChecked: "7_1_checked",
-  regionApproved: "7_2_approved",
-  regionBatched: "7_3_barcoded",
-};
 
 function normalizeRegisterStage(value?: RegisterStageValue): RegisterStageEntry | undefined {
   if (value === true) {
@@ -98,6 +70,23 @@ function getRegisterStageDisplay(value?: RegisterStageValue): string {
       ? "Queried"
       : "Rejected";
 }
+
+function normalizeImportColumnName(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+const IMPORT_JOB_ID_COLUMNS = ["RNR", "RN", "Job ID", "JobId", "Job Id"];
+const IMPORT_REGIONAL_NUMBER_COLUMNS = ["Regional Number", "Actual Regional Number", "ARN", "Regional No", "Regional No."];
+
+const IMPORT_STAGE_COLUMNS: Record<RegisterStageKey, string[]> = {
+  jobProductionLsCertification: ["Job Production / L/S Certification", "Job Production LS Certification", "4_ls_cert"],
+  examinationReceived: ["CSAU", "CSAU Received", "5_csau_payment"],
+  examinationChecking: ["Examination Checking", "6_1_checking"],
+  examinationCertified: ["Examination Cert.", "Examination Certification", "6_2_certified"],
+  regionChecked: ["Region Checked", "7_1_checked"],
+  regionApproved: ["Region Approved", "7_2_approved"],
+  regionBatched: ["Region Barcode", "Region Batched", "7_3_barcoded"],
+};
 
 function toRegisterOutcomeFromDecision(decision?: string): RegisterStageOutcome | undefined {
   const normalized = (decision ?? "").trim().toLowerCase();
@@ -689,8 +678,11 @@ export default function JobsRegisterPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [registerRecords, setRegisterRecords] = useState<Record<string, JobRegisterRecord>>({});
   const [loading, setLoading] = useState(true);
+  const [importing, setImporting] = useState(false);
+  const [importFeedback, setImportFeedback] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const importInputRef = useRef<HTMLInputElement | null>(null);
   const [workflowModal, setWorkflowModal] = useState<{
     job: Job;
     colLabel: string;
@@ -702,8 +694,23 @@ export default function JobsRegisterPage() {
   const loadJobs = useCallback(() => {
     setLoading(true);
     Promise.all([jobsApi.list(), registerFieldsApi.list()])
-      .then(([jobsData, registerData]) => {
-        setJobs(jobsData.jobs);
+      .then(async ([jobsData, registerData]) => {
+        const hydratedJobs = await Promise.all(
+          jobsData.jobs.map(async (job) => {
+            if (job.stepDecisions && job.stepDecisions.length > 0) {
+              return job;
+            }
+
+            try {
+              const detail = await jobsApi.get(job.jobId);
+              return detail.job;
+            } catch {
+              return job;
+            }
+          })
+        );
+
+        setJobs(hydratedJobs);
         setRegisterRecords(registerData.records);
       })
       .catch(console.error)
@@ -763,9 +770,8 @@ export default function JobsRegisterPage() {
 
     const rows = filteredJobs.map((job, index) => {
       const record = registerRecords[job.jobId];
-      const resolvedRecord = buildResolvedRegisterRecord(job, record);
       const resolvedStages = resolveRegisterStages(job, record);
-      const registerProgress = getRegisterProgressSummary(resolvedRecord);
+      const workflowProgress = getJobProgressSummary(job);
       const row: Record<string, string | number> = {
         "#": index + 1,
         "Client Name": getRegisterName(job),
@@ -780,7 +786,13 @@ export default function JobsRegisterPage() {
       row["Region Checked"] = getRegisterStageDisplay(resolvedStages.regionChecked.entry);
       row["Region Approved"] = getRegisterStageDisplay(resolvedStages.regionApproved.entry);
       row["Region Barcode"] = getRegisterStageDisplay(resolvedStages.regionBatched.entry);
-      row["Workflow Status / Notes"] = [registerProgress.currentStatusLabel, `${registerProgress.progressPercent}%`, registerProgress.workflowLabel, getRegisterReference(job), job.queryReason]
+      row["Workflow Status / Notes"] = [
+        workflowProgress.currentStatusLabel,
+        `${workflowProgress.currentStepLabel} (${workflowProgress.progressPercent}%)`,
+        workflowProgress.workflowLabel,
+        getRegisterReference(job),
+        job.queryReason,
+      ]
         .filter(Boolean)
         .join(" | ");
 
@@ -799,6 +811,108 @@ export default function JobsRegisterPage() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Jobs Register");
     XLSX.writeFile(wb, `Jobs-Register-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
+  const handleImportExcel = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setImportFeedback("");
+    setImporting(true);
+
+    try {
+      const XLSX = await import("xlsx");
+      const fileBuffer = await file.arrayBuffer();
+      const workbook = XLSX.read(fileBuffer, { type: "array" });
+      const firstSheetName = workbook.SheetNames[0];
+
+      if (!firstSheetName) {
+        throw new Error("Excel file has no worksheet.");
+      }
+
+      const sheet = workbook.Sheets[firstSheetName];
+      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
+        defval: "",
+      });
+
+      if (rows.length === 0) {
+        setImportFeedback("No rows found in the selected Excel file.");
+        return;
+      }
+
+      const jobsById = new Map(jobs.map((job) => [job.jobId.trim().toLowerCase(), job]));
+      let updated = 0;
+      let skipped = 0;
+      let notFound = 0;
+
+      for (const row of rows) {
+        const columnLookup = new Map<string, string>();
+        for (const [columnName, value] of Object.entries(row)) {
+          const normalizedColumn = normalizeImportColumnName(columnName);
+          if (!normalizedColumn) continue;
+          columnLookup.set(normalizedColumn, String(value ?? "").trim());
+        }
+
+        const readColumnValue = (candidates: string[]) => {
+          for (const candidate of candidates) {
+            const value = columnLookup.get(normalizeImportColumnName(candidate));
+            if (value) return value;
+          }
+          return "";
+        };
+
+        const jobId = readColumnValue(IMPORT_JOB_ID_COLUMNS);
+        if (!jobId) {
+          skipped += 1;
+          continue;
+        }
+
+        const job = jobsById.get(jobId.toLowerCase());
+        if (!job) {
+          notFound += 1;
+          continue;
+        }
+
+        const stagePayload: Partial<Record<RegisterStageKey, RegisterStageEntry | null>> = {};
+        let hasStageData = false;
+
+        for (const key of REGISTER_STAGE_KEYS) {
+          const rawValue = readColumnValue(IMPORT_STAGE_COLUMNS[key]);
+          if (!rawValue) continue;
+
+          const outcome = toRegisterOutcomeFromDecision(rawValue);
+          if (!outcome) continue;
+
+          stagePayload[key] = {
+            outcome,
+            updatedAt: new Date().toISOString(),
+          };
+          hasStageData = true;
+        }
+
+        const regionalNumber = readColumnValue(IMPORT_REGIONAL_NUMBER_COLUMNS);
+
+        if (!hasStageData && !regionalNumber) {
+          skipped += 1;
+          continue;
+        }
+
+        await registerFieldsApi.update(job.jobId, {
+          actualRegionalNumber: regionalNumber || undefined,
+          stages: hasStageData ? stagePayload : undefined,
+        });
+
+        updated += 1;
+      }
+
+      loadJobs();
+      setImportFeedback(`Import complete: ${updated} updated, ${skipped} skipped, ${notFound} rows did not match a job.`);
+    } catch (error) {
+      setImportFeedback(error instanceof Error ? error.message : "Failed to import Excel file.");
+    } finally {
+      setImporting(false);
+      event.target.value = "";
+    }
   };
 
   const openWorkflowModal = (job: Job) => {
@@ -834,6 +948,14 @@ export default function JobsRegisterPage() {
           >
             <Download size={14} /> Export Excel
           </button>
+          <button
+            onClick={() => importInputRef.current?.click()}
+            disabled={importing}
+            className="flex items-center gap-2 h-[38px] px-4 bg-[#1d4ed8] text-white rounded-lg text-[13px] font-semibold hover:bg-[#1e40af] disabled:opacity-60 transition-colors"
+          >
+            {importing ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+            {importing ? "Importing..." : "Import Excel"}
+          </button>
           <Link
             href="/admin/jobs/new"
             className="flex items-center gap-2 h-[38px] px-4 bg-[#F07000] text-white rounded-lg text-[13px] font-semibold hover:bg-[#D06000] transition-colors"
@@ -842,6 +964,20 @@ export default function JobsRegisterPage() {
           </Link>
         </div>
       </div>
+
+      <input
+        ref={importInputRef}
+        type="file"
+        accept=".xlsx,.xls"
+        onChange={handleImportExcel}
+        className="hidden"
+      />
+
+      {importFeedback && (
+        <div className="mb-4 rounded-lg border border-[#bfdbfe] bg-[#eff6ff] px-3 py-2 text-[12px] text-[#1e3a8a]">
+          {importFeedback}
+        </div>
+      )}
 
       <div className="bg-white rounded-xl border border-[#e5e7eb] p-4 mb-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -888,17 +1024,23 @@ export default function JobsRegisterPage() {
                 <th rowSpan={2} className="border border-[#374151] px-3 py-2 text-left font-bold w-[200px]">Client Name</th>
                 <th rowSpan={2} className="border border-[#374151] px-3 py-2 text-left font-bold w-[135px]">RNR</th>
                 <th rowSpan={2} className="border border-[#374151] px-3 py-2 text-left font-bold w-[150px]">Regional Number</th>
-                <th rowSpan={2} className="border border-[#374151] px-3 py-2 text-center font-bold bg-[#374151] w-[92px]">Job Production /<br />L/S Certification</th>
-                <th rowSpan={2} className="border border-[#374151] px-3 py-2 text-center font-bold bg-[#1e3a5f] w-[58px]">CSAU</th>
+                <th rowSpan={2} className="border border-[#374151] px-3 py-2 text-center font-bold bg-[#374151] w-[96px]">
+                  Job Production /<br />L/S Certification
+                  <span className="block mt-1 text-[10px] font-[600] text-[#cbd5e1]">4_ls_cert</span>
+                </th>
+                <th rowSpan={2} className="border border-[#374151] px-3 py-2 text-center font-bold bg-[#1e3a5f] w-[60px]">
+                  CSAU
+                  <span className="block mt-1 text-[10px] font-[600] text-[#cbd5e1]">5_csau_payment</span>
+                </th>
                 <th colSpan={2} className="border border-[#374151] px-3 py-1.5 text-center font-bold bg-[#1e3a5f]">Examination</th>
                 <th colSpan={3} className="border border-[#374151] px-3 py-1.5 text-center font-bold bg-[#374151]">Region</th>
               </tr>
               <tr className="bg-[#374151] text-[#d1d5db] text-[11px]">
-                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold bg-[#1e3a5f] w-[58px]">Checking</th>
-                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold bg-[#1e3a5f] w-[58px]">Cert.</th>
-                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold w-[58px]">Checked</th>
-                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold w-[58px]">Approved</th>
-                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold w-[58px]">Barcode</th>
+                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold bg-[#1e3a5f] w-[60px]">Checking<span className="block mt-0.5 text-[10px] font-[500] text-[#9fb4d4]">6_1_checking</span></th>
+                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold bg-[#1e3a5f] w-[60px]">Cert.<span className="block mt-0.5 text-[10px] font-[500] text-[#9fb4d4]">6_2_certified</span></th>
+                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold w-[60px]">Checked<span className="block mt-0.5 text-[10px] font-[500] text-[#cbd5e1]">7_1_checked</span></th>
+                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold w-[60px]">Approved<span className="block mt-0.5 text-[10px] font-[500] text-[#cbd5e1]">7_2_approved</span></th>
+                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold w-[60px]">Barcode<span className="block mt-0.5 text-[10px] font-[500] text-[#cbd5e1]">7_3_barcoded</span></th>
               </tr>
             </thead>
             <tbody>
@@ -922,9 +1064,8 @@ export default function JobsRegisterPage() {
                   const registerReference = getRegisterReference(job);
                   const record = registerRecords[job.jobId];
                   const resolvedStages = resolveRegisterStages(job, record);
-                  const registerProgress = getRegisterProgressSummary(
-                    buildResolvedRegisterRecord(job, record)
-                  );
+                  const workflowProgress = getJobProgressSummary(job);
+                  const registerProgress = getRegisterProgressSummary(buildResolvedRegisterRecord(job, record));
 
                   return (
                     <tr key={job.id} className={`hover:bg-orange-50/40 transition-colors ${isEven ? "bg-white" : "bg-[#fafafa]"}`}>
@@ -937,13 +1078,15 @@ export default function JobsRegisterPage() {
                           <div className="text-[11px] text-[#6b7280] mt-0.5 line-clamp-1">{registerReference}</div>
                         )}
                         <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-[#9ca3af]">
-                          <span>Stage {registerProgress.currentStepLabel}</span>
+                          <span>Workflow {workflowProgress.currentStepLabel}</span>
                           <span>•</span>
-                          <span>{registerProgress.currentStatusLabel}</span>
+                          <span>{workflowProgress.currentStatusLabel}</span>
                           <span>•</span>
-                          <span>{registerProgress.progressPercent}% progress</span>
+                          <span>{workflowProgress.progressPercent}% progress</span>
                           <span>•</span>
-                          <span>{registerProgress.workflowLabel}</span>
+                          <span>{workflowProgress.workflowLabel}</span>
+                          <span>•</span>
+                          <span>Register {registerProgress.currentStepLabel}</span>
                           <span>•</span>
                           <span>{job.parcelSize ?? "—"} ac</span>
                           <span>•</span>

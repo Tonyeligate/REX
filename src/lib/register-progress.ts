@@ -5,18 +5,13 @@ import type {
   RegisterStageOutcome,
   RegisterStageValue,
 } from "@/types/register";
+import {
+  REGISTER_STAGE_KEYS as SHARED_REGISTER_STAGE_KEYS,
+  REGISTER_STAGE_LABELS as SHARED_REGISTER_STAGE_LABELS,
+} from "@/lib/register-stage-mapping";
 
-export const REGISTER_STAGE_LABELS: Record<RegisterStageKey, string> = {
-  jobProductionLsCertification: "Job Production / L/S Certification",
-  examinationReceived: "CSAU Received",
-  examinationChecking: "Examination Checking",
-  examinationCertified: "Examination Certification",
-  regionChecked: "Region Checked",
-  regionApproved: "Region Approved",
-  regionBatched: "Region Barcode",
-};
-
-export const REGISTER_STAGE_KEYS = Object.keys(REGISTER_STAGE_LABELS) as RegisterStageKey[];
+export const REGISTER_STAGE_LABELS: Record<RegisterStageKey, string> = SHARED_REGISTER_STAGE_LABELS;
+export const REGISTER_STAGE_KEYS = SHARED_REGISTER_STAGE_KEYS;
 
 export function normalizeRegisterStage(value?: RegisterStageValue): RegisterStageEntry | undefined {
   if (value === true) {

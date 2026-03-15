@@ -355,7 +355,12 @@ export type BackendStatus =
   | "4_ls_cert"
   | "5_csau_payment"
   | "6_examination"
+  | "6_1_checking"
+  | "6_2_certified"
   | "7_region"
+  | "7_1_checked"
+  | "7_2_approved"
+  | "7_3_barcoded"
   | "request_received"
   | "rn_assigned"
   | "in_production"
@@ -464,6 +469,12 @@ STATUS_STEP_MAP["4_ls_cert"] = 6;
 STATUS_STEP_MAP["5_csau_payment"] = 7;
 STATUS_STEP_MAP["6_examination"] = 9;
 STATUS_STEP_MAP["7_region"] = 12;
+// Granular backend step codes collapsed into the existing 14-stage client timeline.
+STATUS_STEP_MAP["6_1_checking"] = 9;
+STATUS_STEP_MAP["6_2_certified"] = 10;
+STATUS_STEP_MAP["7_1_checked"] = 12;
+STATUS_STEP_MAP["7_2_approved"] = 13;
+STATUS_STEP_MAP["7_3_barcoded"] = 14;
 
 function extractClientNameFromDescription(description?: string): string | undefined {
   if (!description) return undefined;

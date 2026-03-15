@@ -268,7 +268,7 @@ export default function ClientDashboardPage() {
 
             <motion.div variants={fadeUp} className="bg-white border border-[#F0E6DA] rounded-[16px] shadow-sm p-5">
               <h3 className="m-0 text-[15px] font-[800] text-[#0f172a] pb-3 mb-4 border-b border-[#f5f0ea]">
-                Job Process Stages
+                14-Step Workflow Stages
               </h3>
               <div className="overflow-x-auto">
                 <table className="min-w-full border-separate border-spacing-0 text-[13px]">
@@ -316,7 +316,7 @@ export default function ClientDashboardPage() {
                         <tr key={`${step.stepNumber}-${index}`} className="align-top odd:bg-[#fffdfa]">
                           <td className="px-4 py-3 border-b border-l border-[#F4EBDD]">
                             <p className="m-0 text-[11px] font-[700] text-[#94a3b8] uppercase tracking-wider">
-                              Stage {index + 1}/{workflowSummary.totalStages}
+                              Stage {step.stepNumber}/{workflowSummary.totalStages}
                             </p>
                             <p className="m-0 mt-1 text-[14px] font-[700] text-[#0f172a]">
                               {step.title}
