@@ -2,9 +2,9 @@
 
 import React, { useState, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import type { Job } from "@/types/job";
+import type { Job, JobStepDecision, WorkflowStep } from "@/types/job";
 import { jobsApi } from "@/lib/api";
-import { WorkflowTimeline } from "@/components/sections/workflow-timeline";
+import { CLIENT_STAGE_MATCH_META } from "@/lib/register-stage-mapping";
 
 /* ── Quick-Search Chips (loaded from API) ── */
 // Chips are loaded dynamically from the jobs list on mount
@@ -19,6 +19,102 @@ const stagger = {
   hidden: {},
   visible: { transition: { staggerChildren: 0.06, delayChildren: 0.1 } },
 };
+
+const CLIENT_ADMIN_ALIGNED_STAGE_ORDER = [1, 2, 3, 6, 7, 9, 10, 12, 13, 14] as const;
+
+type ClientAlignedStageStatus = "Approved" | "Queried" | "Rejected" | "In Review" | "Pending";
+
+type ClientAlignedStage = {
+  stepNumber: number;
+  title: string;
+  statusLabel: ClientAlignedStageStatus;
+  comment: string;
+};
+
+function parseDecisionOutcome(value?: string): "approve" | "query" | "reject" | undefined {
+  const normalized = (value ?? "").trim().toLowerCase();
+  if (!normalized) return undefined;
+  if (["approve", "approved", "accept", "accepted", "complete", "completed"].includes(normalized)) {
+    return "approve";
+  }
+  if (["query", "queried"].includes(normalized)) return "query";
+  if (["reject", "rejected"].includes(normalized)) return "reject";
+  return undefined;
+}
+
+function getDecisionTimestamp(decision?: JobStepDecision): number {
+  if (!decision) return Number.NEGATIVE_INFINITY;
+  const time = Date.parse(decision.updatedAt || decision.createdAt || "");
+  return Number.isFinite(time) ? time : Number.NEGATIVE_INFINITY;
+}
+
+function getLatestDecisionByCodes(
+  decisions: JobStepDecision[] | undefined,
+  backendCodes: string[]
+): JobStepDecision | undefined {
+  if (!decisions || decisions.length === 0 || backendCodes.length === 0) return undefined;
+  const codeSet = new Set(backendCodes.map((code) => code.trim().toLowerCase()));
+
+  let latest: JobStepDecision | undefined;
+  for (const decision of decisions) {
+    const stepCode = (decision.step ?? "").trim().toLowerCase();
+    if (!codeSet.has(stepCode)) continue;
+    if (!latest || getDecisionTimestamp(decision) >= getDecisionTimestamp(latest)) {
+      latest = decision;
+    }
+  }
+  return latest;
+}
+
+function getStatusFromWorkflowStep(step?: WorkflowStep): ClientAlignedStageStatus {
+  if (!step) return "Pending";
+  const fallbackOutcome = parseDecisionOutcome(step.decisionDisplay || step.decision);
+  if (fallbackOutcome === "reject") return "Rejected";
+  if (step.status === "COMPLETED") return "Approved";
+  if (step.status === "QUERIED") return "Queried";
+  if (step.status === "ACTIVE") return "In Review";
+  return "Pending";
+}
+
+function getBadgeTone(statusLabel: ClientAlignedStageStatus): string {
+  if (statusLabel === "Approved") return "bg-[#dcfce7] text-[#15803d]";
+  if (statusLabel === "Rejected") return "bg-[#fee2e2] text-[#b91c1c]";
+  if (statusLabel === "Queried") return "bg-[#FEF3C7] text-[#B45309]";
+  if (statusLabel === "In Review") return "bg-[#ffedd5] text-[#c2410c]";
+  return "bg-[#f1f5f9] text-[#94a3b8]";
+}
+
+function buildClientAlignedStages(job: Job): ClientAlignedStage[] {
+  return CLIENT_ADMIN_ALIGNED_STAGE_ORDER.map((stepNumber) => {
+    const meta = CLIENT_STAGE_MATCH_META[stepNumber];
+    const latestDecision = getLatestDecisionByCodes(job.stepDecisions, meta?.backendCodes ?? []);
+    const decisionOutcome = parseDecisionOutcome(
+      latestDecision?.decisionDisplay || latestDecision?.decision
+    );
+    const fallbackStep = job.steps.find((step) => step.stepNumber === stepNumber);
+
+    let statusLabel: ClientAlignedStageStatus;
+    if (decisionOutcome === "approve") {
+      statusLabel = "Approved";
+    } else if (decisionOutcome === "query") {
+      statusLabel = "Queried";
+    } else if (decisionOutcome === "reject") {
+      statusLabel = "Rejected";
+    } else {
+      statusLabel = getStatusFromWorkflowStep(fallbackStep);
+    }
+
+    return {
+      stepNumber,
+      title: meta?.adminLabel || `Stage ${stepNumber}`,
+      statusLabel,
+      comment:
+        latestDecision?.comment?.trim() ||
+        fallbackStep?.comment?.trim() ||
+        "No backend comment for this stage yet.",
+    };
+  });
+}
 
 /* ══════════════════════════════════════════════
    MAIN PAGE — Single-page Regional Number Tracker
@@ -65,6 +161,11 @@ export default function ClientDashboardPage() {
   const handleSearch = () => doSearch(query);
   const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === "Enter") { e.preventDefault(); handleSearch(); } };
 
+  const clientAlignedStages = useMemo(() => {
+    if (!job) return [] as ClientAlignedStage[];
+    return buildClientAlignedStages(job);
+  }, [job]);
+
   // Computed
   const workflowSummary = useMemo(() => {
     if (!job) {
@@ -77,30 +178,34 @@ export default function ClientDashboardPage() {
       };
     }
 
-    const totalStages = job.steps.length;
-    const approvedCount = job.steps.filter((step) => step.status === "COMPLETED").length;
+    const totalStages = clientAlignedStages.length;
+    const approvedCount = clientAlignedStages.filter((stage) => stage.statusLabel === "Approved").length;
     const progressPercent =
       totalStages > 0 ? Math.round((approvedCount / totalStages) * 100) : 0;
 
-    const workflowLabel =
-      job.status === "COMPLETED"
-        ? "Completed"
-        : job.status === "QUERIED"
-          ? "Queried"
-          : "In Progress";
+    const hasBlockedStage = clientAlignedStages.some(
+      (stage) => stage.statusLabel === "Queried" || stage.statusLabel === "Rejected"
+    );
 
-    const activeStep =
-      job.steps.find((step) => step.status === "ACTIVE" || step.status === "QUERIED") ||
-      job.steps[job.steps.length - 1];
+    const workflowLabel = approvedCount === totalStages && totalStages > 0
+      ? "Completed"
+      : hasBlockedStage
+        ? "Queried"
+        : "In Progress";
+
+    const activeStage =
+      clientAlignedStages.find(
+        (stage) => stage.statusLabel === "In Review" || stage.statusLabel === "Queried" || stage.statusLabel === "Rejected"
+      ) || clientAlignedStages.find((stage) => stage.statusLabel === "Pending") || clientAlignedStages[clientAlignedStages.length - 1];
 
     return {
       approvedCount,
       totalStages,
       progressPercent,
-      currentStatusLabel: job.statusDisplay || activeStep?.title || job.status,
+      currentStatusLabel: activeStage?.title || job.statusDisplay || job.status,
       workflowLabel,
     };
-  }, [job]);
+  }, [job, clientAlignedStages]);
 
   const registerWorkflowAccent =
     workflowSummary.workflowLabel === "Completed"
@@ -268,7 +373,7 @@ export default function ClientDashboardPage() {
 
             <motion.div variants={fadeUp} className="bg-white border border-[#F0E6DA] rounded-[16px] shadow-sm p-5">
               <h3 className="m-0 text-[15px] font-[800] text-[#0f172a] pb-3 mb-4 border-b border-[#f5f0ea]">
-                14-Step Workflow Stages
+                10-Step Workflow Stages
               </h3>
               <div className="overflow-x-auto">
                 <table className="min-w-full border-separate border-spacing-0 text-[13px]">
@@ -286,49 +391,26 @@ export default function ClientDashboardPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {job.steps.map((step, index) => {
-                      const decisionValue = (step.decision ?? "").toLowerCase();
-                      const isRejectedDecision =
-                        decisionValue === "rejected" || decisionValue === "reject";
-                      const statusLabel =
-                        step.decisionDisplay ||
-                        (step.status === "COMPLETED"
-                          ? "Approved"
-                          : step.status === "QUERIED"
-                            ? isRejectedDecision
-                              ? "Rejected"
-                              : "Queried"
-                            : step.status === "ACTIVE"
-                              ? "In Review"
-                              : "Pending");
-                      const badgeTone =
-                        isRejectedDecision
-                          ? "bg-[#fee2e2] text-[#b91c1c]"
-                          : step.status === "COMPLETED"
-                          ? "bg-[#dcfce7] text-[#15803d]"
-                          : step.status === "QUERIED"
-                            ? "bg-[#FEF3C7] text-[#B45309]"
-                            : step.status === "ACTIVE"
-                              ? "bg-[#ffedd5] text-[#c2410c]"
-                              : "bg-[#f1f5f9] text-[#94a3b8]";
+                    {clientAlignedStages.map((stage, index) => {
+                      const badgeTone = getBadgeTone(stage.statusLabel);
 
                       return (
-                        <tr key={`${step.stepNumber}-${index}`} className="align-top odd:bg-[#fffdfa]">
+                        <tr key={`${stage.stepNumber}-${index}`} className="align-top odd:bg-[#fffdfa]">
                           <td className="px-4 py-3 border-b border-l border-[#F4EBDD]">
                             <p className="m-0 text-[11px] font-[700] text-[#94a3b8] uppercase tracking-wider">
-                              Stage {step.stepNumber}/{workflowSummary.totalStages}
+                              Stage {index + 1}/{workflowSummary.totalStages}
                             </p>
                             <p className="m-0 mt-1 text-[14px] font-[700] text-[#0f172a]">
-                              {step.title}
+                              {stage.title}
                             </p>
                           </td>
                           <td className="px-4 py-3 border-b border-[#F4EBDD]">
                             <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-[700] ${badgeTone}`}>
-                              {statusLabel}
+                              {stage.statusLabel}
                             </span>
                           </td>
                           <td className="px-4 py-3 border-b border-r border-[#F4EBDD] text-[#475569] leading-relaxed">
-                            {step.comment?.trim() || "No backend comment for this stage yet."}
+                            {stage.comment}
                           </td>
                         </tr>
                       );
@@ -360,11 +442,6 @@ export default function ClientDashboardPage() {
                   </div>
                 ))}
               </div>
-            </motion.div>
-
-            {/* ═══ Full Workflow Timeline (ALL steps on one page) ═══ */}
-            <motion.div variants={fadeUp}>
-              <WorkflowTimeline steps={job.steps} title="Detailed Workflow Timeline" />
             </motion.div>
 
             {/* ═══ Actions ═══ */}
