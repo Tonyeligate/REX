@@ -110,6 +110,11 @@ function toRegisterOutcomeFromDecision(decision?: string): RegisterStageOutcome 
   return undefined;
 }
 
+function isPermissionDeniedError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message.toLowerCase() : "";
+  return /forbidden|permission|not permitted|not allowed|denied/.test(message);
+}
+
 function getLatestBackendDecisionByStep(job: Job): Map<string, JobStepDecision> {
   const latestByStep = new Map<string, JobStepDecision>();
 
@@ -568,7 +573,13 @@ function RegisterRowModal({
           });
           currentStep = targetStep;
           continue;
-        } catch {
+        } catch (err: unknown) {
+          if (isPermissionDeniedError(err)) {
+            throw new Error(
+              "Your account is not permitted to update workflow stages. Please sign in with an authorized admin/staff account."
+            );
+          }
+
           // Some backend environments only allow linear transitions.
           while (currentStep < targetStep) {
             await jobsApi.advanceStep(job.jobId, { comment: notes });

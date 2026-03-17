@@ -296,6 +296,15 @@ async function backendRequest<T>(
           Object.values(body).flat().join(", ") ??
           `Request failed: ${res.status}`
         : `Request failed: ${res.status}`;
+
+    if (res.status === 403) {
+      throw new Error(
+        typeof message === "string" && !/^request failed/i.test(message)
+          ? `${message} (403 Forbidden)`
+          : "Your account does not have permission for this workflow action (403 Forbidden)."
+      );
+    }
+
     throw new Error(message);
   }
 
@@ -549,8 +558,8 @@ function resolveRole(bu: BackendUser): Role {
   if (profileRole && BACKEND_ROLE_MAP[profileRole]) {
     return BACKEND_ROLE_MAP[profileRole];
   }
-  // Fallback: if no profile or unknown role, treat as ADMIN for staff-like accounts
-  if (!bu.profile) return "ADMIN";
+  // Safety fallback: unknown/no profile should not be elevated to admin UI.
+  if (!bu.profile) return "CLIENT";
   return "CLIENT";
 }
 
