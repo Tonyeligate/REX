@@ -22,6 +22,23 @@ function normalizeTrackingKey(value?: string | null): string {
   return (value ?? "").trim().toLowerCase().replace(/\s+/g, "");
 }
 
+function looksLikeTrackingQuery(query: string): boolean {
+  const compact = query.trim().replace(/\s+/g, "");
+  if (!compact || compact.length < 5) return false;
+
+  if (/^(rn|arn)[-/].+/i.test(compact)) return true;
+
+  // Regional numbers may be numeric-only; allow practical lengths.
+  if (/^\d{5,20}$/.test(compact)) return true;
+
+  // Some regional formats use numeric separators like 123/2026.
+  if (/^\d+[/-]\d+$/.test(compact)) return true;
+
+  const hasLetter = /[a-z]/i.test(compact);
+  const hasDigit = /\d/.test(compact);
+  return hasLetter && hasDigit;
+}
+
 function matchesJobQuery(job: SearchableBackendJob, query: string): boolean {
   const normalizedQuery = normalizeTrackingKey(query);
   if (!normalizedQuery) return false;
@@ -166,6 +183,10 @@ export async function GET(_req: Request, ctx: Ctx) {
   const normalizedQuery = rn.trim();
   if (!normalizedQuery) {
     return NextResponse.json({ error: "Search query is required" }, { status: 400 });
+  }
+
+  if (!looksLikeTrackingQuery(normalizedQuery)) {
+    return NextResponse.json({ job: null }, { status: 404 });
   }
 
   try {

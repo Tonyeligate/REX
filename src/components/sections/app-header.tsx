@@ -71,10 +71,20 @@ export default function AppHeader({
 
   // Derive breadcrumbs from pathname
   const segments = pathname.split("/").filter(Boolean);
-  const breadcrumbs = segments.map((seg, i) => ({
-    label: seg.charAt(0).toUpperCase() + seg.slice(1).replace(/-/g, " "),
-    href: "/" + segments.slice(0, i + 1).join("/"),
-  }));
+  const breadcrumbs = segments.map((seg, i) => {
+    const rawHref = "/" + segments.slice(0, i + 1).join("/");
+    const href =
+      rawHref === "/admin"
+        ? "/dashboard"
+        : rawHref === "/client"
+          ? "/client/dashboard"
+          : rawHref;
+
+    return {
+      label: seg.charAt(0).toUpperCase() + seg.slice(1).replace(/-/g, " "),
+      href,
+    };
+  });
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
