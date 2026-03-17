@@ -1,17 +1,17 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { Send, Filter, Loader2, MessageSquare, Clock, CheckCircle2 } from "lucide-react";
+import React, { useCallback, useEffect, useState } from "react";
+import { Send, Filter, Loader2, MessageSquare, Clock } from "lucide-react";
 import { smsApi, membersApi } from "@/lib/api";
 import type { SmsMessage } from "@/types/member";
 import { GHANA_REGIONS } from "@/types/member";
-import { useAuthStore } from "@/lib/auth-store";
 
 export default function SmsBroadcastPage() {
-  const { user } = useAuthStore();
   const [messages, setMessages] = useState<SmsMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+  const [smsUnavailable, setSmsUnavailable] = useState(false);
 
   // Compose state
   const [content, setContent] = useState("");
@@ -22,13 +22,35 @@ export default function SmsBroadcastPage() {
   const [memberCount, setMemberCount] = useState<number | null>(null);
   const [loadingCount, setLoadingCount] = useState(false);
 
-  // Load message history
-  useEffect(() => {
-    smsApi.history().then((data) => { setMessages(data.messages); setLoading(false); }).catch(() => setLoading(false));
+  const isFeatureUnavailableError = (message: string) => {
+    const normalized = message.toLowerCase();
+    return normalized.includes("mock route removed") || normalized.includes("not implemented on the railway backend yet");
+  };
+
+  const loadHistory = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const data = await smsApi.history();
+      setMessages(data.messages);
+      setSmsUnavailable(false);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to load SMS history";
+      setError(message);
+      setMessages([]);
+      setSmsUnavailable(isFeatureUnavailableError(message));
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
+  // Load message history
+  useEffect(() => {
+    loadHistory();
+  }, [loadHistory]);
+
   // Preview recipient count
-  const previewCount = async () => {
+  const previewCount = useCallback(async () => {
     setLoadingCount(true);
     try {
       const params: Record<string, string> = {};
@@ -41,12 +63,13 @@ export default function SmsBroadcastPage() {
     } finally {
       setLoadingCount(false);
     }
-  };
+  }, [filterRegion, filterConstituency]);
 
-  useEffect(() => { previewCount(); }, [filterRegion, filterConstituency]);
+  useEffect(() => { previewCount(); }, [previewCount]);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (smsUnavailable) return;
     if (!content.trim()) return;
     const cost = (memberCount ?? 0) * 1.5;
     if (!confirm(`Send SMS to ${memberCount ?? "all"} members? Total cost: GH₵ ${cost.toFixed(2)} (GH₵ 1.00/member to party + GH₵ 0.50/member platform fee)`)) return;
@@ -64,8 +87,7 @@ export default function SmsBroadcastPage() {
       });
       setContent("");
       // Refresh history
-      const data = await smsApi.history();
-      setMessages(data.messages);
+      await loadHistory();
     } catch (err) {
       alert(err instanceof Error ? err.message : "Send failed");
     } finally {
@@ -79,6 +101,18 @@ export default function SmsBroadcastPage() {
         <h3 className="text-[22px] font-bold text-[#1f2937]">SMS Broadcast</h3>
         <p className="text-[13px] text-[#9ca3af]">Send bulk SMS to party members with automatic GH₵ 1.50 airtime deduction</p>
       </div>
+
+      {smsUnavailable && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800">
+          SMS module is temporarily unavailable because the backend endpoint is not enabled yet.
+        </div>
+      )}
+
+      {!smsUnavailable && error && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700">
+          {error}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Compose */}
@@ -156,7 +190,7 @@ export default function SmsBroadcastPage() {
 
               <button
                 type="submit"
-                disabled={sending || !content.trim()}
+                disabled={sending || smsUnavailable || !content.trim()}
                 className="w-full flex items-center justify-center gap-2 h-[44px] bg-[#F07000] text-white rounded-lg font-bold text-[14px] hover:bg-[#D06000] disabled:opacity-50 transition-colors"
               >
                 {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}

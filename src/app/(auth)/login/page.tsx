@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { Eye, EyeOff, HelpCircle } from "lucide-react";
@@ -116,10 +115,7 @@ export default function LoginPage() {
         </form>
 
         <p className="text-center text-[13px] text-[#9ca3af] mt-6">
-          Don&apos;t have an account?{" "}
-          <Link href="/register" className="text-[#F07000] font-semibold hover:underline">
-            Sign Up
-          </Link>
+          Admin access only. Contact a system administrator to create an account.
         </p>
 
         {/* Backend info */}

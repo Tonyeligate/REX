@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { DollarSign, Users, TrendingUp, Calendar, Loader2 } from "lucide-react";
 import { duesApi } from "@/lib/api";
 import type { DuesSummary, DuesPayment } from "@/types/member";
@@ -9,19 +9,74 @@ export default function DuesPage() {
   const [summary, setSummary] = useState<DuesSummary | null>(null);
   const [payments, setPayments] = useState<DuesPayment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [duesUnavailable, setDuesUnavailable] = useState(false);
 
-  useEffect(() => {
-    Promise.all([duesApi.summary(), duesApi.list()])
-      .then(([sumData, payData]) => {
-        setSummary(sumData);
-        setPayments(payData.payments);
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false));
+  const isFeatureUnavailableError = (message: string) => {
+    const normalized = message.toLowerCase();
+    return normalized.includes("mock route removed") || normalized.includes("not implemented on the railway backend yet");
+  };
+
+  const loadDues = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const [sumData, payData] = await Promise.all([duesApi.summary(), duesApi.list()]);
+      setSummary(sumData);
+      setPayments(payData.payments);
+      setDuesUnavailable(false);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to load dues data";
+      setError(message);
+      setSummary(null);
+      setPayments([]);
+      setDuesUnavailable(isFeatureUnavailableError(message));
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  if (loading || !summary) {
+  useEffect(() => {
+    loadDues();
+  }, [loadDues]);
+
+  if (loading) {
     return <div className="flex items-center justify-center h-64 text-[#9ca3af]"><Loader2 size={24} className="animate-spin mr-2" /> Loading...</div>;
+  }
+
+  if (duesUnavailable) {
+    return (
+      <div className="rounded-xl border border-amber-200 bg-amber-50 p-5">
+        <p className="text-[14px] font-semibold text-amber-900 mb-2">Dues module is temporarily unavailable</p>
+        <p className="text-[13px] text-amber-800 mb-4">
+          The dues backend endpoint is not enabled yet. Please try again later.
+        </p>
+        {error && <p className="text-[12px] text-amber-900 mb-3">{error}</p>}
+        <button
+          type="button"
+          onClick={loadDues}
+          className="h-[38px] px-4 rounded-lg bg-amber-600 text-white text-[12px] font-semibold hover:bg-amber-700"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  if (!summary) {
+    return (
+      <div className="rounded-xl border border-red-200 bg-red-50 p-5">
+        <p className="text-[14px] font-semibold text-red-900 mb-2">Unable to load dues data</p>
+        {error && <p className="text-[13px] text-red-800 mb-4">{error}</p>}
+        <button
+          type="button"
+          onClick={loadDues}
+          className="h-[38px] px-4 rounded-lg bg-red-600 text-white text-[12px] font-semibold hover:bg-red-700"
+        >
+          Retry
+        </button>
+      </div>
+    );
   }
 
   const statCards = [

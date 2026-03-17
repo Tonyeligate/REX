@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Save, Loader2, Bell, Shield, Globe } from "lucide-react";
 import { settingsApi } from "@/lib/api";
 import type { AppSettings } from "@/lib/api";
@@ -10,6 +10,7 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [settingsUnavailable, setSettingsUnavailable] = useState(false);
   const [settings, setSettings] = useState<AppSettings>({
     siteName: "",
     siteDescription: "",
@@ -26,15 +27,33 @@ export default function SettingsPage() {
     maintenanceMode: false,
   });
 
-  useEffect(() => {
-    settingsApi
-      .get()
-      .then(({ settings: s }) => setSettings(s))
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
+  const isFeatureUnavailableError = (message: string) => {
+    const normalized = message.toLowerCase();
+    return normalized.includes("mock route removed") || normalized.includes("not implemented on the railway backend yet");
+  };
+
+  const loadSettings = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const { settings: s } = await settingsApi.get();
+      setSettings(s);
+      setSettingsUnavailable(false);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to load settings";
+      setError(message);
+      setSettingsUnavailable(isFeatureUnavailableError(message));
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
+  useEffect(() => {
+    loadSettings();
+  }, [loadSettings]);
+
   const handleSave = async () => {
+    if (settingsUnavailable) return;
     setSaving(true);
     setError("");
     setSuccess("");
@@ -55,6 +74,32 @@ export default function SettingsPage() {
       <div className="flex items-center justify-center py-20">
         <Loader2 size={24} className="animate-spin text-[#F07000]" />
         <span className="ml-2 text-[13px] text-[#9ca3af]">Loading settings...</span>
+      </div>
+    );
+  }
+
+  if (settingsUnavailable) {
+    return (
+      <div>
+        <div className="mb-6">
+          <h3 className="text-[22px] font-bold text-[#1f2937]">Settings</h3>
+          <p className="text-[13px] text-[#9ca3af]">Configure system settings and preferences</p>
+        </div>
+
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-5">
+          <p className="text-[14px] font-semibold text-amber-900 mb-2">Settings module is temporarily unavailable</p>
+          <p className="text-[13px] text-amber-800 mb-4">
+            The settings backend endpoint is not enabled yet. Please try again later.
+          </p>
+          {error && <p className="text-[12px] text-amber-900 mb-3">{error}</p>}
+          <button
+            type="button"
+            onClick={loadSettings}
+            className="h-[38px] px-4 rounded-lg bg-amber-600 text-white text-[12px] font-semibold hover:bg-amber-700"
+          >
+            Retry
+          </button>
+        </div>
       </div>
     );
   }

@@ -83,6 +83,16 @@ export default function AppHeader({
     }
   };
 
+  const profileInitials = (() => {
+    if (!user) return "G";
+
+    const first = user.firstName?.trim().charAt(0) ?? "";
+    const last = user.lastName?.trim().charAt(0) ?? "";
+    const email = user.email?.trim().charAt(0) ?? "";
+
+    return (first + last || first || email || "U").toUpperCase();
+  })();
+
   return (
     <header className="sticky top-0 z-40 w-full header-blur border-b border-border">
       <div className="flex items-center justify-between w-full px-4 py-2">
@@ -156,7 +166,7 @@ export default function AppHeader({
               className="flex items-center gap-2 cursor-pointer group"
             >
               <div className="w-8 h-8 bg-[#F07000] rounded-full flex items-center justify-center text-white text-[13px] font-bold">
-                {user ? user.firstName[0] + user.lastName[0] : "G"}
+                {profileInitials}
               </div>
               <div className="hidden lg:flex flex-col leading-none">
                 <span className="text-[13px] font-bold text-foreground">{getUserDisplayName(user)}</span>

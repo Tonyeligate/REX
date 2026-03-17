@@ -13,34 +13,25 @@ let cachedAt = 0;
 type SearchableBackendJob = {
   rn?: string;
   regional_number?: string | null;
-  title?: string;
-  status_display?: string;
-  description?: string;
   client?: {
     name?: string;
-    email?: string;
-    phone?: string;
   };
 };
 
+function normalizeTrackingKey(value?: string | null): string {
+  return (value ?? "").trim().toLowerCase().replace(/\s+/g, "");
+}
+
 function matchesJobQuery(job: SearchableBackendJob, query: string): boolean {
-  const q = query.trim().toLowerCase();
-  if (!q) return false;
+  const normalizedQuery = normalizeTrackingKey(query);
+  if (!normalizedQuery) return false;
 
-  const fields = [
-    job.rn,
-    job.regional_number,
-    job.title,
-    job.status_display,
-    job.description,
-    job.client?.name,
-    job.client?.email,
-    job.client?.phone,
-  ];
+  const trackingKeys = [
+    normalizeTrackingKey(job.rn),
+    normalizeTrackingKey(job.regional_number),
+  ].filter(Boolean);
 
-  return fields
-    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
-    .some((value) => value.toLowerCase().includes(q));
+  return trackingKeys.some((key) => key === normalizedQuery);
 }
 
 async function lookupJob(query: string, authorization?: string) {
@@ -100,6 +91,26 @@ async function lookupJob(query: string, authorization?: string) {
   const match = jobs.find((job) => matchesJobQuery(job, query)) ?? null;
   if (!match) {
     return { status: 404, job: null };
+  }
+
+  // If we found a match via list-search, re-fetch by canonical RN so clients
+  // receive the freshest detail payload (including latest workflow decisions).
+  const matchedRn = (match.rn ?? "").trim();
+  if (matchedRn) {
+    const detailRes = await fetch(
+      `${BACKEND_ORIGIN}/api/jobs/${encodeURIComponent(matchedRn)}/`,
+      {
+        headers,
+        cache: "no-store",
+      }
+    );
+
+    if (detailRes.ok) {
+      return {
+        status: 200,
+        job: (await detailRes.json()) as SearchableBackendJob,
+      };
+    }
   }
 
   return { status: 200, job: match };

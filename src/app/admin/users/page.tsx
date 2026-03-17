@@ -24,17 +24,38 @@ export default function UsersPage() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("CLIENT");
   const [inviting, setInviting] = useState(false);
-  const [error, setError] = useState("");
+  const [inviteError, setInviteError] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [usersUnavailable, setUsersUnavailable] = useState(false);
+
+  const isFeatureUnavailableError = (message: string) => {
+    const normalized = message.toLowerCase();
+    return normalized.includes("mock route removed") || normalized.includes("not implemented on the railway backend yet");
+  };
+
+  const formatLastLogin = (value?: string) => {
+    const normalized = (value ?? "").trim();
+    if (!normalized || normalized === "—") return "—";
+
+    const timestamp = Date.parse(normalized);
+    if (!Number.isFinite(timestamp)) return "—";
+    return new Date(timestamp).toLocaleString();
+  };
 
   const fetchUsers = useCallback(async (searchQuery?: string) => {
     try {
       setLoading(true);
+      setLoadError("");
       const params: Record<string, string> = {};
       if (searchQuery) params.search = searchQuery;
       const { users: data } = await usersApi.list(params);
       setUsers(data);
+      setUsersUnavailable(false);
     } catch (err) {
-      console.error("Failed to load users:", err);
+      const message = err instanceof Error ? err.message : "Failed to load users";
+      setLoadError(message);
+      setUsers([]);
+      setUsersUnavailable(isFeatureUnavailableError(message));
     } finally {
       setLoading(false);
     }
@@ -53,14 +74,14 @@ export default function UsersPage() {
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
     setInviting(true);
-    setError("");
+    setInviteError("");
     try {
       await usersApi.invite({ email: inviteEmail, role: inviteRole });
       setShowInvite(false);
       setInviteEmail("");
       fetchUsers(search);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to invite user");
+      setInviteError(err instanceof Error ? err.message : "Failed to invite user");
     } finally {
       setInviting(false);
     }
@@ -73,13 +94,29 @@ export default function UsersPage() {
           <h3 className="text-[22px] font-bold text-[#1f2937]">Users & Clients</h3>
           <p className="text-[13px] text-[#9ca3af]">Manage system users and their roles</p>
         </div>
-        <button onClick={() => setShowInvite(true)} className="flex items-center gap-1.5 h-[36px] px-4 bg-[#F07000] text-white rounded-lg text-[12px] font-semibold hover:bg-[#D06000]">
+        <button
+          onClick={() => setShowInvite(true)}
+          disabled={usersUnavailable}
+          className="flex items-center gap-1.5 h-[36px] px-4 bg-[#F07000] text-white rounded-lg text-[12px] font-semibold hover:bg-[#D06000] disabled:opacity-60 disabled:hover:bg-[#F07000]"
+        >
           <UserPlus size={14} /> Invite User
         </button>
       </div>
 
+      {usersUnavailable && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800">
+          Users module is temporarily unavailable because the backend endpoint is not enabled yet.
+        </div>
+      )}
+
+      {!usersUnavailable && loadError && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700">
+          {loadError}
+        </div>
+      )}
+
       {/* Invite Modal */}
-      {showInvite && (
+      {showInvite && !usersUnavailable && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6 m-4">
             <h4 className="text-[16px] font-bold text-[#1f2937] mb-4">Invite User</h4>
@@ -94,9 +131,9 @@ export default function UsersPage() {
                   {Object.keys(roleColors).map((r) => <option key={r} value={r}>{r.replace(/_/g, " ")}</option>)}
                 </select>
               </div>
-              {error && <p className="text-[12px] text-red-600 font-semibold">{error}</p>}
+              {inviteError && <p className="text-[12px] text-red-600 font-semibold">{inviteError}</p>}
               <div className="flex justify-end gap-2 pt-2">
-                <button type="button" onClick={() => { setShowInvite(false); setError(""); }} className="h-[36px] px-4 border border-[#e5e7eb] rounded-lg text-[12px] font-semibold">Cancel</button>
+                <button type="button" onClick={() => { setShowInvite(false); setInviteError(""); }} className="h-[36px] px-4 border border-[#e5e7eb] rounded-lg text-[12px] font-semibold">Cancel</button>
                 <button type="submit" disabled={inviting} className="flex items-center gap-1.5 h-[36px] px-4 bg-[#F07000] text-white rounded-lg text-[12px] font-semibold disabled:opacity-50">
                   {inviting ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />} Send Invite
                 </button>
@@ -133,6 +170,8 @@ export default function UsersPage() {
           <tbody>
             {loading && users.length === 0 ? (
               <tr><td colSpan={6} className="px-4 py-8 text-center text-[#9ca3af]"><Loader2 size={20} className="inline animate-spin mr-2" />Loading users...</td></tr>
+            ) : usersUnavailable ? (
+              <tr><td colSpan={6} className="px-4 py-8 text-center text-amber-700">Users endpoint is currently unavailable.</td></tr>
             ) : users.length === 0 ? (
               <tr><td colSpan={6} className="px-4 py-8 text-center text-[#9ca3af]">No users found</td></tr>
             ) : users.map((u) => (
@@ -143,7 +182,7 @@ export default function UsersPage() {
                 <td className="px-4 py-3">
                   <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${u.isActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>{u.isActive ? "active" : "inactive"}</span>
                 </td>
-                <td className="px-4 py-3 text-[#4b5563]">{new Date(u.lastLogin).toLocaleString()}</td>
+                <td className="px-4 py-3 text-[#4b5563]">{formatLastLogin(u.lastLogin)}</td>
                 <td className="px-4 py-3 text-right">
                   <button className="p-1.5 rounded hover:bg-gray-100 text-[#9ca3af]"><MoreHorizontal size={15} /></button>
                 </td>

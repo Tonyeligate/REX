@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback, useMemo } from "react";
+import React, { useState, useCallback, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { Job, JobStepDecision, WorkflowStep } from "@/types/job";
 import { jobsApi } from "@/lib/api";
@@ -161,6 +161,26 @@ export default function ClientDashboardPage() {
   const handleSearch = () => doSearch(query);
   const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === "Enter") { e.preventDefault(); handleSearch(); } };
 
+  useEffect(() => {
+    if (!searched || !job) return;
+
+    const trimmed = query.trim();
+    if (!trimmed) return;
+
+    const intervalId = window.setInterval(async () => {
+      try {
+        const { jobs } = await jobsApi.search(trimmed);
+        if (jobs.length > 0) {
+          setJob(jobs[0]);
+        }
+      } catch {
+        // Keep current snapshot on transient refresh errors.
+      }
+    }, 20000);
+
+    return () => window.clearInterval(intervalId);
+  }, [job, query, searched]);
+
   const clientAlignedStages = useMemo(() => {
     if (!job) return [] as ClientAlignedStage[];
     return buildClientAlignedStages(job);
@@ -227,7 +247,7 @@ export default function ClientDashboardPage() {
           Track Your <span className="text-[#F07000]">Job Status</span>
         </h1>
         <p className="m-0 text-[#64748b] text-[15px] max-w-[480px] mx-auto mb-6">
-          Enter your RNR, actual regional number, or job title to view the latest backend workflow progress.
+          Enter your RNR or actual regional number to view the latest backend workflow progress.
         </p>
 
         {/* Search bar */}

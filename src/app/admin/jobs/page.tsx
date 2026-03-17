@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
   CheckCircle,
@@ -650,7 +651,7 @@ function RegisterRowModal({
           </div>
 
           <div className="rounded-xl border border-dashed border-[#f59e0b] bg-[#fffbeb] px-4 py-3 text-[12px] text-[#92400e]">
-            These register edits are saved only in this browser and are used as fallback values. When backend step decisions exist for a column, backend values are shown first.
+            These register edits are saved only in this browser and are used as fallback values. They are not synced to the backend, so they do not appear on other devices or the public client tracker unless a backend step decision exists.
           </div>
 
           {error && <p className="text-red-600 text-[12px]">{error}</p>}
@@ -675,12 +676,14 @@ function RegisterRowModal({
 }
 
 export default function JobsRegisterPage() {
+  const searchParams = useSearchParams();
+  const urlSearch = searchParams.get("q") ?? "";
   const [jobs, setJobs] = useState<Job[]>([]);
   const [registerRecords, setRegisterRecords] = useState<Record<string, JobRegisterRecord>>({});
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
   const [importFeedback, setImportFeedback] = useState("");
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(urlSearch);
   const [statusFilter, setStatusFilter] = useState("");
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const [workflowModal, setWorkflowModal] = useState<{
@@ -720,6 +723,10 @@ export default function JobsRegisterPage() {
   useEffect(() => {
     loadJobs();
   }, [loadJobs]);
+
+  useEffect(() => {
+    setSearch((current) => (current === urlSearch ? current : urlSearch));
+  }, [urlSearch]);
 
   const filteredJobs = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -932,7 +939,7 @@ export default function JobsRegisterPage() {
         <div>
           <h3 className="text-[22px] font-bold text-[#1f2937]">Job Management Register</h3>
           <p className="text-[13px] text-[#9ca3af]">
-            Presented like the physical register. Click any register cell or Edit Register to fill the book-only stages.
+            Presented like the physical register. Click any register cell or Edit Register to fill the book-only stages (local browser fallback only).
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

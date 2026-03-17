@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Plus, Search, Download, Upload, Eye, UserPlus, Loader2 } from "lucide-react";
 import { membersApi } from "@/lib/api";
@@ -21,7 +21,7 @@ export default function MembersPage() {
   });
   const [adding, setAdding] = useState(false);
 
-  const loadMembers = async () => {
+  const loadMembers = useCallback(async () => {
     setLoading(true);
     const params: Record<string, string> = {};
     if (regionFilter) params.region = regionFilter;
@@ -34,9 +34,22 @@ export default function MembersPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [regionFilter, search]);
 
-  useEffect(() => { loadMembers(); }, [regionFilter, search]);
+  useEffect(() => { loadMembers(); }, [loadMembers]);
+
+  useEffect(() => {
+    if (!showAdd) return;
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setShowAdd(false);
+      }
+    };
+
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [showAdd]);
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -104,9 +117,15 @@ export default function MembersPage() {
 
       {/* Add Member Modal */}
       {showAdd && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6 m-4">
-            <h4 className="text-[16px] font-bold text-[#1f2937] mb-4">Add New Member</h4>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setShowAdd(false)}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="add-member-title"
+            className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6 m-4"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h4 id="add-member-title" className="text-[16px] font-bold text-[#1f2937] mb-4">Add New Member</h4>
             <form onSubmit={handleAdd} className="grid grid-cols-2 gap-3">
               <input value={form.firstName} onChange={(e) => setForm({...form, firstName: e.target.value})} placeholder="First Name *" required className="h-[38px] px-3 border border-[#e5e7eb] rounded-lg text-[13px]" />
               <input value={form.surname} onChange={(e) => setForm({...form, surname: e.target.value})} placeholder="Surname *" required className="h-[38px] px-3 border border-[#e5e7eb] rounded-lg text-[13px]" />
