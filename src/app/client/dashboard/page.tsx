@@ -31,6 +31,30 @@ type ClientAlignedStage = {
   comment: string;
 };
 
+type SyncStatus = "idle" | "syncing" | "ok" | "error";
+
+type SyncState = {
+  status: SyncStatus;
+  updatedAt: number | null;
+  message: string;
+};
+
+function toErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof Error && err.message.trim()) {
+    return err.message;
+  }
+  return fallback;
+}
+
+function formatSyncTime(timestamp: number | null): string {
+  if (!timestamp) return "--";
+  return new Date(timestamp).toLocaleTimeString("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
 function parseDecisionOutcome(value?: string): "approve" | "query" | "reject" | undefined {
   const normalized = (value ?? "").trim().toLowerCase();
   if (!normalized) return undefined;
@@ -126,6 +150,11 @@ export default function ClientDashboardPage() {
   const [loading, setLoading] = useState(false);
   const [searchError, setSearchError] = useState("");
   const [animKey, setAnimKey] = useState(0);
+  const [syncState, setSyncState] = useState<SyncState>({
+    status: "idle",
+    updatedAt: null,
+    message: "Not synced yet",
+  });
 
   const doSearch = useCallback(async (q: string) => {
     const trimmed = q.trim();
@@ -133,25 +162,34 @@ export default function ClientDashboardPage() {
     setLoading(true);
     setJob(null);
     setSearchError("");
+    setSyncState({ status: "syncing", updatedAt: Date.now(), message: "Checking latest backend status..." });
     try {
       const { jobs } = await jobsApi.search(trimmed);
       await new Promise((r) => setTimeout(r, 250));
       if (jobs.length > 0) {
         setJob(jobs[0]);
         setSearchError("");
+        setSyncState({
+          status: "ok",
+          updatedAt: Date.now(),
+          message: "Connected to backend updates",
+        });
       } else {
         setJob(null);
         setSearchError("");
+        setSyncState({
+          status: "error",
+          updatedAt: Date.now(),
+          message: "No job found for that tracking number",
+        });
       }
       setSearched(true);
       setAnimKey((k) => k + 1);
     } catch (err: unknown) {
       setJob(null);
-      setSearchError(
-        err instanceof Error && err.message
-          ? err.message
-          : "Unable to search jobs right now."
-      );
+      const message = toErrorMessage(err, "Unable to search jobs right now.");
+      setSearchError(message);
+      setSyncState({ status: "error", updatedAt: Date.now(), message });
       setSearched(true);
     } finally {
       setLoading(false);
@@ -168,13 +206,34 @@ export default function ClientDashboardPage() {
     if (!trimmed) return;
 
     const intervalId = window.setInterval(async () => {
+      setSyncState((prev) => ({
+        status: "syncing",
+        updatedAt: prev.updatedAt,
+        message: "Checking for new updates...",
+      }));
+
       try {
         const { jobs } = await jobsApi.search(trimmed);
         if (jobs.length > 0) {
           setJob(jobs[0]);
+          setSyncState({
+            status: "ok",
+            updatedAt: Date.now(),
+            message: "Live sync healthy",
+          });
+        } else {
+          setSyncState({
+            status: "error",
+            updatedAt: Date.now(),
+            message: "Tracker did not return a job during sync",
+          });
         }
-      } catch {
-        // Keep current snapshot on transient refresh errors.
+      } catch (err: unknown) {
+        setSyncState({
+          status: "error",
+          updatedAt: Date.now(),
+          message: toErrorMessage(err, "Auto-sync failed. Please retry search."),
+        });
       }
     }, 20000);
 
@@ -282,6 +341,36 @@ export default function ClientDashboardPage() {
 
 
         </div>
+
+        {searched && (
+          <div className="mt-3 flex items-center justify-center">
+            <div
+              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[12px] font-[600] ${
+                syncState.status === "ok"
+                  ? "border-[#bbf7d0] bg-[#f0fdf4] text-[#166534]"
+                  : syncState.status === "syncing"
+                    ? "border-[#fed7aa] bg-[#fff7ed] text-[#9a3412]"
+                    : syncState.status === "error"
+                      ? "border-[#fecaca] bg-[#fef2f2] text-[#991b1b]"
+                      : "border-[#e2e8f0] bg-[#f8fafc] text-[#475569]"
+              }`}
+            >
+              <span
+                className={`inline-block h-2 w-2 rounded-full ${
+                  syncState.status === "ok"
+                    ? "bg-[#16a34a]"
+                    : syncState.status === "syncing"
+                      ? "bg-[#f97316] animate-pulse"
+                      : syncState.status === "error"
+                        ? "bg-[#dc2626]"
+                        : "bg-[#94a3b8]"
+                }`}
+              />
+              <span>Sync: {syncState.message}</span>
+              <span className="text-[11px] opacity-80">Last update {formatSyncTime(syncState.updatedAt)}</span>
+            </div>
+          </div>
+        )}
       </motion.div>
 
       {/* ── Results Area ── */}

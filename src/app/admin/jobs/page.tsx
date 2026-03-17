@@ -19,7 +19,13 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { WORKFLOW_STATUSES, jobsApi, registerFieldsApi, type BackendStatus } from "@/lib/api";
+import {
+  WORKFLOW_STATUSES,
+  STATUS_STEP_MAP,
+  jobsApi,
+  registerFieldsApi,
+  type BackendStatus,
+} from "@/lib/api";
 import {
   BACKEND_REGISTER_STEP_CODE_MAP,
   REGISTER_STAGE_COLS,
@@ -527,6 +533,51 @@ function RegisterRowModal({
         return;
       }
 
+      const acceptedStages = REGISTER_STAGE_KEYS
+        .map((key) => {
+          const stage = stages[key];
+          return {
+            key,
+            stage,
+            backendStatus: BACKEND_REGISTER_STEP_CODE_MAP[key] as BackendStatus,
+          };
+        })
+        .filter((item) => item.stage.outcome === "accept")
+        .sort(
+          (a, b) =>
+            (STATUS_STEP_MAP[a.backendStatus] ?? 0) -
+            (STATUS_STEP_MAP[b.backendStatus] ?? 0)
+        );
+
+      let currentStep = STATUS_STEP_MAP[job.backendStatus ?? "request_received"] ?? 1;
+
+      for (const item of acceptedStages) {
+        const targetStep = STATUS_STEP_MAP[item.backendStatus] ?? currentStep;
+        if (targetStep <= currentStep) continue;
+
+        const comment = item.stage.comment.trim();
+        const label = REGISTER_STAGE_LABELS[item.key];
+        const notes = comment
+          ? `REGISTER APPROVED (${label}): ${comment}`
+          : `REGISTER APPROVED (${label})`;
+
+        try {
+          await jobsApi.transitionTo(job.jobId, {
+            status: item.backendStatus,
+            notes,
+          });
+          currentStep = targetStep;
+          continue;
+        } catch {
+          // Some backend environments only allow linear transitions.
+          while (currentStep < targetStep) {
+            await jobsApi.advanceStep(job.jobId, { comment: notes });
+            currentStep += 1;
+          }
+        }
+
+      }
+
       const stagePayload = REGISTER_STAGE_KEYS.reduce<Partial<Record<RegisterStageKey, RegisterStageEntry | null>>>((acc, key) => {
         const stage = stages[key];
         const comment = stage.comment.trim();
@@ -651,7 +702,7 @@ function RegisterRowModal({
           </div>
 
           <div className="rounded-xl border border-dashed border-[#f59e0b] bg-[#fffbeb] px-4 py-3 text-[12px] text-[#92400e]">
-            These register edits are saved only in this browser and are used as fallback values. They are not synced to the backend, so they do not appear on other devices or the public client tracker unless a backend step decision exists.
+            Accepted register stages are synced to backend workflow when possible. Query/reject notes entered here are still local fallback values unless actioned through Workflow.
           </div>
 
           {error && <p className="text-red-600 text-[12px]">{error}</p>}
@@ -1166,6 +1217,7 @@ export default function JobsRegisterPage() {
           onDone={(record) => {
             setRegisterRecords((current) => ({ ...current, [record.jobId]: record }));
             setRegisterModalJob(null);
+            loadJobs();
           }}
         />
       )}

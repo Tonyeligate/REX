@@ -932,6 +932,42 @@ export const jobsApi = {
       method: "POST",
       body: JSON.stringify(body),
     });
+
+    // Product rule: newly created jobs should start with the first three
+    // workflow milestones already captured.
+    const bootstrapStatuses: BackendStatus[] = [
+      "rn_assigned",
+      "in_production",
+      "submitted_to_ls461",
+    ];
+
+    let currentStatus = created.status as BackendStatus;
+    let didBootstrap = false;
+
+    for (const status of bootstrapStatuses) {
+      const currentStep = STATUS_STEP_MAP[currentStatus] ?? 1;
+      const targetStep = STATUS_STEP_MAP[status] ?? currentStep;
+      if (currentStep >= targetStep) continue;
+
+      try {
+        await backendRequest(`/jobs/${encodeURIComponent(created.rn)}/transition/`, {
+          method: "POST",
+          body: JSON.stringify({
+            status,
+            notes: "Auto-initialized on job creation (steps 1-3).",
+          }),
+        });
+        currentStatus = status;
+        didBootstrap = true;
+      } catch {
+        break;
+      }
+    }
+
+    if (didBootstrap) {
+      return jobsApi.get(created.rn);
+    }
+
     return { job: mapBackendJob(created) };
   },
 
