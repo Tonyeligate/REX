@@ -900,6 +900,16 @@ const PATCHABLE_WORKFLOW_STATUSES = new Set<BackendStatus>([
   "7_region",
 ]);
 
+const PATCH_STATUS_FLOW: BackendStatus[] = [
+  "1_rnr",
+  "2_regional_number",
+  "3_job_production",
+  "4_ls_cert",
+  "5_csau_payment",
+  "6_examination",
+  "7_region",
+];
+
 async function setJobStatusViaPatch(rnOrId: string, status: BackendStatus): Promise<void> {
   await backendRequest<BackendJobDetail>(
     `/jobs/${encodeURIComponent(rnOrId)}/`,
@@ -908,6 +918,26 @@ async function setJobStatusViaPatch(rnOrId: string, status: BackendStatus): Prom
       body: JSON.stringify({ status }),
     }
   );
+}
+
+function mapStepToPatchStatus(step: number): BackendStatus {
+  if (step <= 1) return "1_rnr";
+  if (step <= 2) return "2_regional_number";
+  if (step <= 3) return "3_job_production";
+  if (step <= 6) return "4_ls_cert";
+  if (step <= 7) return "5_csau_payment";
+  if (step <= 9) return "6_examination";
+  return "7_region";
+}
+
+function getNextPatchStatusForWorkflow(current: BackendStatus): BackendStatus | null {
+  const step = STATUS_STEP_MAP[current] ?? 1;
+  const currentPatchStatus = mapStepToPatchStatus(step);
+  const currentIndex = PATCH_STATUS_FLOW.indexOf(currentPatchStatus);
+  if (currentIndex < 0 || currentIndex >= PATCH_STATUS_FLOW.length - 1) {
+    return null;
+  }
+  return PATCH_STATUS_FLOW[currentIndex + 1];
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -1058,17 +1088,12 @@ export const jobsApi = {
     payload: { comment?: string; completedBy?: string }
   ) => {
     const { job: current } = await jobsApi.get(rnOrId);
-    const nextStatus = getNextStatus(current.backendStatus as BackendStatus);
+    const nextStatus = getNextPatchStatusForWorkflow(
+      current.backendStatus as BackendStatus
+    );
     if (!nextStatus) throw new Error("Job is already at the final step");
 
-    if (PATCHABLE_WORKFLOW_STATUSES.has(nextStatus)) {
-      await setJobStatusViaPatch(rnOrId, nextStatus);
-    } else {
-      await transitionJobStatus(rnOrId, {
-        status: nextStatus,
-        notes: payload.comment ?? "",
-      });
-    }
+    await setJobStatusViaPatch(rnOrId, nextStatus);
 
     return jobsApi.get(rnOrId);
   },
