@@ -19,6 +19,7 @@ export default function LoginPage() {
 
   // Redirect if already authenticated
   useEffect(() => { loadUser(); }, [loadUser]);
+
   useEffect(() => {
     if (isAuthenticated && user) {
       router.replace(user.role === "CLIENT" ? "/client/dashboard" : "/dashboard");

@@ -566,24 +566,18 @@ function RegisterRowModal({
           ? `REGISTER APPROVED (${label}): ${comment}`
           : `REGISTER APPROVED (${label})`;
 
-        try {
-          await jobsApi.transitionTo(job.jobId, {
-            status: item.backendStatus,
-            notes,
-          });
-          currentStep = targetStep;
-          continue;
-        } catch (err: unknown) {
-          if (isPermissionDeniedError(err)) {
-            throw new Error(
-              "Your account is not permitted to update workflow stages. Please sign in with an authorized admin/staff account."
-            );
-          }
-
-          // Some backend environments only allow linear transitions.
-          while (currentStep < targetStep) {
+        // Always progress linearly in register mode to match backend transition rules.
+        while (currentStep < targetStep) {
+          try {
             await jobsApi.advanceStep(job.jobId, { comment: notes });
             currentStep += 1;
+          } catch (err: unknown) {
+            if (isPermissionDeniedError(err)) {
+              throw new Error(
+                "Your account is not permitted to update workflow stages. Please sign in with an authorized admin/staff account."
+              );
+            }
+            throw err;
           }
         }
 
