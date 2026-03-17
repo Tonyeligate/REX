@@ -355,6 +355,7 @@ function StageModal({ job, colLabel, stepIndex, currentState, onClose, onDone }:
         await jobsApi.transitionTo(job.jobId, {
           status: getQueryStatusForStage(stepIndex),
           notes: `${outcome === "query" ? "QUERIED" : "REJECTED"}: ${comment}`,
+          queryReason: comment,
         });
       }
       onDone();

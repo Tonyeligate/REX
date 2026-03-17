@@ -331,7 +331,21 @@ async function localRequest<T>(
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.error ?? `Request failed: ${res.status}`);
+    const message =
+      typeof body === "object" && body
+        ? body.error ??
+          body.detail ??
+          body.message ??
+          Object.values(body)
+            .flat()
+            .map((value) => String(value))
+            .join(", ")
+        : undefined;
+    throw new Error(
+      typeof message === "string" && message.trim()
+        ? message
+        : `Request failed: ${res.status}`
+    );
   }
   return res.json();
 }
@@ -542,15 +556,18 @@ import type {
 
 const BACKEND_ROLE_MAP: Record<string, Role> = {
   client: "CLIENT",
+  clients: "CLIENT",
   customer: "CLIENT",
   user: "CLIENT",
   licensed_surveyor: "LICENSED_SURVEYOR",
   csau: "CSAU_OFFICER",
   smd_examination: "SMD_EXAMINER",
   smd_region: "SMD_REGIONAL",
+  employees: "ADMIN",
   chief_examiner: "ADMIN",
   admin_user: "ADMIN",
   administrator: "ADMIN",
+  system_admin: "ADMIN",
   super_admin: "ADMIN",
   superuser: "ADMIN",
   staff: "ADMIN",
@@ -570,7 +587,7 @@ function resolveRole(bu: BackendUser): Role {
   if (!bu.profile) return "ADMIN";
 
   const roleText = String(profileRole ?? bu.profile.role_display ?? "").trim().toLowerCase();
-  if (/admin|super|chief|examiner|staff/.test(roleText)) {
+  if (/admin|super|chief|examiner|staff|employee/.test(roleText)) {
     return "ADMIN";
   }
 
@@ -860,6 +877,19 @@ export const authApi = {
   },
 };
 
+async function transitionJobStatus(
+  rnOrId: string,
+  payload: { status: BackendStatus; notes?: string; query_reason?: string }
+): Promise<void> {
+  await localRequest<Record<string, unknown>>(
+    `/jobs/${encodeURIComponent(rnOrId)}/transition`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
 /* ═══════════════════════════════════════════════════════════
    Jobs API  (→ Railway backend)
    ═══════════════════════════════════════════════════════════ */
@@ -973,12 +1003,9 @@ export const jobsApi = {
       if (currentStep >= targetStep) continue;
 
       try {
-        await backendRequest(`/jobs/${encodeURIComponent(created.rn)}/transition/`, {
-          method: "POST",
-          body: JSON.stringify({
-            status,
-            notes: "Auto-initialized on job creation (steps 1-3).",
-          }),
+        await transitionJobStatus(created.rn, {
+          status,
+          notes: "Auto-initialized on job creation (steps 1-3).",
         });
         currentStatus = status;
         didBootstrap = true;
@@ -1014,13 +1041,10 @@ export const jobsApi = {
     const nextStatus = getNextStatus(current.backendStatus as BackendStatus);
     if (!nextStatus) throw new Error("Job is already at the final step");
 
-    await backendRequest(
-      `/jobs/${encodeURIComponent(rnOrId)}/transition/`,
-      {
-        method: "POST",
-        body: JSON.stringify({ status: nextStatus, notes: payload.comment ?? "" }),
-      }
-    );
+    await transitionJobStatus(rnOrId, {
+      status: nextStatus,
+      notes: payload.comment ?? "",
+    });
 
     return jobsApi.get(rnOrId);
   },
@@ -1028,15 +1052,13 @@ export const jobsApi = {
   /** Transition a job to any explicit status (used for Accept / Query / Reject from tracking table). */
   transitionTo: async (
     rnOrId: string,
-    payload: { status: BackendStatus; notes?: string }
+    payload: { status: BackendStatus; notes?: string; queryReason?: string }
   ) => {
-    await backendRequest(
-      `/jobs/${encodeURIComponent(rnOrId)}/transition/`,
-      {
-        method: "POST",
-        body: JSON.stringify({ status: payload.status, notes: payload.notes ?? "" }),
-      }
-    );
+    await transitionJobStatus(rnOrId, {
+      status: payload.status,
+      notes: payload.notes ?? "",
+      query_reason: payload.queryReason?.trim() || undefined,
+    });
     return jobsApi.get(rnOrId);
   },
 
@@ -1191,12 +1213,11 @@ export interface UserRow {
 }
 
 const FRONTEND_TO_BACKEND_ROLE: Record<string, string> = {
-  LICENSED_SURVEYOR: "licensed_surveyor",
-  CSAU_OFFICER: "csau",
-  SMD_EXAMINER: "smd_examination",
-  SMD_REGIONAL: "smd_region",
-  ADMIN: "chief_examiner",
-  CLIENT: "licensed_surveyor",
+  LICENSED_SURVEYOR: "employees",
+  CSAU_OFFICER: "employees",
+  SMD_EXAMINER: "employees",
+  SMD_REGIONAL: "employees",
+  ADMIN: "admin",
 };
 
 export const usersApi = {
@@ -1211,8 +1232,12 @@ export const usersApi = {
     firstName?: string;
     lastName?: string;
   }) => {
-    const backendRole =
-      FRONTEND_TO_BACKEND_ROLE[payload.role] ?? "licensed_surveyor";
+    const backendRole = FRONTEND_TO_BACKEND_ROLE[payload.role];
+    if (!backendRole) {
+      throw new Error(
+        "Selected role is not supported by the backend employee invite endpoint."
+      );
+    }
     const created = await backendRequest<BackendUser>(
       "/auth/admin/employees/",
       {

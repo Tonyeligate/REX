@@ -78,6 +78,7 @@ export default function JobDetailPage() {
         const updated = await jobsApi.transitionTo(job.jobId, {
           status: qStatus,
           notes: prefix + advanceComment,
+          queryReason: advanceComment,
         });
         setJob(updated.job);
       }
