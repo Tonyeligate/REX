@@ -4,12 +4,6 @@ const BACKEND_ORIGIN =
   process.env.NEXT_PUBLIC_BACKEND_URL ??
   "https://ls-portal-development-backend.up.railway.app";
 
-const SERVICE_USERNAME = process.env.BACKEND_SERVICE_USERNAME;
-const SERVICE_PASSWORD = process.env.BACKEND_SERVICE_PASSWORD;
-
-let cachedToken: string | null = null;
-let cachedAt = 0;
-
 interface Ctx {
   params: Promise<{ id: string }>;
 }
@@ -60,60 +54,6 @@ async function callTransition(
   });
 }
 
-async function isPrivilegedCaller(authorization: string): Promise<boolean> {
-  const meRes = await fetch(`${BACKEND_ORIGIN}/api/auth/me/`, {
-    headers: { Authorization: authorization },
-    cache: "no-store",
-  });
-
-  if (!meRes.ok) return false;
-
-  const me = (await meRes.json().catch(() => null)) as {
-    is_staff?: boolean;
-    is_superuser?: boolean;
-    profile?: { role?: string | null } | null;
-  } | null;
-
-  const role = String(me?.profile?.role ?? "").trim().toLowerCase();
-  return Boolean(
-    me?.is_superuser ||
-      me?.is_staff ||
-      role === "system_admin" ||
-      role === "admin" ||
-      role === "employees"
-  );
-}
-
-async function getServiceToken(forceRefresh = false): Promise<string> {
-  const tokenTtlMs = 4 * 60 * 1000;
-  if (!forceRefresh && cachedToken && Date.now() - cachedAt < tokenTtlMs) {
-    return cachedToken;
-  }
-
-  if (!SERVICE_USERNAME || !SERVICE_PASSWORD) {
-    throw new Error("Service credentials are not configured.");
-  }
-
-  const tokenRes = await fetch(`${BACKEND_ORIGIN}/api/auth/token/`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      username: SERVICE_USERNAME,
-      password: SERVICE_PASSWORD,
-    }),
-    cache: "no-store",
-  });
-
-  if (!tokenRes.ok) {
-    throw new Error(`Failed to obtain service token (${tokenRes.status}).`);
-  }
-
-  const data = (await tokenRes.json()) as { access: string };
-  cachedToken = data.access;
-  cachedAt = Date.now();
-  return data.access;
-}
-
 export async function POST(req: Request, ctx: Ctx) {
   const { id } = await ctx.params;
   const payload = await req.text();
@@ -123,39 +63,10 @@ export async function POST(req: Request, ctx: Ctx) {
     return NextResponse.json({ detail: "Not authenticated." }, { status: 401 });
   }
 
-  const userAttempt = await callTransition(id, payload, authorization);
-  if (userAttempt.ok) {
+  const upstream = await callTransition(id, payload, authorization);
+  if (upstream.ok) {
     return successResponse();
   }
 
-  if (userAttempt.status !== 401 && userAttempt.status !== 403) {
-    return upstreamError(userAttempt);
-  }
-
-  const callerIsPrivileged = await isPrivilegedCaller(authorization);
-  if (!callerIsPrivileged) {
-    return upstreamError(userAttempt);
-  }
-
-  if (!SERVICE_USERNAME || !SERVICE_PASSWORD) {
-    return upstreamError(userAttempt);
-  }
-
-  try {
-    let serviceToken = await getServiceToken();
-    let serviceAttempt = await callTransition(id, payload, `Bearer ${serviceToken}`);
-
-    if (serviceAttempt.status === 401) {
-      serviceToken = await getServiceToken(true);
-      serviceAttempt = await callTransition(id, payload, `Bearer ${serviceToken}`);
-    }
-
-    if (serviceAttempt.ok) {
-      return successResponse();
-    }
-
-    return upstreamError(serviceAttempt);
-  } catch {
-    return upstreamError(userAttempt);
-  }
+  return upstreamError(upstream);
 }
