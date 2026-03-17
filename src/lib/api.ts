@@ -890,6 +890,26 @@ async function transitionJobStatus(
   );
 }
 
+const PATCHABLE_WORKFLOW_STATUSES = new Set<BackendStatus>([
+  "1_rnr",
+  "2_regional_number",
+  "3_job_production",
+  "4_ls_cert",
+  "5_csau_payment",
+  "6_examination",
+  "7_region",
+]);
+
+async function setJobStatusViaPatch(rnOrId: string, status: BackendStatus): Promise<void> {
+  await backendRequest<BackendJobDetail>(
+    `/jobs/${encodeURIComponent(rnOrId)}/`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    }
+  );
+}
+
 /* ═══════════════════════════════════════════════════════════
    Jobs API  (→ Railway backend)
    ═══════════════════════════════════════════════════════════ */
@@ -1041,10 +1061,14 @@ export const jobsApi = {
     const nextStatus = getNextStatus(current.backendStatus as BackendStatus);
     if (!nextStatus) throw new Error("Job is already at the final step");
 
-    await transitionJobStatus(rnOrId, {
-      status: nextStatus,
-      notes: payload.comment ?? "",
-    });
+    if (PATCHABLE_WORKFLOW_STATUSES.has(nextStatus)) {
+      await setJobStatusViaPatch(rnOrId, nextStatus);
+    } else {
+      await transitionJobStatus(rnOrId, {
+        status: nextStatus,
+        notes: payload.comment ?? "",
+      });
+    }
 
     return jobsApi.get(rnOrId);
   },
@@ -1054,11 +1078,15 @@ export const jobsApi = {
     rnOrId: string,
     payload: { status: BackendStatus; notes?: string; queryReason?: string }
   ) => {
-    await transitionJobStatus(rnOrId, {
-      status: payload.status,
-      notes: payload.notes ?? "",
-      query_reason: payload.queryReason?.trim() || undefined,
-    });
+    if (PATCHABLE_WORKFLOW_STATUSES.has(payload.status)) {
+      await setJobStatusViaPatch(rnOrId, payload.status);
+    } else {
+      await transitionJobStatus(rnOrId, {
+        status: payload.status,
+        notes: payload.notes ?? "",
+        query_reason: payload.queryReason?.trim() || undefined,
+      });
+    }
     return jobsApi.get(rnOrId);
   },
 
