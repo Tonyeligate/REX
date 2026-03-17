@@ -35,12 +35,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       return;
     }
 
-    if (!isLoading && isAuthenticated && user?.role === "CLIENT") {
+    if (!isLoading && isAuthenticated && user?.role !== "ADMIN") {
       router.replace("/client/dashboard");
     }
   }, [isLoading, isAuthenticated, user, router]);
 
-  if (isLoading || !isAuthenticated || user?.role === "CLIENT") {
+  if (isLoading || !isAuthenticated || user?.role !== "ADMIN") {
     return (
       <div className="flex items-center justify-center min-h-screen bg-[#f4f7f6]">
         <div className="flex flex-col items-center gap-3">
