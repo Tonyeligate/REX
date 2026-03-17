@@ -542,11 +542,18 @@ import type {
 
 const BACKEND_ROLE_MAP: Record<string, Role> = {
   client: "CLIENT",
+  customer: "CLIENT",
+  user: "CLIENT",
   licensed_surveyor: "LICENSED_SURVEYOR",
   csau: "CSAU_OFFICER",
   smd_examination: "SMD_EXAMINER",
   smd_region: "SMD_REGIONAL",
   chief_examiner: "ADMIN",
+  admin_user: "ADMIN",
+  administrator: "ADMIN",
+  super_admin: "ADMIN",
+  superuser: "ADMIN",
+  staff: "ADMIN",
   admin: "ADMIN",
   superadmin: "ADMIN",
 };
@@ -558,8 +565,15 @@ function resolveRole(bu: BackendUser): Role {
   if (profileRole && BACKEND_ROLE_MAP[profileRole]) {
     return BACKEND_ROLE_MAP[profileRole];
   }
-  // Safety fallback: unknown/no profile should not be elevated to admin UI.
-  if (!bu.profile) return "CLIENT";
+  // Conservative-but-practical fallback: unknown profile roles should not force
+  // users into client-only routing loops. Backend permissions still gate actions.
+  if (!bu.profile) return "ADMIN";
+
+  const roleText = String(profileRole ?? bu.profile.role_display ?? "").trim().toLowerCase();
+  if (/admin|super|chief|examiner|staff/.test(roleText)) {
+    return "ADMIN";
+  }
+
   return "CLIENT";
 }
 
