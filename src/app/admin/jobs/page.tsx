@@ -574,8 +574,12 @@ function RegisterRowModal({
             currentStep += 1;
           } catch (err: unknown) {
             if (isPermissionDeniedError(err)) {
+              const reason =
+                err instanceof Error && err.message.trim()
+                  ? err.message.trim()
+                  : "Your role is not allowed to set this status.";
               throw new Error(
-                "Your account is not permitted to update workflow stages. Please sign in with an authorized admin/staff account."
+                `Workflow update denied by backend: ${reason}`
               );
             }
             throw err;
