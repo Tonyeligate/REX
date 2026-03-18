@@ -493,14 +493,17 @@ function RegisterRowModal({
   onDone: (record: JobRegisterRecord) => void;
 }) {
   const [stages, setStages] = useState<Record<RegisterStageKey, { outcome: RegisterStageOutcome | ""; comment: string }>>(() =>
-    REGISTER_STAGE_KEYS.reduce((acc, key) => {
-      const stage = normalizeRegisterStage(record?.stages[key]);
-      acc[key] = {
-        outcome: stage?.outcome ?? "",
-        comment: stage?.comment ?? "",
-      };
-      return acc;
-    }, {} as Record<RegisterStageKey, { outcome: RegisterStageOutcome | ""; comment: string }>)
+    {
+      const resolvedStages = resolveRegisterStages(job, record);
+      return REGISTER_STAGE_KEYS.reduce((acc, key) => {
+        const stage = resolvedStages[key].entry;
+        acc[key] = {
+          outcome: stage?.outcome ?? "",
+          comment: stage?.comment ?? "",
+        };
+        return acc;
+      }, {} as Record<RegisterStageKey, { outcome: RegisterStageOutcome | ""; comment: string }>);
+    }
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
