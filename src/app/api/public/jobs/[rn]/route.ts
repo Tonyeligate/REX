@@ -54,6 +54,36 @@ function matchesJobQuery(job: SearchableBackendJob, query: string): boolean {
 async function lookupJob(query: string, authorization?: string) {
   const headers = authorization ? { Authorization: authorization } : undefined;
 
+  const tracking = await fetch(
+    `${BACKEND_ORIGIN}/api/jobs/tracking/${encodeURIComponent(query)}/`,
+    {
+      headers,
+      cache: "no-store",
+    }
+  );
+
+  if (tracking.ok) {
+    return {
+      status: 200,
+      job: (await tracking.json()) as SearchableBackendJob,
+    };
+  }
+
+  if (tracking.status !== 404) {
+    const body = await tracking.json().catch(() => ({}));
+    const detail =
+      typeof body === "object"
+        ? (body as Record<string, unknown>).detail
+        : undefined;
+
+    return {
+      status: tracking.status,
+      error:
+        (typeof detail === "string" && detail) ||
+        `Backend tracking lookup failed (${tracking.status})`,
+    };
+  }
+
   const direct = await fetch(
     `${BACKEND_ORIGIN}/api/jobs/${encodeURIComponent(query)}/`,
     {

@@ -162,18 +162,18 @@ function resolveRegisterStages(
 
   return REGISTER_STAGE_KEYS.reduce((acc, key) => {
     const backendStepCode = BACKEND_REGISTER_STEP_CODE_MAP[key];
+    const localEntry = normalizeRegisterStage(record?.stages[key]);
+    if (localEntry) {
+      acc[key] = { entry: localEntry, source: "local" };
+      return acc;
+    }
+
     const backendDecision = latestByStep.get(backendStepCode);
     if (backendDecision) {
       acc[key] = {
         entry: toRegisterEntryFromBackendDecision(backendDecision),
         source: "backend",
       };
-      return acc;
-    }
-
-    const localEntry = normalizeRegisterStage(record?.stages[key]);
-    if (localEntry) {
-      acc[key] = { entry: localEntry, source: "local" };
       return acc;
     }
 
@@ -597,9 +597,10 @@ function RegisterRowModal({
             key,
             stage,
             backendStatus: BACKEND_REGISTER_STEP_CODE_MAP[key] as BackendStatus,
+            edited: isStageEdited(key),
           };
         })
-        .filter((item) => item.stage.outcome === "accept")
+        .filter((item) => item.edited && item.stage.outcome === "accept")
         .sort(
           (a, b) =>
             (STATUS_STEP_MAP[a.backendStatus] ?? 0) -
@@ -646,6 +647,10 @@ function RegisterRowModal({
       }
 
       const stagePayload = REGISTER_STAGE_KEYS.reduce<Partial<Record<RegisterStageKey, RegisterStageEntry | null>>>((acc, key) => {
+        if (!isStageEdited(key)) {
+          return acc;
+        }
+
         const stage = stages[key];
         const comment = stage.comment.trim();
 
@@ -774,7 +779,7 @@ function RegisterRowModal({
           </div>
 
           <div className="rounded-xl border border-dashed border-[#f59e0b] bg-[#fffbeb] px-4 py-3 text-[12px] text-[#92400e]">
-            Accepted register stages are synced to backend workflow when possible. Query/reject notes entered here are still local fallback values unless actioned through Workflow.
+            Accepted register stages are synced to backend workflow when possible. Local overrides are saved only for stages you edit in this modal.
           </div>
 
           {error && <p className="text-red-600 text-[12px]">{error}</p>}
@@ -841,6 +846,15 @@ export default function JobsRegisterPage() {
       })
       .catch(console.error)
       .finally(() => setLoading(false));
+  }, []);
+
+  const refreshJob = useCallback(async (jobId: string) => {
+    try {
+      const { job } = await jobsApi.get(jobId);
+      setJobs((current) => current.map((item) => (item.jobId === jobId ? job : item)));
+    } catch (err) {
+      console.error(err);
+    }
   }, []);
 
   useEffect(() => {
@@ -1062,7 +1076,7 @@ export default function JobsRegisterPage() {
         <div>
           <h3 className="text-[22px] font-bold text-[#1f2937]">Job Management Register</h3>
           <p className="text-[13px] text-[#9ca3af]">
-            Presented like the physical register. Click any register cell or Edit Register to fill the book-only stages (local browser fallback only).
+            Presented like the physical register. Click any register cell or Edit Register to update register stages, with backend sync where supported.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -1140,7 +1154,7 @@ export default function JobsRegisterPage() {
             <span className="font-semibold text-green-600">Done: {counts.completed}</span>
             <span className="flex items-center gap-1.5"><span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full border border-[#bfdbfe] bg-[#dbeafe] px-1 text-[10px] font-[800] text-[#1d4ed8]">B</span> Backend decision value</span>
             <span className="flex items-center gap-1.5"><span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full border border-[#d1d5db] bg-[#f3f4f6] px-1 text-[10px] font-[800] text-[#4b5563]">L</span> Local browser fallback</span>
-            <span className="flex items-center gap-1.5"><AlertTriangle size={13} className="text-amber-500" /> Local value is used only when no backend step decision exists</span>
+            <span className="flex items-center gap-1.5"><AlertTriangle size={13} className="text-amber-500" /> Local values override backend for edited stages; use Reset to restore backend value</span>
           </div>
         </div>
       </div>
@@ -1289,7 +1303,7 @@ export default function JobsRegisterPage() {
           onDone={(record) => {
             setRegisterRecords((current) => ({ ...current, [record.jobId]: record }));
             setRegisterModalJob(null);
-            loadJobs();
+            void refreshJob(record.jobId);
           }}
         />
       )}
@@ -1302,8 +1316,9 @@ export default function JobsRegisterPage() {
           currentState={workflowModal.state}
           onClose={() => setWorkflowModal(null)}
           onDone={() => {
+            const jobId = workflowModal.job.jobId;
             setWorkflowModal(null);
-            loadJobs();
+            void refreshJob(jobId);
           }}
         />
       )}
