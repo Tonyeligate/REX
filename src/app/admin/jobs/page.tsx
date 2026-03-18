@@ -151,6 +151,16 @@ function toRegisterEntryFromBackendDecision(decision?: JobStepDecision): Registe
   };
 }
 
+function areEquivalentRegisterEntries(
+  a?: RegisterStageEntry,
+  b?: RegisterStageEntry
+): boolean {
+  if (!a || !b) return false;
+  const aComment = (a.comment ?? "").trim();
+  const bComment = (b.comment ?? "").trim();
+  return a.outcome === b.outcome && aComment === bComment;
+}
+
 function resolveRegisterStages(
   job: Job,
   record?: JobRegisterRecord
@@ -162,19 +172,12 @@ function resolveRegisterStages(
 
   return REGISTER_STAGE_KEYS.reduce((acc, key) => {
     const backendStepCode = BACKEND_REGISTER_STEP_CODE_MAP[key];
-    const localEntry = normalizeRegisterStage(record?.stages[key]);
-    if (localEntry) {
-      acc[key] = { entry: localEntry, source: "local" };
-      return acc;
-    }
-
     const backendDecision = latestByStep.get(backendStepCode);
+    const localEntry = normalizeRegisterStage(record?.stages[key]);
+    let backendEntry: RegisterStageEntry | undefined;
+
     if (backendDecision) {
-      acc[key] = {
-        entry: toRegisterEntryFromBackendDecision(backendDecision),
-        source: "backend",
-      };
-      return acc;
+      backendEntry = toRegisterEntryFromBackendDecision(backendDecision);
     }
 
     const stageStepNumber = STATUS_STEP_MAP[backendStepCode] ?? 0;
@@ -183,13 +186,29 @@ function resolveRegisterStages(
       currentStepNumber >= stageStepNumber &&
       !(isQueriedCurrentStatus && currentStepNumber === stageStepNumber);
 
-    if (shouldMarkCompletedFromStatus) {
+    if (!backendEntry && shouldMarkCompletedFromStatus) {
+      backendEntry = {
+        outcome: "accept",
+        comment: "",
+        updatedAt: job.updatedAt,
+      };
+    }
+
+    if (localEntry) {
+      if (backendEntry && areEquivalentRegisterEntries(localEntry, backendEntry)) {
+        acc[key] = {
+          entry: backendEntry,
+          source: "backend",
+        };
+      } else {
+        acc[key] = { entry: localEntry, source: "local" };
+      }
+      return acc;
+    }
+
+    if (backendEntry) {
       acc[key] = {
-        entry: {
-          outcome: "accept",
-          comment: "",
-          updatedAt: job.updatedAt,
-        },
+        entry: backendEntry,
         source: "backend",
       };
       return acc;
@@ -779,7 +798,7 @@ function RegisterRowModal({
           </div>
 
           <div className="rounded-xl border border-dashed border-[#f59e0b] bg-[#fffbeb] px-4 py-3 text-[12px] text-[#92400e]">
-            Accepted register stages are synced to backend workflow when possible. Local overrides are saved only for stages you edit in this modal.
+            Accepted stages sync to backend workflow where supported. Query/reject and late-region stage edits are saved as register overrides unless backend adds a dedicated step-decision write endpoint.
           </div>
 
           {error && <p className="text-red-600 text-[12px]">{error}</p>}
