@@ -156,6 +156,9 @@ function resolveRegisterStages(
   record?: JobRegisterRecord
 ): Record<RegisterStageKey, ResolvedRegisterStage> {
   const latestByStep = getLatestBackendDecisionByStep(job);
+  const currentStepNumber = STATUS_STEP_MAP[job.backendStatus ?? "request_received"] ?? 0;
+  const isQueriedCurrentStatus =
+    job.backendStatus === "queried_ls461" || job.backendStatus === "queried_smd";
 
   return REGISTER_STAGE_KEYS.reduce((acc, key) => {
     const backendStepCode = BACKEND_REGISTER_STEP_CODE_MAP[key];
@@ -171,6 +174,24 @@ function resolveRegisterStages(
     const localEntry = normalizeRegisterStage(record?.stages[key]);
     if (localEntry) {
       acc[key] = { entry: localEntry, source: "local" };
+      return acc;
+    }
+
+    const stageStepNumber = STATUS_STEP_MAP[backendStepCode] ?? 0;
+    const shouldMarkCompletedFromStatus =
+      stageStepNumber > 0 &&
+      currentStepNumber >= stageStepNumber &&
+      !(isQueriedCurrentStatus && currentStepNumber === stageStepNumber);
+
+    if (shouldMarkCompletedFromStatus) {
+      acc[key] = {
+        entry: {
+          outcome: "accept",
+          comment: "",
+          updatedAt: job.updatedAt,
+        },
+        source: "backend",
+      };
       return acc;
     }
 
