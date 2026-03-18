@@ -256,6 +256,8 @@ function getActualRegionalNumber(job: Job, record?: JobRegisterRecord): string {
   return job.regionalNumber?.trim() || record?.actualRegionalNumber?.trim() || "";
 }
 
+const REGISTER_BACKEND_SYNC_MAX_STEP = STATUS_STEP_MAP["7_1_checked"] ?? 12;
+
 function RegisterStageCell({
   stage,
   source,
@@ -492,11 +494,15 @@ function RegisterRowModal({
   onClose: () => void;
   onDone: (record: JobRegisterRecord) => void;
 }) {
+  const initialResolvedStages = useMemo(
+    () => resolveRegisterStages(job, record),
+    [job, record]
+  );
+
   const [stages, setStages] = useState<Record<RegisterStageKey, { outcome: RegisterStageOutcome | ""; comment: string }>>(() =>
     {
-      const resolvedStages = resolveRegisterStages(job, record);
       return REGISTER_STAGE_KEYS.reduce((acc, key) => {
-        const stage = resolvedStages[key].entry;
+        const stage = initialResolvedStages[key].entry;
         acc[key] = {
           outcome: stage?.outcome ?? "",
           comment: stage?.comment ?? "",
@@ -529,10 +535,31 @@ function RegisterRowModal({
   };
 
   const clearStage = (key: RegisterStageKey) => {
+    if (initialResolvedStages[key].source === "backend") {
+      const backendStage = initialResolvedStages[key].entry;
+      setStages((current) => ({
+        ...current,
+        [key]: {
+          outcome: backendStage?.outcome ?? "",
+          comment: backendStage?.comment ?? "",
+        },
+      }));
+      return;
+    }
+
     setStages((current) => ({
       ...current,
       [key]: { outcome: "", comment: "" },
     }));
+  };
+
+  const isStageEdited = (key: RegisterStageKey) => {
+    const initial = initialResolvedStages[key].entry;
+    const current = stages[key];
+    const initialOutcome = initial?.outcome ?? "";
+    const initialComment = (initial?.comment ?? "").trim();
+    const currentComment = current.comment.trim();
+    return current.outcome !== initialOutcome || currentComment !== initialComment;
   };
 
   const validateStages = () => {
@@ -584,6 +611,12 @@ function RegisterRowModal({
       for (const item of acceptedStages) {
         const targetStep = STATUS_STEP_MAP[item.backendStatus] ?? currentStep;
         if (targetStep <= currentStep) continue;
+
+        // Region Approved / Region Barcode are register-only stages for this backend.
+        // Keep them as local register values instead of forcing workflow transitions.
+        if (targetStep > REGISTER_BACKEND_SYNC_MAX_STEP) {
+          continue;
+        }
 
         const comment = item.stage.comment.trim();
         const label = REGISTER_STAGE_LABELS[item.key];
@@ -667,6 +700,11 @@ function RegisterRowModal({
             <div className="grid gap-4 md:grid-cols-2">
               {REGISTER_STAGE_KEYS.map((key) => {
                 const stage = stages[key];
+                const source = initialResolvedStages[key].source;
+                const stageHasValue = Boolean(stage.outcome || stage.comment.trim());
+                const stageEdited = isStageEdited(key);
+                const showClearButton = source === "backend" ? stageEdited : stageHasValue;
+                const clearLabel = source === "backend" ? "Reset" : "Clear";
                 return (
                   <div
                     key={key}
@@ -682,13 +720,13 @@ function RegisterRowModal({
                   >
                     <div className="flex items-start justify-between gap-3 mb-3">
                       <span className="text-[13px] font-semibold text-[#1f2937]">{REGISTER_STAGE_LABELS[key]}</span>
-                      {(stage.outcome || stage.comment.trim()) && (
+                      {showClearButton && (
                         <button
                           type="button"
                           onClick={() => clearStage(key)}
                           className="text-[11px] font-semibold text-[#9ca3af] hover:text-[#4b5563]"
                         >
-                          Clear
+                          {clearLabel}
                         </button>
                       )}
                     </div>
