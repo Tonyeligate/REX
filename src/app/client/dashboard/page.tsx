@@ -6,6 +6,30 @@ import type { Job, JobStepDecision, WorkflowStep } from "@/types/job";
 import { jobsApi, STATUS_STEP_MAP } from "@/lib/api";
 import { CLIENT_STAGE_MATCH_META } from "@/lib/register-stage-mapping";
 
+const REGISTER_META_START = "[[REGISTER_META_V1]]";
+const REGISTER_META_END = "[[/REGISTER_META_V1]]";
+
+type RegisterMetaOutcome = "accept" | "query" | "reject";
+
+type RegisterMetaEntry = {
+  outcome?: RegisterMetaOutcome;
+  comment?: string;
+};
+
+type RegisterMetaPayload = {
+  stages?: Record<string, RegisterMetaEntry>;
+};
+
+const REGISTER_STAGE_KEY_BY_STEP_NUMBER: Partial<Record<number, string>> = {
+  6: "jobProductionLsCertification",
+  7: "examinationReceived",
+  9: "examinationChecking",
+  10: "examinationCertified",
+  12: "regionChecked",
+  13: "regionApproved",
+  14: "regionBatched",
+};
+
 /* ── Quick-Search Chips (loaded from API) ── */
 // Chips are loaded dynamically from the jobs list on mount
 
@@ -90,6 +114,46 @@ function getLatestDecisionByCodes(
   return latest;
 }
 
+function parseRegisterMetaFromDescription(
+  description?: string
+): RegisterMetaPayload | null {
+  if (!description) return null;
+
+  const startIndex = description.indexOf(REGISTER_META_START);
+  if (startIndex < 0) return null;
+
+  const contentStart = startIndex + REGISTER_META_START.length;
+  const endIndex = description.indexOf(REGISTER_META_END, contentStart);
+  if (endIndex < 0) return null;
+
+  const raw = description.slice(contentStart, endIndex).trim();
+  if (!raw) return null;
+
+  try {
+    return JSON.parse(raw) as RegisterMetaPayload;
+  } catch {
+    return null;
+  }
+}
+
+function getRegisterMetaEntryForStep(
+  meta: RegisterMetaPayload | null,
+  stepNumber: number
+): RegisterMetaEntry | undefined {
+  const key = REGISTER_STAGE_KEY_BY_STEP_NUMBER[stepNumber];
+  if (!key) return undefined;
+  return meta?.stages?.[key];
+}
+
+function mapRegisterMetaOutcomeToClientStatus(
+  outcome?: RegisterMetaOutcome
+): ClientAlignedStageStatus | undefined {
+  if (outcome === "accept") return "Approved";
+  if (outcome === "query") return "Queried";
+  if (outcome === "reject") return "Rejected";
+  return undefined;
+}
+
 function getStatusFromWorkflowStep(step?: WorkflowStep): ClientAlignedStageStatus {
   if (!step) return "Pending";
   const fallbackOutcome = parseDecisionOutcome(step.decisionDisplay || step.decision);
@@ -134,16 +198,24 @@ function getBadgeTone(statusLabel: ClientAlignedStageStatus): string {
 }
 
 function buildClientAlignedStages(job: Job): ClientAlignedStage[] {
+  const registerMeta = parseRegisterMetaFromDescription(job.description);
+
   return CLIENT_ADMIN_ALIGNED_STAGE_ORDER.map((stepNumber) => {
     const meta = CLIENT_STAGE_MATCH_META[stepNumber];
     const latestDecision = getLatestDecisionByCodes(job.stepDecisions, meta?.backendCodes ?? []);
     const decisionOutcome = parseDecisionOutcome(
       latestDecision?.decisionDisplay || latestDecision?.decision
     );
+    const registerMetaEntry = getRegisterMetaEntryForStep(registerMeta, stepNumber);
+    const registerMetaStatus = mapRegisterMetaOutcomeToClientStatus(
+      registerMetaEntry?.outcome
+    );
     const fallbackStep = job.steps.find((step) => step.stepNumber === stepNumber);
 
     let statusLabel: ClientAlignedStageStatus;
-    if (decisionOutcome === "approve") {
+    if (registerMetaStatus) {
+      statusLabel = registerMetaStatus;
+    } else if (decisionOutcome === "approve") {
       statusLabel = "Approved";
     } else if (decisionOutcome === "query") {
       statusLabel = "Queried";
@@ -161,6 +233,7 @@ function buildClientAlignedStages(job: Job): ClientAlignedStage[] {
       title: meta?.adminLabel || `Stage ${stepNumber}`,
       statusLabel,
       comment:
+        registerMetaEntry?.comment?.trim() ||
         latestDecision?.comment?.trim() ||
         fallbackStep?.comment?.trim() ||
         "No backend comment for this stage yet.",
