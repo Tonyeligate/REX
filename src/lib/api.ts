@@ -1237,7 +1237,16 @@ export const jobsApi = {
 
     // Anonymous-first lookup path: use the server-side public proxy route.
     // This keeps end users from needing to log in to track their jobs.
-    const res = await fetch(`${LOCAL_URL}/public/jobs/${encodeURIComponent(rawQuery)}`);
+    const res = await fetch(
+      `${LOCAL_URL}/public/jobs/${encodeURIComponent(rawQuery)}?fresh=${Date.now()}`,
+      {
+        cache: "no-store",
+        headers: {
+          "Cache-Control": "no-cache",
+          Pragma: "no-cache",
+        },
+      }
+    );
 
     if (res.status === 404) return { jobs: [] as Job[] };
 
