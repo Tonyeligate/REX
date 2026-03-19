@@ -174,6 +174,7 @@ function resolveRegisterStages(
     const backendStepCode = BACKEND_REGISTER_STEP_CODE_MAP[key];
     const backendDecision = latestByStep.get(backendStepCode);
     const localEntry = normalizeRegisterStage(record?.stages[key]);
+    const persistedSource = record?.source ?? "local";
     let backendEntry: RegisterStageEntry | undefined;
 
     if (backendDecision) {
@@ -200,6 +201,8 @@ function resolveRegisterStages(
           entry: backendEntry,
           source: "backend",
         };
+      } else if (persistedSource === "backend") {
+        acc[key] = { entry: localEntry, source: "backend" };
       } else {
         acc[key] = { entry: localEntry, source: "local" };
       }
@@ -798,7 +801,7 @@ function RegisterRowModal({
           </div>
 
           <div className="rounded-xl border border-dashed border-[#f59e0b] bg-[#fffbeb] px-4 py-3 text-[12px] text-[#92400e]">
-            Accepted stages sync to backend workflow where supported. Query/reject and late-region stage edits are saved as register overrides unless backend adds a dedicated step-decision write endpoint.
+            Accepted stages sync to backend workflow where supported. Query/reject and late-region stage edits are persisted in backend register metadata on the job record.
           </div>
 
           {error && <p className="text-red-600 text-[12px]">{error}</p>}
@@ -843,8 +846,9 @@ export default function JobsRegisterPage() {
 
   const loadJobs = useCallback(() => {
     setLoading(true);
-    Promise.all([jobsApi.list(), registerFieldsApi.list()])
-      .then(async ([jobsData, registerData]) => {
+    jobsApi
+      .list()
+      .then(async (jobsData) => {
         const hydratedJobs = await Promise.all(
           jobsData.jobs.map(async (job) => {
             if (job.stepDecisions && job.stepDecisions.length > 0) {
@@ -858,6 +862,10 @@ export default function JobsRegisterPage() {
               return job;
             }
           })
+        );
+
+        const registerData = await registerFieldsApi.list(
+          hydratedJobs.map((job) => job.jobId)
         );
 
         setJobs(hydratedJobs);
@@ -1173,7 +1181,7 @@ export default function JobsRegisterPage() {
             <span className="font-semibold text-green-600">Done: {counts.completed}</span>
             <span className="flex items-center gap-1.5"><span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full border border-[#bfdbfe] bg-[#dbeafe] px-1 text-[10px] font-[800] text-[#1d4ed8]">B</span> Backend decision value</span>
             <span className="flex items-center gap-1.5"><span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full border border-[#d1d5db] bg-[#f3f4f6] px-1 text-[10px] font-[800] text-[#4b5563]">L</span> Local browser fallback</span>
-            <span className="flex items-center gap-1.5"><AlertTriangle size={13} className="text-amber-500" /> Local values override backend for edited stages; use Reset to restore backend value</span>
+            <span className="flex items-center gap-1.5"><AlertTriangle size={13} className="text-amber-500" /> L appears only when backend persistence fails or stale cache exists; use Reset to restore backend value</span>
           </div>
         </div>
       </div>

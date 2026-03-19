@@ -22,6 +22,7 @@ export interface JobRegisterRecord {
   actualRegionalNumber?: string;
   stages: Partial<Record<RegisterStageKey, RegisterStageValue>>;
   updatedAt: string;
+  source?: "backend" | "local";
 }
 
 export interface UpdateJobRegisterPayload {
