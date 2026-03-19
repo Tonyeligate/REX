@@ -1300,6 +1300,35 @@ export const registerFieldsApi = {
             records[jobId] = backendRecord;
             return;
           }
+
+          const localRecord = localRecords[jobId];
+          if (localRecord) {
+            const migratedRecord: JobRegisterRecord = {
+              ...localRecord,
+              jobId,
+              updatedAt: localRecord.updatedAt || new Date().toISOString(),
+              source: "backend",
+            };
+
+            const hasPersistedValues =
+              Object.keys(migratedRecord.stages ?? {}).length > 0 ||
+              Boolean(migratedRecord.actualRegionalNumber?.trim());
+
+            if (hasPersistedValues) {
+              try {
+                const nextDescription = buildDescriptionWithRegisterRecord(
+                  job.description,
+                  migratedRecord
+                );
+                await jobsApi.update(jobId, { description: nextDescription });
+                records[jobId] = migratedRecord;
+                localRecords[jobId] = migratedRecord;
+                return;
+              } catch {
+                // Keep local fallback if migration write fails for this job.
+              }
+            }
+          }
         } catch {
           // Fall back to cached browser data when backend detail lookup fails.
         }
@@ -1312,6 +1341,8 @@ export const registerFieldsApi = {
         }
       })
     );
+
+    writeRegisterFieldsMap(localRecords);
 
     return { records };
   },
