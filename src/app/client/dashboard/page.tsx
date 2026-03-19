@@ -3,7 +3,7 @@
 import React, { useState, useCallback, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { Job, JobStepDecision, WorkflowStep } from "@/types/job";
-import { jobsApi } from "@/lib/api";
+import { jobsApi, STATUS_STEP_MAP } from "@/lib/api";
 import { CLIENT_STAGE_MATCH_META } from "@/lib/register-stage-mapping";
 
 /* ── Quick-Search Chips (loaded from API) ── */
@@ -100,6 +100,31 @@ function getStatusFromWorkflowStep(step?: WorkflowStep): ClientAlignedStageStatu
   return "Pending";
 }
 
+function getStatusFromBackendProgress(job: Job, stepNumber: number): ClientAlignedStageStatus {
+  const backendStatus = (job.backendStatus ?? "").trim().toLowerCase();
+  const currentStepNumber =
+    STATUS_STEP_MAP[backendStatus] ??
+    (Number.isFinite(job.currentStep) ? job.currentStep : 0);
+  const isQueriedCurrentStatus =
+    backendStatus === "queried_ls461" || backendStatus === "queried_smd";
+
+  if (isQueriedCurrentStatus && stepNumber === currentStepNumber) {
+    return "Queried";
+  }
+
+  // Backend currently caps register workflow at 7_region.
+  // Treat the final client-facing register stages as completed when that cap is reached.
+  if (backendStatus === "7_region" && (stepNumber === 13 || stepNumber === 14)) {
+    return "Approved";
+  }
+
+  if (stepNumber <= currentStepNumber) {
+    return "Approved";
+  }
+
+  return "Pending";
+}
+
 function getBadgeTone(statusLabel: ClientAlignedStageStatus): string {
   if (statusLabel === "Approved") return "bg-[#dcfce7] text-[#15803d]";
   if (statusLabel === "Rejected") return "bg-[#fee2e2] text-[#b91c1c]";
@@ -125,7 +150,10 @@ function buildClientAlignedStages(job: Job): ClientAlignedStage[] {
     } else if (decisionOutcome === "reject") {
       statusLabel = "Rejected";
     } else {
-      statusLabel = getStatusFromWorkflowStep(fallbackStep);
+      statusLabel =
+        job.backendStatus
+          ? getStatusFromBackendProgress(job, stepNumber)
+          : getStatusFromWorkflowStep(fallbackStep);
     }
 
     return {
