@@ -2,6 +2,28 @@
 
 import React, { useState, useCallback, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import {
+  Search,
+  Printer,
+  RotateCcw,
+  Radar,
+  Sparkles,
+  Workflow,
+  ShieldCheck,
+  CheckCircle2,
+  AlertTriangle,
+  XCircle,
+  Clock3,
+  CircleDashed,
+  ClipboardList,
+  BadgeInfo,
+  BadgeCheck,
+  MapPinned,
+  Ruler,
+  CalendarDays,
+  UserRound,
+  Wallet,
+} from "lucide-react";
 import type { Job, JobStepDecision, WorkflowStep } from "@/types/job";
 import { jobsApi, STATUS_STEP_MAP } from "@/lib/api";
 import { CLIENT_STAGE_MATCH_META } from "@/lib/register-stage-mapping";
@@ -195,6 +217,14 @@ function getBadgeTone(statusLabel: ClientAlignedStageStatus): string {
   if (statusLabel === "Queried") return "bg-[#FEF3C7] text-[#B45309]";
   if (statusLabel === "In Review") return "bg-[#ffedd5] text-[#c2410c]";
   return "bg-[#f1f5f9] text-[#94a3b8]";
+}
+
+function getStatusIcon(statusLabel: ClientAlignedStageStatus) {
+  if (statusLabel === "Approved") return <CheckCircle2 size={14} className="text-[#16a34a]" />;
+  if (statusLabel === "Rejected") return <XCircle size={14} className="text-[#dc2626]" />;
+  if (statusLabel === "Queried") return <AlertTriangle size={14} className="text-[#d97706]" />;
+  if (statusLabel === "In Review") return <Clock3 size={14} className="text-[#ea580c]" />;
+  return <CircleDashed size={14} className="text-[#94a3b8]" />;
 }
 
 function buildClientAlignedStages(job: Job): ClientAlignedStage[] {
@@ -395,26 +425,31 @@ export default function ClientDashboardPage() {
         : "text-[#F07000]";
 
   return (
-    <div className="w-[min(820px,calc(100vw-32px))] mx-auto py-8 px-1">
+    <div className="w-[min(1180px,calc(100vw-28px))] mx-auto py-6 sm:py-8 px-1 sm:px-2 lg:px-4">
       {/* ── Hero / Search Section ── */}
       <motion.div
         initial={{ opacity: 0, y: -16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.45 }}
-        className="text-center mb-8"
+        className="text-center mb-8 rounded-[28px] px-4 py-8 sm:px-8 sm:py-10 client-surface-glass client-orb-glow"
       >
-        <h1 className="m-0 text-[26px] sm:text-[32px] font-[900] text-[#0f172a] mb-2">
-          Track Your <span className="text-[#F07000]">Job Status</span>
+        <div className="inline-flex items-center gap-2 rounded-full bg-white/70 border border-white/80 px-3 py-1.5 text-[11px] sm:text-[12px] font-[700] text-[#334155] mb-3">
+          <Sparkles size={14} className="text-[#F07000]" />
+          HD Workflow Intelligence
+        </div>
+
+        <h1 className="m-0 text-[29px] leading-[1.15] sm:text-[40px] font-[900] text-[#0f172a] mb-2">
+          Track Your <span className="client-gradient-text">Job Status</span>
         </h1>
-        <p className="m-0 text-[#64748b] text-[15px] max-w-[480px] mx-auto mb-6">
+        <p className="m-0 text-[#475569] text-[14px] sm:text-[16px] max-w-[640px] mx-auto mb-6">
           Enter your RNR or actual regional number to view the latest backend workflow progress.
         </p>
 
         {/* Search bar */}
         <div className="max-w-[560px] mx-auto">
           <div className="flex items-center gap-2">
-            <div className="flex-1 flex items-center gap-2.5 bg-white border-2 border-[#F0E6DA] rounded-[14px] px-4 py-3 focus-within:border-[#F07000] focus-within:shadow-[0_0_0_4px_rgba(240,112,0,0.08)] transition-all">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+            <div className="flex-1 flex items-center gap-2.5 bg-white/95 border-2 border-[#F0E6DA] rounded-[16px] px-4 py-3.5 focus-within:border-[#F07000] focus-within:shadow-[0_0_0_4px_rgba(240,112,0,0.08)] transition-all">
+              <Search size={20} className="text-[#94a3b8]" />
               <input
                 id="jobInput"
                 type="text"
@@ -429,7 +464,7 @@ export default function ClientDashboardPage() {
               type="button"
               onClick={handleSearch}
               disabled={loading}
-              className="shrink-0 border-none cursor-pointer font-[700] rounded-[14px] px-6 py-3 bg-[#F07000] text-white text-[15px] disabled:opacity-50 hover:bg-[#D06000] transition-colors active:scale-[0.97] shadow-[0_4px_12px_rgba(240,112,0,0.25)]"
+              className="shrink-0 border-none cursor-pointer font-[800] rounded-[16px] px-6 py-3.5 bg-gradient-to-r from-[#F07000] to-[#f59e0b] text-white text-[14px] sm:text-[15px] disabled:opacity-50 hover:brightness-[1.03] transition-all active:scale-[0.98] shadow-[0_10px_24px_rgba(240,112,0,0.35)]"
             >
               {loading ? (
                 <span className="inline-flex items-center gap-2">
@@ -484,10 +519,10 @@ export default function ClientDashboardPage() {
             initial="hidden"
             animate="visible"
             exit={{ opacity: 0, y: -16, transition: { duration: 0.2 } }}
-            className="bg-white border border-[#F0E6DA] rounded-[20px] p-10 text-center shadow-sm"
+            className="client-surface-elevated rounded-[22px] p-8 sm:p-10 text-center"
           >
-            <div className="w-16 h-16 mx-auto mb-4 bg-[#FFF5EB] rounded-full flex items-center justify-center">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#F07000" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+            <div className="w-16 h-16 mx-auto mb-4 bg-[#FFF5EB] rounded-full flex items-center justify-center shadow-[0_8px_20px_rgba(240,112,0,0.18)]">
+              <Search size={28} className="text-[#F07000]" />
             </div>
             <h2 className="m-0 mb-2 text-[18px] font-[800] text-[#0f172a]">Search for Your Job</h2>
             <p className="m-0 text-[#64748b] text-[14px] max-w-[380px] mx-auto">
@@ -503,7 +538,7 @@ export default function ClientDashboardPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="bg-white border border-[#F0E6DA] rounded-[20px] p-10 text-center shadow-sm"
+            className="client-surface-elevated rounded-[22px] p-8 sm:p-10 text-center"
           >
             <div className="w-10 h-10 mx-auto mb-4 border-4 border-[#F07000] border-t-transparent rounded-full animate-spin" />
             <p className="m-0 text-[#64748b] text-[14px]">Searching...</p>
@@ -518,10 +553,10 @@ export default function ClientDashboardPage() {
             initial="hidden"
             animate="visible"
             exit={{ opacity: 0, y: -16, transition: { duration: 0.2 } }}
-            className="bg-white border border-[#F0E6DA] rounded-[20px] p-10 text-center shadow-sm"
+            className="client-surface-elevated rounded-[22px] p-8 sm:p-10 text-center"
           >
-            <div className="w-16 h-16 mx-auto mb-4 bg-[#FEF2F2] rounded-full flex items-center justify-center text-[28px]">
-              🔍
+            <div className="w-16 h-16 mx-auto mb-4 bg-[#FEF2F2] rounded-full flex items-center justify-center">
+              <Radar size={28} className="text-[#b91c1c]" />
             </div>
             <h2 className="m-0 mb-2 text-[18px] font-[800] text-[#0f172a]">Job Not Found</h2>
             <p className="m-0 text-[#64748b] text-[14px]">
@@ -541,24 +576,24 @@ export default function ClientDashboardPage() {
             className="grid gap-6"
           >
             {/* ═══ Summary Cards ═══ */}
-            <motion.div variants={fadeUp} className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <motion.div variants={fadeUp} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
               {[
                 { label: "Job ID", value: job.jobId, accent: "text-[#0f172a]" },
                 { label: "Current Status", value: workflowSummary.currentStatusLabel, accent: registerWorkflowAccent },
                 { label: "Progress", value: `${workflowSummary.progressPercent}%`, accent: "text-[#F07000]" },
                 { label: "Workflow", value: workflowSummary.workflowLabel, accent: registerWorkflowAccent },
               ].map((stat) => (
-                <div key={stat.label} className="bg-white border border-[#F0E6DA] rounded-[16px] p-4 shadow-sm">
+                <div key={stat.label} className="client-surface-elevated client-surface-interactive rounded-[18px] p-4 sm:p-5">
                   <p className="m-0 text-[11px] font-[600] text-[#94a3b8] uppercase tracking-wider mb-1">{stat.label}</p>
-                  <p className={`m-0 text-[18px] font-[800] ${stat.accent}`}>{stat.value}</p>
+                  <p className={`m-0 text-[17px] sm:text-[20px] font-[900] leading-tight ${stat.accent}`}>{stat.value}</p>
                 </div>
               ))}
             </motion.div>
 
             {/* ═══ Progress Bar ═══ */}
-            <motion.div variants={fadeUp} className="bg-white border border-[#F0E6DA] rounded-[16px] shadow-sm p-5">
+            <motion.div variants={fadeUp} className="client-surface-elevated rounded-[18px] p-5 sm:p-6">
               <div className="flex items-center gap-3">
-                <span className="text-[12px] font-[600] text-[#64748b] shrink-0">Overall Progress</span>
+                <span className="inline-flex items-center gap-2 text-[12px] font-[700] text-[#475569] shrink-0"><Workflow size={15} className="text-[#F07000]" />Overall Progress</span>
                 <div className="flex-1 h-3 bg-[#f1f5f9] rounded-full overflow-hidden">
                   <motion.div
                     className="h-full bg-gradient-to-r from-[#F07000] to-[#FF9A3C] rounded-full"
@@ -581,41 +616,57 @@ export default function ClientDashboardPage() {
               </p>
             </motion.div>
 
-            <motion.div variants={fadeUp} className="bg-white border border-[#F0E6DA] rounded-[16px] shadow-sm p-5">
+            <motion.div variants={fadeUp} className="client-surface-elevated rounded-[20px] p-5 sm:p-6 overflow-hidden">
               <h3 className="m-0 text-[15px] font-[800] text-[#0f172a] pb-3 mb-4 border-b border-[#f5f0ea]">
                 10-Step Workflow Stages
               </h3>
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto rounded-[14px] border border-[#efe2d2] bg-white/85">
                 <table className="min-w-full border-separate border-spacing-0 text-[13px]">
                   <thead>
                     <tr>
-                      <th className="text-left font-[700] text-[#64748b] bg-[#FFF8F1] px-4 py-3 border-y border-[#F0E6DA] border-l rounded-tl-[10px]">
-                        Job Step/Stage Type
+                      <th className="text-left font-[700] text-[#475569] bg-gradient-to-r from-[#fff9f1] to-[#fff4e8] px-4 py-3 border-y border-[#F0E6DA] border-l rounded-tl-[10px]">
+                        <span className="inline-flex items-center gap-2">
+                          <ClipboardList size={14} className="text-[#F07000]" />
+                          Job Step/Stage Type
+                        </span>
                       </th>
-                      <th className="text-left font-[700] text-[#64748b] bg-[#FFF8F1] px-4 py-3 border-y border-[#F0E6DA]">
-                        Status
+                      <th className="text-left font-[700] text-[#475569] bg-gradient-to-r from-[#fff9f1] to-[#fff4e8] px-4 py-3 border-y border-[#F0E6DA]">
+                        <span className="inline-flex items-center gap-2">
+                          <BadgeCheck size={14} className="text-[#16a34a]" />
+                          Status
+                        </span>
                       </th>
-                      <th className="text-left font-[700] text-[#64748b] bg-[#FFF8F1] px-4 py-3 border-y border-[#F0E6DA] border-r rounded-tr-[10px]">
-                        Comment
+                      <th className="text-left font-[700] text-[#475569] bg-gradient-to-r from-[#fff9f1] to-[#fff4e8] px-4 py-3 border-y border-[#F0E6DA] border-r rounded-tr-[10px]">
+                        <span className="inline-flex items-center gap-2">
+                          <BadgeInfo size={14} className="text-[#2563eb]" />
+                          Comment
+                        </span>
                       </th>
                     </tr>
                   </thead>
                   <tbody>
                     {clientAlignedStages.map((stage, index) => {
                       const badgeTone = getBadgeTone(stage.statusLabel);
+                      const statusIcon = getStatusIcon(stage.statusLabel);
 
                       return (
-                        <tr key={`${stage.stepNumber}-${index}`} className="align-top odd:bg-[#fffdfa]">
+                        <tr key={`${stage.stepNumber}-${index}`} className="align-top odd:bg-[#fffdfa] hover:bg-[#fff8f1] transition-colors">
                           <td className="px-4 py-3 border-b border-l border-[#F4EBDD]">
                             <p className="m-0 text-[11px] font-[700] text-[#94a3b8] uppercase tracking-wider">
                               Stage {index + 1}/{workflowSummary.totalStages}
                             </p>
-                            <p className="m-0 mt-1 text-[14px] font-[700] text-[#0f172a]">
-                              {stage.title}
-                            </p>
+                            <div className="mt-1 inline-flex items-center gap-2">
+                              <span className="w-6 h-6 rounded-full bg-white border border-[#f0e6da] flex items-center justify-center shadow-[0_3px_8px_rgba(15,23,42,0.08)]">
+                                {statusIcon}
+                              </span>
+                              <p className="m-0 text-[14px] font-[700] text-[#0f172a]">
+                                {stage.title}
+                              </p>
+                            </div>
                           </td>
                           <td className="px-4 py-3 border-b border-[#F4EBDD]">
-                            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-[700] ${badgeTone}`}>
+                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-[700] ${badgeTone}`}>
+                              {statusIcon}
                               {stage.statusLabel}
                             </span>
                           </td>
@@ -631,45 +682,60 @@ export default function ClientDashboardPage() {
             </motion.div>
 
             {/* ═══ Job Information ═══ */}
-            <motion.div variants={fadeUp} className="bg-white border border-[#F0E6DA] rounded-[16px] shadow-sm p-5">
+            <motion.div variants={fadeUp} className="client-surface-elevated rounded-[20px] p-5 sm:p-6">
               <h3 className="m-0 text-[15px] font-[800] text-[#0f172a] pb-3 mb-4 border-b border-[#f5f0ea]">
                 Job Information
               </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 text-[13px]">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[13px]">
                 {[
-                  { label: "Job ID", value: job.jobId },
-                  { label: "Title", value: job.jobType },
-                  { label: "Status", value: workflowSummary.currentStatusLabel },
-                  { label: "Regional No.", value: job.regionalNumber ?? "—" },
-                  { label: "Parcel Size", value: job.parcelSize ?? "—" },
-                  { label: "Created", value: new Date(job.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) },
-                  { label: "Assigned to", value: job.assignedTo ?? "—" },
-                  { label: "Payment", value: job.paymentAmount ?? "—" },
+                  { label: "Job ID", value: job.jobId, icon: <BadgeInfo size={14} className="text-[#2563eb]" /> },
+                  { label: "Title", value: job.jobType, icon: <ClipboardList size={14} className="text-[#0f766e]" /> },
+                  { label: "Status", value: workflowSummary.currentStatusLabel, icon: <BadgeCheck size={14} className="text-[#16a34a]" /> },
+                  { label: "Regional No.", value: job.regionalNumber ?? "—", icon: <MapPinned size={14} className="text-[#9333ea]" /> },
+                  { label: "Parcel Size", value: job.parcelSize ?? "—", icon: <Ruler size={14} className="text-[#ea580c]" /> },
+                  { label: "Created", value: new Date(job.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }), icon: <CalendarDays size={14} className="text-[#0369a1]" /> },
+                  { label: "Assigned to", value: job.assignedTo ?? "—", icon: <UserRound size={14} className="text-[#4f46e5]" /> },
+                  { label: "Payment", value: job.paymentAmount ?? "—", icon: <Wallet size={14} className="text-[#be123c]" /> },
                 ].map((row) => (
-                  <div key={row.label} className="flex justify-between items-center py-1">
-                    <span className="text-[#64748b]">{row.label}</span>
-                    <b className="text-[#0f172a]">{row.value}</b>
+                  <div key={row.label} className="rounded-[14px] border border-[#efe2d2] bg-gradient-to-br from-white to-[#fffaf3] p-3.5 sm:p-4 client-surface-interactive">
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="inline-flex items-center gap-1.5 text-[#64748b]">
+                        {row.icon}
+                        {row.label}
+                      </span>
+                      <b className="text-[#0f172a] text-right">{row.value}</b>
+                    </div>
                   </div>
                 ))}
               </div>
             </motion.div>
 
             {/* ═══ Actions ═══ */}
-            <motion.div variants={fadeUp} className="flex flex-wrap gap-3 justify-center pt-2 pb-4">
+            <motion.div variants={fadeUp} className="client-surface-glass rounded-[18px] px-4 py-4 sm:px-5 flex flex-wrap gap-3 justify-center">
               <button
                 type="button"
                 onClick={() => window.print()}
-                className="border-none cursor-pointer font-[700] rounded-[12px] px-6 py-3 bg-[#0f172a] text-white text-[13px] transition-all hover:bg-[#1e293b] active:scale-[0.98]"
+                className="inline-flex items-center gap-2 border-none cursor-pointer font-[800] rounded-[14px] px-6 py-3.5 bg-[#0f172a] text-white text-[13px] transition-all hover:bg-[#1e293b] active:scale-[0.98] shadow-[0_12px_28px_rgba(15,23,42,0.28)]"
               >
-                🖨️ Print Report
+                <Printer size={16} />
+                Print Report
               </button>
               <button
                 type="button"
                 onClick={() => { setJob(null); setSearched(false); setQuery(""); }}
-                className="border-2 border-[#F0E6DA] bg-white cursor-pointer font-[700] rounded-[12px] px-6 py-3 text-[#0f172a] text-[13px] transition-all hover:bg-[#FFF5EB] active:scale-[0.98]"
+                className="inline-flex items-center gap-2 border-2 border-[#F0E6DA] bg-white cursor-pointer font-[800] rounded-[14px] px-6 py-3.5 text-[#0f172a] text-[13px] transition-all hover:bg-[#FFF5EB] active:scale-[0.98] shadow-[0_8px_20px_rgba(240,112,0,0.16)]"
               >
-                ← New Search
+                <RotateCcw size={16} />
+                New Search
               </button>
+            </motion.div>
+
+            <motion.div
+              variants={fadeUp}
+              className="client-surface-glass rounded-[16px] py-3.5 px-4 sm:px-6 flex items-center justify-center gap-2 text-[12px] sm:text-[13px] text-[#475569]"
+            >
+              <ShieldCheck size={15} className="text-[#15803d]" />
+              Secure workflow data synced with backend every 20 seconds while this tracker is active.
             </motion.div>
           </motion.div>
         )}

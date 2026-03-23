@@ -52,6 +52,10 @@
   --radius-sm: 0.25rem;
 
   --shadow-card: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+  --shadow-elev-1: 0 10px 30px rgba(15, 23, 42, 0.08);
+  --shadow-elev-2: 0 18px 48px rgba(15, 23, 42, 0.13);
+  --shadow-elev-3: 0 24px 64px rgba(15, 23, 42, 0.18);
+  --client-glass: linear-gradient(150deg, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.55));
 
   --animate-accordion-down: accordion-down 0.2s ease-out;
   --animate-accordion-up: accordion-up 0.2s ease-out;
@@ -174,6 +178,58 @@
   .header-blur {
     backdrop-filter: blur(5px);
     background-color: rgba(255, 255, 255, 0.8);
+  }
+
+  .client-premium-bg {
+    background:
+      radial-gradient(circle at 20% 10%, rgba(240, 112, 0, 0.15), transparent 40%),
+      radial-gradient(circle at 85% 15%, rgba(30, 64, 175, 0.14), transparent 45%),
+      linear-gradient(180deg, #fffaf4 0%, #f7fafc 52%, #eef2f8 100%);
+  }
+
+  .client-surface-glass {
+    background: var(--client-glass);
+    border: 1px solid rgba(255, 255, 255, 0.62);
+    box-shadow: var(--shadow-elev-1);
+    backdrop-filter: blur(14px);
+  }
+
+  .client-surface-elevated {
+    background: linear-gradient(180deg, #ffffff 0%, #fefefe 100%);
+    border: 1px solid #f2e9df;
+    box-shadow: var(--shadow-elev-1), inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  }
+
+  .client-surface-interactive {
+    transition: transform 220ms ease, box-shadow 220ms ease, border-color 220ms ease;
+  }
+
+  .client-surface-interactive:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-elev-2), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    border-color: #f0dcc3;
+  }
+
+  .client-gradient-text {
+    background: linear-gradient(95deg, #f07000 0%, #f59e0b 38%, #2563eb 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .client-orb-glow {
+    position: relative;
+  }
+
+  .client-orb-glow::before {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    background: linear-gradient(120deg, rgba(240, 112, 0, 0.22), rgba(37, 99, 235, 0.18));
+    z-index: -1;
+    filter: blur(12px);
+    opacity: 0.65;
   }
 }
 

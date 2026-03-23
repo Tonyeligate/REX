@@ -4,7 +4,7 @@ import Link from "next/link";
 
 export default function ClientLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-[#FFF9F3] font-[system-ui,-apple-system,'Segoe_UI',Roboto,Arial,sans-serif] text-[#0f172a] flex flex-col">
+    <div className="min-h-screen client-premium-bg text-[#0f172a] flex flex-col">
       {/* ── Header ── */}
       <header className="bg-white border-b border-[#F0E6DA] shadow-[0_2px_12px_rgba(240,112,0,0.06)]">
         <div className="w-[min(1100px,calc(100vw-32px))] mx-auto flex items-center justify-between py-3 px-1">
