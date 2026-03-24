@@ -618,6 +618,14 @@ function extractClientNameFromTitle(title?: string): string | undefined {
   return parts[0] || undefined;
 }
 
+function normalizeRnInput(value?: string): string {
+  return (value ?? "")
+    .trim()
+    .replace(/[\\/]+/g, "-")
+    .replace(/\s*[-]\s*/g, "-")
+    .replace(/-{2,}/g, "-");
+}
+
 /** Human-readable step definitions. */
 export const WORKFLOW_STEP_DEFS: Array<{
   status: BackendStatus;
@@ -1254,6 +1262,10 @@ export const jobsApi = {
     parcelSize?: string;
     [key: string]: unknown;
   }) => {
+    const normalizedRn = normalizeRnInput(
+      (payload.rn ?? payload.jobId ?? payload.regionalNumber ?? "") as string
+    );
+
     const client_id = await ensureBackendClientId({
       clientId: payload.clientId,
       clientName: payload.clientName,
@@ -1264,7 +1276,7 @@ export const jobsApi = {
     });
 
     const body = {
-      rn: payload.rn ?? payload.jobId ?? payload.regionalNumber ?? "",
+      rn: normalizedRn,
       title: payload.title ?? payload.jobType ?? payload.clientName ?? "",
       description: payload.description ?? "",
       parcel_acreage: payload.parcel_acreage ?? payload.parcelSize ?? null,

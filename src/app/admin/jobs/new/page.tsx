@@ -17,6 +17,14 @@ interface NewJobFormData {
   parcel_acreage: string;
 }
 
+function sanitizeRn(value: string): string {
+  return value
+    .trim()
+    .replace(/[\\/]+/g, "-")
+    .replace(/\s*[-]\s*/g, "-")
+    .replace(/-{2,}/g, "-");
+}
+
 export default function NewJobPage() {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
@@ -42,13 +50,18 @@ export default function NewJobPage() {
     setSubmitting(true);
     setError("");
     try {
+      const normalizedRn = sanitizeRn(data.rn);
+      if (!normalizedRn) {
+        throw new Error("Regional Number is required");
+      }
+
       // Compose job title: "ClientName – JobTitle" or just "ClientName" if no title
       const composedTitle = data.title.trim()
         ? `${data.clientName.trim()} – ${data.title.trim()}`
         : data.clientName.trim();
 
       const response = await jobsApi.create({
-        rn: data.rn,
+        rn: normalizedRn,
         title: composedTitle,
         description: [
           `Client: ${data.clientName.trim()}`,
@@ -144,7 +157,11 @@ export default function NewJobPage() {
             <div>
               <label className="block text-[13px] font-semibold text-[#374151] mb-1.5">Regional Number (RN) *</label>
               <input
-                {...register("rn", { required: "Regional Number is required" })}
+                {...register("rn", {
+                  required: "Regional Number is required",
+                  validate: (value) =>
+                    !/[\\/]/.test(value) || "Use '-' instead of '/' in Regional Number",
+                })}
                 placeholder="e.g. RN-GAR-2025-001"
                 className="w-full h-[40px] px-4 border border-[#e5e7eb] rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-[#F07000]/20"
               />
