@@ -324,7 +324,13 @@ async function refreshAccessToken(): Promise<string | null> {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ refresh }),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("access_token");
+        localStorage.removeItem("refresh_token");
+      }
+      return null;
+    }
     const data = await res.json();
     if (typeof window !== "undefined") {
       localStorage.setItem("access_token", data.access);
@@ -972,12 +978,82 @@ export const authApi = {
   },
 };
 
+function normalizeJobLookupKey(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, "");
+}
+
+function isNumericJobId(value: string): boolean {
+  return /^\d+$/.test(value.trim());
+}
+
+function isLikelyNotFoundError(message: string): boolean {
+  return /(\b404\b|not\s*found|request failed:\s*404)/i.test(message);
+}
+
+function isPermissionError(message: string): boolean {
+  return /(forbidden|permission|only clients)/i.test(message);
+}
+
+function matchesJobIdentifier(item: BackendJobListItem, query: string): boolean {
+  const normalizedQuery = normalizeJobLookupKey(query);
+  if (!normalizedQuery) return false;
+
+  const candidates = [
+    String(item.id),
+    item.rn,
+    item.regional_number ?? "",
+  ].map(normalizeJobLookupKey);
+
+  return candidates.includes(normalizedQuery);
+}
+
+async function findJobInList(rnOrId: string): Promise<BackendJobListItem | null> {
+  const query = rnOrId.trim();
+  if (!query) return null;
+
+  const items = await backendRequest<BackendJobListItem[]>("/jobs/");
+  return items.find((item) => matchesJobIdentifier(item, query)) ?? null;
+}
+
+async function resolveBackendJobPathKey(rnOrId: string): Promise<string> {
+  const query = rnOrId.trim();
+  if (!query) return query;
+  if (isNumericJobId(query)) return query;
+
+  // RN strings containing spaces/slashes can fail as path params on some backends.
+  if (!/[\s/]/.test(query)) return query;
+
+  const listMatch = await findJobInList(query);
+  return listMatch ? String(listMatch.id) : query;
+}
+
+async function fetchJobDetailWithHistory(lookupKey: string) {
+  const detail = await backendRequest<BackendJobDetail>(
+    `/jobs/${encodeURIComponent(lookupKey)}/`
+  );
+  const job = mapBackendJob(detail);
+
+  try {
+    const history = await backendRequest<BackendHistoryEntry[]>(
+      `/jobs/${encodeURIComponent(lookupKey)}/history/`
+    );
+    if (history.length > 0) {
+      job.timeline = mapHistoryToTimeline(history);
+    }
+  } catch {
+    // history endpoint may not be available; keep adapter timeline
+  }
+
+  return { job };
+}
+
 async function transitionJobStatus(
   rnOrId: string,
   payload: { status: BackendStatus; notes?: string; query_reason?: string }
 ): Promise<void> {
+  const lookupKey = await resolveBackendJobPathKey(rnOrId);
   await localRequest<Record<string, unknown>>(
-    `/jobs/${encodeURIComponent(rnOrId)}/transition`,
+    `/jobs/${encodeURIComponent(lookupKey)}/transition`,
     {
       method: "POST",
       body: JSON.stringify(payload),
@@ -1006,8 +1082,9 @@ const PATCH_STATUS_FLOW: BackendStatus[] = [
 ];
 
 async function setJobStatusViaPatch(rnOrId: string, status: BackendStatus): Promise<void> {
+  const lookupKey = await resolveBackendJobPathKey(rnOrId);
   await backendRequest<BackendJobDetail>(
-    `/jobs/${encodeURIComponent(rnOrId)}/`,
+    `/jobs/${encodeURIComponent(lookupKey)}/`,
     {
       method: "PATCH",
       body: JSON.stringify({ status }),
@@ -1047,36 +1124,32 @@ export const jobsApi = {
   },
 
   get: async (rnOrId: string) => {
+    const lookupKey = await resolveBackendJobPathKey(rnOrId);
+
     try {
-      const detail = await backendRequest<BackendJobDetail>(
-        `/jobs/${encodeURIComponent(rnOrId)}/`
-      );
-      const job = mapBackendJob(detail);
-
-      try {
-        const history = await backendRequest<BackendHistoryEntry[]>(
-          `/jobs/${encodeURIComponent(rnOrId)}/history/`
-        );
-        if (history.length > 0) {
-          job.timeline = mapHistoryToTimeline(history);
-        }
-      } catch {
-        // history endpoint may not be available; keep adapter timeline
-      }
-
-      return { job };
+      return await fetchJobDetailWithHistory(lookupKey);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "";
-      if (!/(forbidden|permission|only clients)/i.test(message)) {
+
+      // If path-lookup fails for RN-like values, resolve via list and re-fetch by numeric id.
+      if (isLikelyNotFoundError(message)) {
+        try {
+          const fallback = await findJobInList(rnOrId);
+          if (fallback) {
+            return await fetchJobDetailWithHistory(String(fallback.id));
+          }
+        } catch {
+          // Keep original failure behavior if list fallback cannot be resolved.
+        }
+      }
+
+      if (!isPermissionError(message)) {
         throw err;
       }
 
       // Some admin accounts can list jobs but cannot open the per-job detail endpoint.
       // Fallback to the list payload so the detail page still renders instead of failing.
-      const items = await backendRequest<BackendJobListItem[]>("/jobs/");
-      const fallback = items.find(
-        (item) => item.rn === rnOrId || String(item.id) === rnOrId
-      );
+      const fallback = await findJobInList(rnOrId);
       if (!fallback) throw err;
 
       const job = mapBackendJob({
@@ -1167,8 +1240,9 @@ export const jobsApi = {
   },
 
   update: async (rnOrId: string, payload: Record<string, unknown>) => {
+    const lookupKey = await resolveBackendJobPathKey(rnOrId);
     const updated = await backendRequest<BackendJobDetail>(
-      `/jobs/${encodeURIComponent(rnOrId)}/`,
+      `/jobs/${encodeURIComponent(lookupKey)}/`,
       { method: "PATCH", body: JSON.stringify(payload) }
     );
     return { job: mapBackendJob(updated) };
@@ -1214,7 +1288,8 @@ export const jobsApi = {
     rnOrId: string,
     payload: { label: string; subtext: string }
   ) => {
-    await backendRequest(`/jobs/${encodeURIComponent(rnOrId)}/`, {
+    const lookupKey = await resolveBackendJobPathKey(rnOrId);
+    await backendRequest(`/jobs/${encodeURIComponent(lookupKey)}/`, {
       method: "PATCH",
       body: JSON.stringify({
         description: `[${payload.label}] ${payload.subtext}`,
