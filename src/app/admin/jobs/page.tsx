@@ -52,6 +52,19 @@ type ResolvedRegisterStage = {
 
 type CellState = "done" | "active" | "queried" | "pending";
 
+type ImportPreviewRow = {
+  rowNumber: number;
+  rowJobId: string;
+  matchedJobId?: string;
+  regionalNumber?: string;
+  stages: Partial<Record<RegisterStageKey, RegisterStageEntry | null>>;
+  hasStageData: boolean;
+  hasRegionalNumber: boolean;
+  hasChanges: boolean;
+  issue?: string;
+  apply: boolean;
+};
+
 function normalizeRegisterStage(value?: RegisterStageValue): RegisterStageEntry | undefined {
   if (value === true) {
     return { outcome: "accept" };
@@ -94,6 +107,113 @@ const IMPORT_STAGE_COLUMNS: Record<RegisterStageKey, string[]> = {
   regionApproved: ["Region Approved", "7_2_approved"],
   regionBatched: ["Region Barcode", "Region Batched", "7_3_barcoded"],
 };
+
+function buildImportColumnLookup(row: Record<string, unknown>): Map<string, string> {
+  const columnLookup = new Map<string, string>();
+
+  for (const [columnName, value] of Object.entries(row)) {
+    const normalizedColumn = normalizeImportColumnName(columnName);
+    if (!normalizedColumn) continue;
+    columnLookup.set(normalizedColumn, String(value ?? "").trim());
+  }
+
+  return columnLookup;
+}
+
+function readImportColumnValue(
+  columnLookup: Map<string, string>,
+  candidates: string[]
+): string {
+  for (const candidate of candidates) {
+    const value = columnLookup.get(normalizeImportColumnName(candidate));
+    if (value) return value;
+  }
+
+  return "";
+}
+
+function formatImportStageSummary(
+  stages: Partial<Record<RegisterStageKey, RegisterStageEntry | null>>
+): string {
+  const parts = REGISTER_STAGE_KEYS.flatMap((key) => {
+    const stage = stages[key];
+    if (!stage?.outcome) return [];
+    const label = REGISTER_STAGE_LABELS[key];
+    const outcome =
+      stage.outcome === "accept"
+        ? "Approved"
+        : stage.outcome === "query"
+          ? "Queried"
+          : "Rejected";
+    return [`${label}: ${outcome}`];
+  });
+
+  return parts.join(" | ");
+}
+
+function buildImportPreviewRows(
+  rows: Record<string, unknown>[],
+  jobs: Job[]
+): ImportPreviewRow[] {
+  const jobsById = new Map(jobs.map((job) => [job.jobId.trim().toLowerCase(), job]));
+
+  return rows.map((row, index) => {
+    const columnLookup = buildImportColumnLookup(row);
+    const rowJobId = readImportColumnValue(columnLookup, IMPORT_JOB_ID_COLUMNS);
+
+    if (!rowJobId) {
+      return {
+        rowNumber: index + 2,
+        rowJobId: "",
+        stages: {},
+        hasStageData: false,
+        hasRegionalNumber: false,
+        hasChanges: false,
+        issue: "Missing RNR/RN column value",
+        apply: false,
+      };
+    }
+
+    const matchedJob = jobsById.get(rowJobId.toLowerCase());
+    const stagePayload: Partial<Record<RegisterStageKey, RegisterStageEntry | null>> = {};
+    let hasStageData = false;
+
+    for (const key of REGISTER_STAGE_KEYS) {
+      const rawValue = readImportColumnValue(columnLookup, IMPORT_STAGE_COLUMNS[key]);
+      if (!rawValue) continue;
+
+      const outcome = toRegisterOutcomeFromDecision(rawValue);
+      if (!outcome) continue;
+
+      stagePayload[key] = {
+        outcome,
+        updatedAt: new Date().toISOString(),
+      };
+      hasStageData = true;
+    }
+
+    const regionalNumber = readImportColumnValue(columnLookup, IMPORT_REGIONAL_NUMBER_COLUMNS);
+    const hasRegionalNumber = Boolean(regionalNumber);
+    const hasChanges = hasStageData || hasRegionalNumber;
+
+    return {
+      rowNumber: index + 2,
+      rowJobId,
+      matchedJobId: matchedJob?.jobId,
+      regionalNumber: regionalNumber || undefined,
+      stages: stagePayload,
+      hasStageData,
+      hasRegionalNumber,
+      hasChanges,
+      issue: !matchedJob
+        ? "No matching job in register"
+        : !hasChanges
+          ? "No valid stage/regional updates found"
+          : undefined,
+      apply: Boolean(matchedJob && hasChanges),
+    };
+  });
+}
 
 function toRegisterOutcomeFromDecision(decision?: string): RegisterStageOutcome | undefined {
   const normalized = (decision ?? "").trim().toLowerCase();
@@ -852,6 +972,9 @@ export default function JobsRegisterPage() {
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
   const [importFeedback, setImportFeedback] = useState("");
+  const [importFileName, setImportFileName] = useState("");
+  const [importPreviewRows, setImportPreviewRows] = useState<ImportPreviewRow[]>([]);
+  const [showImportPreview, setShowImportPreview] = useState(false);
   const [search, setSearch] = useState(urlSearch);
   const [statusFilter, setStatusFilter] = useState("");
   const importInputRef = useRef<HTMLInputElement | null>(null);
@@ -939,6 +1062,15 @@ export default function JobsRegisterPage() {
     }),
     [jobs]
   );
+
+  const importPreviewStats = useMemo(() => {
+    const total = importPreviewRows.length;
+    const matched = importPreviewRows.filter((row) => Boolean(row.matchedJobId)).length;
+    const unmatched = importPreviewRows.filter((row) => !row.matchedJobId).length;
+    const validChanges = importPreviewRows.filter((row) => row.hasChanges).length;
+    const selected = importPreviewRows.filter((row) => row.apply).length;
+    return { total, matched, unmatched, validChanges, selected };
+  }, [importPreviewRows]);
 
   const handleExport = async () => {
     const XLSX = await import("xlsx");
@@ -1029,79 +1161,78 @@ export default function JobsRegisterPage() {
         setImportFeedback("No rows found in the selected Excel file.");
         return;
       }
-
-      const jobsById = new Map(jobs.map((job) => [job.jobId.trim().toLowerCase(), job]));
-      let updated = 0;
-      let skipped = 0;
-      let notFound = 0;
-
-      for (const row of rows) {
-        const columnLookup = new Map<string, string>();
-        for (const [columnName, value] of Object.entries(row)) {
-          const normalizedColumn = normalizeImportColumnName(columnName);
-          if (!normalizedColumn) continue;
-          columnLookup.set(normalizedColumn, String(value ?? "").trim());
-        }
-
-        const readColumnValue = (candidates: string[]) => {
-          for (const candidate of candidates) {
-            const value = columnLookup.get(normalizeImportColumnName(candidate));
-            if (value) return value;
-          }
-          return "";
-        };
-
-        const jobId = readColumnValue(IMPORT_JOB_ID_COLUMNS);
-        if (!jobId) {
-          skipped += 1;
-          continue;
-        }
-
-        const job = jobsById.get(jobId.toLowerCase());
-        if (!job) {
-          notFound += 1;
-          continue;
-        }
-
-        const stagePayload: Partial<Record<RegisterStageKey, RegisterStageEntry | null>> = {};
-        let hasStageData = false;
-
-        for (const key of REGISTER_STAGE_KEYS) {
-          const rawValue = readColumnValue(IMPORT_STAGE_COLUMNS[key]);
-          if (!rawValue) continue;
-
-          const outcome = toRegisterOutcomeFromDecision(rawValue);
-          if (!outcome) continue;
-
-          stagePayload[key] = {
-            outcome,
-            updatedAt: new Date().toISOString(),
-          };
-          hasStageData = true;
-        }
-
-        const regionalNumber = readColumnValue(IMPORT_REGIONAL_NUMBER_COLUMNS);
-
-        if (!hasStageData && !regionalNumber) {
-          skipped += 1;
-          continue;
-        }
-
-        await registerFieldsApi.update(job.jobId, {
-          actualRegionalNumber: regionalNumber || undefined,
-          stages: hasStageData ? stagePayload : undefined,
-        });
-
-        updated += 1;
-      }
-
-      loadJobs();
-      setImportFeedback(`Import complete: ${updated} updated, ${skipped} skipped, ${notFound} rows did not match a job.`);
+      const previewRows = buildImportPreviewRows(rows, jobs);
+      setImportFileName(file.name);
+      setImportPreviewRows(previewRows);
+      setShowImportPreview(true);
+      setImportFeedback(
+        `Preview ready: ${previewRows.length} rows parsed. Confirm rows before applying updates.`
+      );
     } catch (error) {
       setImportFeedback(error instanceof Error ? error.message : "Failed to import Excel file.");
     } finally {
       setImporting(false);
       event.target.value = "";
+    }
+  };
+
+  const toggleImportRow = (rowNumber: number) => {
+    setImportPreviewRows((current) =>
+      current.map((row) => {
+        if (row.rowNumber !== rowNumber || !row.matchedJobId || !row.hasChanges) {
+          return row;
+        }
+        return { ...row, apply: !row.apply };
+      })
+    );
+  };
+
+  const setImportSelectionForAll = (checked: boolean) => {
+    setImportPreviewRows((current) =>
+      current.map((row) =>
+        row.matchedJobId && row.hasChanges ? { ...row, apply: checked } : row
+      )
+    );
+  };
+
+  const handleApplyImportPreview = async () => {
+    const actionableRows = importPreviewRows.filter(
+      (row) => row.apply && row.matchedJobId && row.hasChanges
+    );
+
+    if (actionableRows.length === 0) {
+      setImportFeedback("No selected rows to apply. Select matched rows with valid changes.");
+      return;
+    }
+
+    setImporting(true);
+    try {
+      let updated = 0;
+
+      for (const row of actionableRows) {
+        await registerFieldsApi.update(row.matchedJobId!, {
+          actualRegionalNumber: row.hasRegionalNumber ? row.regionalNumber : undefined,
+          stages: row.hasStageData ? row.stages : undefined,
+        });
+        updated += 1;
+      }
+
+      const skipped = importPreviewRows.length - updated;
+      const notFound = importPreviewRows.filter((row) => !row.matchedJobId).length;
+
+      await loadJobs();
+      setShowImportPreview(false);
+      setImportPreviewRows([]);
+      setImportFileName("");
+      setImportFeedback(
+        `Import complete: ${updated} updated, ${skipped} skipped, ${notFound} rows did not match a job.`
+      );
+    } catch (error) {
+      setImportFeedback(
+        error instanceof Error ? error.message : "Failed to apply import updates."
+      );
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -1166,6 +1297,143 @@ export default function JobsRegisterPage() {
       {importFeedback && (
         <div className="mb-4 rounded-lg border border-[#bfdbfe] bg-[#eff6ff] px-3 py-2 text-[12px] text-[#1e3a8a]">
           {importFeedback}
+        </div>
+      )}
+
+      {showImportPreview && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          onClick={() => {
+            if (!importing) setShowImportPreview(false);
+          }}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl mx-4 overflow-hidden"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[#e5e7eb] bg-[#f8f9fa]">
+              <div>
+                <h3 className="text-[15px] font-bold text-[#1f2937]">Import Preview Template</h3>
+                <p className="text-[12px] text-[#9ca3af]">
+                  File: {importFileName || "Uploaded file"}
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  if (!importing) setShowImportPreview(false);
+                }}
+                className="p-1 rounded-lg hover:bg-gray-100 text-[#9ca3af]"
+                disabled={importing}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="px-6 py-4 border-b border-[#e5e7eb]">
+              <div className="flex flex-wrap items-center gap-3 text-[12px]">
+                <span className="px-2 py-1 rounded-md bg-[#eff6ff] text-[#1e40af] font-semibold">
+                  Total rows: {importPreviewStats.total}
+                </span>
+                <span className="px-2 py-1 rounded-md bg-[#ecfdf3] text-[#166534] font-semibold">
+                  Matched: {importPreviewStats.matched}
+                </span>
+                <span className="px-2 py-1 rounded-md bg-[#fef2f2] text-[#b91c1c] font-semibold">
+                  Unmatched: {importPreviewStats.unmatched}
+                </span>
+                <span className="px-2 py-1 rounded-md bg-[#fffbeb] text-[#b45309] font-semibold">
+                  Valid changes: {importPreviewStats.validChanges}
+                </span>
+                <span className="px-2 py-1 rounded-md bg-[#f5f3ff] text-[#6d28d9] font-semibold">
+                  Selected to apply: {importPreviewStats.selected}
+                </span>
+              </div>
+              <p className="text-[12px] text-[#6b7280] mt-2">
+                Review parsed rows below. Only matched rows with valid stage/regional data can be applied.
+              </p>
+            </div>
+
+            <div className="max-h-[55vh] overflow-auto">
+              <table className="w-full text-[12px] border-collapse min-w-[980px]">
+                <thead className="bg-[#1f2937] text-white sticky top-0">
+                  <tr>
+                    <th className="border border-[#374151] px-2 py-2 text-left">Row</th>
+                    <th className="border border-[#374151] px-2 py-2 text-left">Input RNR</th>
+                    <th className="border border-[#374151] px-2 py-2 text-left">Matched Job</th>
+                    <th className="border border-[#374151] px-2 py-2 text-left">Regional Number</th>
+                    <th className="border border-[#374151] px-2 py-2 text-left">Stage Updates</th>
+                    <th className="border border-[#374151] px-2 py-2 text-left">Status</th>
+                    <th className="border border-[#374151] px-2 py-2 text-center">Apply</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {importPreviewRows.map((row) => (
+                    <tr key={row.rowNumber} className="odd:bg-white even:bg-[#fafafa]">
+                      <td className="border border-[#e5e7eb] px-2 py-2 text-[#6b7280]">{row.rowNumber}</td>
+                      <td className="border border-[#e5e7eb] px-2 py-2 font-mono text-[#1f2937]">{row.rowJobId || "—"}</td>
+                      <td className="border border-[#e5e7eb] px-2 py-2">{row.matchedJobId || <span className="text-[#b91c1c]">No match</span>}</td>
+                      <td className="border border-[#e5e7eb] px-2 py-2">{row.regionalNumber || "—"}</td>
+                      <td className="border border-[#e5e7eb] px-2 py-2 text-[#374151]">{formatImportStageSummary(row.stages) || "—"}</td>
+                      <td className="border border-[#e5e7eb] px-2 py-2">
+                        {row.issue ? (
+                          <span className="text-[#b91c1c]">{row.issue}</span>
+                        ) : (
+                          <span className="text-[#166534]">Ready</span>
+                        )}
+                      </td>
+                      <td className="border border-[#e5e7eb] px-2 py-2 text-center">
+                        <input
+                          type="checkbox"
+                          checked={row.apply}
+                          onChange={() => toggleImportRow(row.rowNumber)}
+                          disabled={!row.matchedJobId || !row.hasChanges || importing}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="px-6 py-4 border-t border-[#e5e7eb] bg-[#f8f9fa] flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setImportSelectionForAll(true)}
+                  disabled={importing}
+                  className="h-[34px] px-3 border border-[#d1d5db] rounded-lg text-[12px] font-semibold text-[#374151] hover:bg-white disabled:opacity-60"
+                >
+                  Select All Valid
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setImportSelectionForAll(false)}
+                  disabled={importing}
+                  className="h-[34px] px-3 border border-[#d1d5db] rounded-lg text-[12px] font-semibold text-[#374151] hover:bg-white disabled:opacity-60"
+                >
+                  Clear Selection
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowImportPreview(false)}
+                  disabled={importing}
+                  className="h-[36px] px-4 border border-[#d1d5db] rounded-lg text-[12px] font-semibold text-[#374151] hover:bg-white disabled:opacity-60"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleApplyImportPreview}
+                  disabled={importing || importPreviewStats.selected === 0}
+                  className="h-[36px] px-4 bg-[#F07000] text-white rounded-lg text-[12px] font-semibold hover:bg-[#D06000] disabled:opacity-60 flex items-center gap-2"
+                >
+                  {importing ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
+                  {importing ? "Applying..." : `Apply Selected (${importPreviewStats.selected})`}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
