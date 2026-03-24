@@ -1203,6 +1203,44 @@ export default function JobsRegisterPage() {
     );
   };
 
+  const syncAcceptedImportStages = async (
+    job: Job,
+    stagePayload: Partial<Record<RegisterStageKey, RegisterStageEntry | null>>
+  ) => {
+    const acceptedStages = REGISTER_STAGE_KEYS
+      .map((key) => ({
+        key,
+        stage: stagePayload[key],
+        backendStatus: BACKEND_REGISTER_STEP_CODE_MAP[key] as BackendStatus,
+      }))
+      .filter((item) => item.stage?.outcome === "accept")
+      .sort(
+        (a, b) =>
+          (STATUS_STEP_MAP[a.backendStatus] ?? 0) -
+          (STATUS_STEP_MAP[b.backendStatus] ?? 0)
+      );
+
+    let currentStep = STATUS_STEP_MAP[job.backendStatus ?? "request_received"] ?? 1;
+
+    for (const item of acceptedStages) {
+      const targetStep = STATUS_STEP_MAP[item.backendStatus] ?? currentStep;
+      if (targetStep <= currentStep) continue;
+      if (targetStep > REGISTER_BACKEND_SYNC_MAX_STEP) continue;
+
+      const label = REGISTER_STAGE_LABELS[item.key];
+      const notes = `IMPORTED APPROVED (${label})`;
+
+      while (currentStep < targetStep) {
+        await jobsApi.advanceStep(
+          job.jobId,
+          { comment: notes },
+          { currentBackendStatus: getBackendStatusForStep(currentStep) }
+        );
+        currentStep += 1;
+      }
+    }
+  };
+
   const handleApplyImportPreview = async () => {
     const actionableRows = importPreviewRows.filter(
       (row) => row.apply && row.matchedJobId && row.hasChanges
@@ -1216,29 +1254,55 @@ export default function JobsRegisterPage() {
     setImporting(true);
     try {
       let updated = 0;
+      let failed = 0;
+      const failures: string[] = [];
+      const jobsById = new Map(jobs.map((job) => [job.jobId, job]));
 
       for (const row of actionableRows) {
-        await registerFieldsApi.update(row.matchedJobId!, {
-          actualRegionalNumber: row.hasRegionalNumber ? row.regionalNumber : undefined,
-          stages: row.hasStageData ? row.stages : undefined,
-        });
-        updated += 1;
+        try {
+          const matchedJob = jobsById.get(row.matchedJobId!);
+
+          if (matchedJob && row.hasStageData) {
+            await syncAcceptedImportStages(matchedJob, row.stages);
+          }
+
+          await registerFieldsApi.update(row.matchedJobId!, {
+            actualRegionalNumber: row.hasRegionalNumber ? row.regionalNumber : undefined,
+            stages: row.hasStageData ? row.stages : undefined,
+          });
+
+          updated += 1;
+        } catch (error) {
+          failed += 1;
+          const message =
+            error instanceof Error && error.message.trim()
+              ? error.message.trim()
+              : "Unknown error";
+          failures.push(`row ${row.rowNumber}: ${message}`);
+        }
       }
 
-      const skipped = importPreviewRows.length - updated;
+      const skipped = importPreviewRows.length - updated - failed;
       const notFound = importPreviewRows.filter((row) => !row.matchedJobId).length;
 
       await loadJobs();
-      setShowImportPreview(false);
-      setImportPreviewRows([]);
-      setImportFileName("");
-      setImportFeedback(
-        `Import complete: ${updated} updated, ${skipped} skipped, ${notFound} rows did not match a job.`
-      );
+
+      if (failed === 0) {
+        setShowImportPreview(false);
+        setImportPreviewRows([]);
+        setImportFileName("");
+        setImportFeedback(
+          `Import complete: ${updated} updated, ${skipped} skipped, ${notFound} rows did not match a job.`
+        );
+      } else {
+        setImportFeedback(
+          `Import partially completed: ${updated} updated, ${failed} failed, ${skipped} skipped, ${notFound} unmatched. ${failures
+            .slice(0, 3)
+            .join(" | ")}`
+        );
+      }
     } catch (error) {
-      setImportFeedback(
-        error instanceof Error ? error.message : "Failed to apply import updates."
-      );
+      setImportFeedback(error instanceof Error ? error.message : "Failed to apply import updates.");
     } finally {
       setImporting(false);
     }
