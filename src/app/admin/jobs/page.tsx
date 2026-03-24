@@ -194,7 +194,19 @@ function buildImportPreviewRows(
 
     const regionalNumber = readImportColumnValue(columnLookup, IMPORT_REGIONAL_NUMBER_COLUMNS);
     const hasRegionalNumber = Boolean(regionalNumber);
-    const hasChanges = hasStageData || hasRegionalNumber;
+    const normalizedRegional = (regionalNumber || "").trim().toLowerCase();
+    const currentRegional = (matchedJob?.regionalNumber || "").trim().toLowerCase();
+    const hasRegionalChange = hasRegionalNumber && normalizedRegional !== currentRegional;
+    const hasChanges = hasStageData || hasRegionalChange;
+    const hasSlashRnr = Boolean(matchedJob?.jobId?.includes("/"));
+
+    const issue = !matchedJob
+      ? "No matching job in register"
+      : hasSlashRnr
+        ? "Blocked: RN contains '/' and backend cannot update this job route yet"
+        : !hasChanges
+          ? "No valid stage/regional updates found"
+          : undefined;
 
     return {
       rowNumber: index + 2,
@@ -205,12 +217,8 @@ function buildImportPreviewRows(
       hasStageData,
       hasRegionalNumber,
       hasChanges,
-      issue: !matchedJob
-        ? "No matching job in register"
-        : !hasChanges
-          ? "No valid stage/regional updates found"
-          : undefined,
-      apply: Boolean(matchedJob && hasChanges),
+      issue,
+      apply: Boolean(!issue && matchedJob && hasChanges),
     };
   });
 }
