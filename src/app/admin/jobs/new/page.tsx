@@ -157,15 +157,16 @@ export default function NewJobPage() {
             <div>
               <label className="block text-[13px] font-semibold text-[#374151] mb-1.5">Regional Number (RN) *</label>
               <input
-                {...register("rn", {
-                  required: "Regional Number is required",
-                  validate: (value) =>
-                    !/[\\/]/.test(value) || "Use '-' instead of '/' in Regional Number",
-                })}
+                {...register("rn", { required: "Regional Number is required" })}
                 placeholder="e.g. RN-GAR-2025-001"
                 className="w-full h-[40px] px-4 border border-[#e5e7eb] rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-[#F07000]/20"
               />
               {errors.rn && <p className="text-red-500 text-[11px] mt-1">{errors.rn.message}</p>}
+              {!errors.rn && (
+                <p className="text-[11px] text-[#9ca3af] mt-1">
+                  You can type separators like /, -, ., or _. Unsafe separators are auto-normalized on save.
+                </p>
+              )}
             </div>
 
             {/* Job Title / Reference */}
