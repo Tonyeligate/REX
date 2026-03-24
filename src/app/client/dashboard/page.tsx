@@ -198,12 +198,6 @@ function getStatusFromBackendProgress(job: Job, stepNumber: number): ClientAlign
     return "Queried";
   }
 
-  // Backend currently caps register workflow at 7_region.
-  // Treat the final client-facing register stages as completed when that cap is reached.
-  if (backendStatus === "7_region" && (stepNumber === 13 || stepNumber === 14)) {
-    return "Approved";
-  }
-
   if (stepNumber <= currentStepNumber) {
     return "Approved";
   }
