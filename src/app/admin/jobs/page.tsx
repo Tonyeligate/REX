@@ -1261,9 +1261,13 @@ export default function JobsRegisterPage() {
                     <tr key={job.id} className={`hover:bg-orange-50/40 transition-colors ${isEven ? "bg-white" : "bg-[#fafafa]"}`}>
                       <td className="border border-[#e5e7eb] px-2 py-2 text-center text-[#9ca3af] font-medium">{index + 1}</td>
                       <td className="border border-[#e5e7eb] px-3 py-2 align-top">
-                        <Link href={`/admin/jobs/${encodeURIComponent(job.jobId)}`} className="font-semibold text-[#1f2937] hover:text-[#F07000] transition-colors">
+                        <button
+                          type="button"
+                          onClick={() => setRegisterModalJob(job)}
+                          className="font-semibold text-[#1f2937] hover:text-[#F07000] transition-colors"
+                        >
                           {registerName}
-                        </Link>
+                        </button>
                         {registerReference && (
                           <div className="text-[11px] text-[#6b7280] mt-0.5 line-clamp-1">{registerReference}</div>
                         )}
@@ -1295,12 +1299,13 @@ export default function JobsRegisterPage() {
                           >
                             <Clock size={11} /> Workflow
                           </button>
-                          <Link
-                            href={`/admin/jobs/${encodeURIComponent(job.jobId)}`}
+                          <button
+                            type="button"
+                            onClick={() => setRegisterModalJob(job)}
                             className="inline-flex items-center gap-1 text-[#F07000] hover:underline"
                           >
-                            <Eye size={11} /> Open
-                          </Link>
+                            <Eye size={11} /> Open Register
+                          </button>
                         </div>
                         {job.queryReason && (
                           <div className="text-[11px] text-amber-700 mt-1 line-clamp-2">{job.queryReason}</div>
