@@ -990,6 +990,10 @@ function normalizeJobLookupKey(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, "");
 }
 
+function hasPathSeparator(value: string): boolean {
+  return value.includes("/");
+}
+
 function isNumericJobId(value: string): boolean {
   return /^\d+$/.test(value.trim());
 }
@@ -1208,6 +1212,18 @@ export const jobsApi = {
   },
 
   get: async (rnOrId: string) => {
+    const rawLookup = rnOrId.trim();
+
+    // Backend detail endpoints cannot resolve RN values containing '/'.
+    // Use list payload fallback directly to avoid noisy repeated 404 calls.
+    if (hasPathSeparator(rawLookup)) {
+      const slashFallback = await findJobInList(rawLookup);
+      if (!slashFallback) {
+        throw new Error("Job not found.");
+      }
+      return { job: mapListItemToFallbackJob(slashFallback) };
+    }
+
     const lookupKey = await resolveBackendJobPathKey(rnOrId);
 
     try {
