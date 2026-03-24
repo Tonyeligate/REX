@@ -280,6 +280,14 @@ function getActualRegionalNumber(job: Job, record?: JobRegisterRecord): string {
 
 const REGISTER_BACKEND_SYNC_MAX_STEP = STATUS_STEP_MAP["7_1_checked"] ?? 12;
 
+function getBackendStatusForStep(step: number): BackendStatus {
+  const boundedStep = Math.min(
+    Math.max(1, Math.floor(step || 1)),
+    WORKFLOW_STATUSES.length
+  );
+  return WORKFLOW_STATUSES[boundedStep - 1] as BackendStatus;
+}
+
 function RegisterStageCell({
   stage,
   source,
@@ -395,7 +403,14 @@ function StageModal({ job, colLabel, stepIndex, currentState, onClose, onDone }:
     setError("");
     try {
       if (outcome === "advance") {
-        await jobsApi.advanceStep(job.jobId, { comment });
+        const currentBackendStatus =
+          (job.backendStatus as BackendStatus | undefined) ??
+          getBackendStatusForStep(job.currentStep || 1);
+        await jobsApi.advanceStep(
+          job.jobId,
+          { comment },
+          { currentBackendStatus }
+        );
       } else {
         await jobsApi.transitionTo(job.jobId, {
           status: getQueryStatusForStage(stepIndex),
@@ -650,7 +665,11 @@ function RegisterRowModal({
         // Always progress linearly in register mode to match backend transition rules.
         while (currentStep < targetStep) {
           try {
-            await jobsApi.advanceStep(job.jobId, { comment: notes });
+            await jobsApi.advanceStep(
+              job.jobId,
+              { comment: notes },
+              { currentBackendStatus: getBackendStatusForStep(currentStep) }
+            );
             currentStep += 1;
           } catch (err: unknown) {
             if (isPermissionDeniedError(err)) {

@@ -1089,6 +1089,19 @@ async function fetchJobDetailWithHistory(lookupKey: string) {
   return { job };
 }
 
+function mapListItemToFallbackJob(item: BackendJobListItem) {
+  return mapBackendJob({
+    ...item,
+    description: "",
+    query_reason: "",
+    submitted_by: null,
+    assigned_to: null,
+    batch: null,
+    batch_name: null,
+    documents: [],
+  });
+}
+
 async function transitionJobStatus(
   rnOrId: string,
   payload: { status: BackendStatus; notes?: string; query_reason?: string }
@@ -1199,7 +1212,12 @@ export const jobsApi = {
         try {
           const fallback = await findJobInList(rnOrId);
           if (fallback) {
-            return await fetchJobDetailWithHistory(fallback.rn);
+            try {
+              return await fetchJobDetailWithHistory(fallback.rn);
+            } catch {
+              // Keep UX functional even when detail route cannot resolve RNs with slashes.
+              return { job: mapListItemToFallbackJob(fallback) };
+            }
           }
         } catch {
           // Keep original failure behavior if list fallback cannot be resolved.
@@ -1215,16 +1233,7 @@ export const jobsApi = {
       const fallback = await findJobInList(rnOrId);
       if (!fallback) throw err;
 
-      const job = mapBackendJob({
-        ...fallback,
-        description: "",
-        query_reason: "",
-        submitted_by: null,
-        assigned_to: null,
-        batch: null,
-        batch_name: null,
-        documents: [],
-      });
+      const job = mapListItemToFallbackJob(fallback);
 
       return { job };
     }
@@ -1318,9 +1327,14 @@ export const jobsApi = {
 
   advanceStep: async (
     rnOrId: string,
-    payload: { comment?: string; completedBy?: string }
+    payload: { comment?: string; completedBy?: string },
+    options?: { currentBackendStatus?: BackendStatus | null }
   ) => {
-    const { job: current } = await jobsApi.get(rnOrId);
+    const statusFromCaller = options?.currentBackendStatus ?? undefined;
+    const { job: current } = statusFromCaller
+      ? ({ job: { backendStatus: statusFromCaller } } as { job: { backendStatus?: string | null } })
+      : await jobsApi.get(rnOrId);
+
     const nextStatus = getNextPatchStatusForWorkflow(
       current.backendStatus as BackendStatus
     );

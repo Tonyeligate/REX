@@ -68,6 +68,8 @@ export default function JobDetailPage() {
         const updated = await jobsApi.advanceStep(job.jobId, {
           comment: advanceComment,
           completedBy: user?.firstName + " " + user?.lastName,
+        }, {
+          currentBackendStatus: (job.backendStatus as BackendStatus | undefined) ?? null,
         });
         setJob(updated.job);
       } else {
