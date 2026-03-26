@@ -55,12 +55,15 @@ type CellState = "done" | "active" | "queried" | "pending";
 type ImportPreviewRow = {
   rowNumber: number;
   rowJobId: string;
+  rowClientName?: string;
   matchedJobId?: string;
   regionalNumber?: string;
   stages: Partial<Record<RegisterStageKey, RegisterStageEntry | null>>;
   hasStageData: boolean;
   hasRegionalNumber: boolean;
   hasChanges: boolean;
+  canCreate: boolean;
+  isActionable: boolean;
   issue?: string;
   apply: boolean;
 };
@@ -101,6 +104,7 @@ function normalizeImportJobIdentifier(value: string): string {
 
 const IMPORT_JOB_ID_COLUMNS = ["RNR", "RN", "Job ID", "JobId", "Job Id"];
 const IMPORT_REGIONAL_NUMBER_COLUMNS = ["Regional Number", "Actual Regional Number", "ARN", "Regional No", "Regional No."];
+const IMPORT_CLIENT_NAME_COLUMNS = ["Client Name", "CL NAME", "Client", "Name"];
 
 const IMPORT_STAGE_COLUMNS: Record<RegisterStageKey, string[]> = {
   jobProductionLsCertification: ["Job Production / L/S Certification", "Job Production LS Certification", "4_ls_cert"],
@@ -228,10 +232,14 @@ function buildImportPreviewRows(
         hasStageData: false,
         hasRegionalNumber: false,
         hasChanges: false,
+        canCreate: false,
+        isActionable: false,
         issue: "Missing RNR/RN column value",
         apply: false,
       };
     }
+
+    const rowClientName = readImportColumnValue(columnLookup, IMPORT_CLIENT_NAME_COLUMNS);
 
     const matchedJob =
       jobsById.get(rowJobId.toLowerCase()) ??
@@ -259,24 +267,32 @@ function buildImportPreviewRows(
     const currentRegional = (matchedJob?.regionalNumber || "").trim().toLowerCase();
     const hasRegionalChange = hasRegionalNumber && normalizedRegional !== currentRegional;
     const hasChanges = hasStageData || hasRegionalChange;
+    const canCreate = !matchedJob && Boolean(rowJobId.trim());
+    const hasUpdateChanges = Boolean(matchedJob && hasChanges);
+    const isActionable = hasUpdateChanges || canCreate;
 
-    const issue = !matchedJob
-      ? "No matching job in register"
-      : !hasChanges
+    const issue = matchedJob
+      ? !hasChanges
           ? "No valid stage/regional updates found"
-          : undefined;
+          : undefined
+      : !canCreate
+        ? "Cannot create job from this row"
+        : undefined;
 
     return {
       rowNumber: index + 2,
       rowJobId,
+      rowClientName: rowClientName || undefined,
       matchedJobId: matchedJob?.jobId,
       regionalNumber: regionalNumber || undefined,
       stages: stagePayload,
       hasStageData,
       hasRegionalNumber,
       hasChanges,
+      canCreate,
+      isActionable,
       issue,
-      apply: Boolean(!issue && matchedJob && hasChanges),
+      apply: Boolean(!issue && isActionable),
     };
   });
 }
@@ -1133,7 +1149,7 @@ export default function JobsRegisterPage() {
     const total = importPreviewRows.length;
     const matched = importPreviewRows.filter((row) => Boolean(row.matchedJobId)).length;
     const unmatched = importPreviewRows.filter((row) => !row.matchedJobId).length;
-    const validChanges = importPreviewRows.filter((row) => row.hasChanges).length;
+    const validChanges = importPreviewRows.filter((row) => row.isActionable).length;
     const selected = importPreviewRows.filter((row) => row.apply).length;
     return { total, matched, unmatched, validChanges, selected };
   }, [importPreviewRows]);
@@ -1264,7 +1280,7 @@ export default function JobsRegisterPage() {
   const toggleImportRow = (rowNumber: number) => {
     setImportPreviewRows((current) =>
       current.map((row) => {
-        if (row.rowNumber !== rowNumber || !row.matchedJobId || !row.hasChanges) {
+        if (row.rowNumber !== rowNumber || !row.isActionable) {
           return row;
         }
         return { ...row, apply: !row.apply };
@@ -1275,34 +1291,67 @@ export default function JobsRegisterPage() {
   const setImportSelectionForAll = (checked: boolean) => {
     setImportPreviewRows((current) =>
       current.map((row) =>
-        row.matchedJobId && row.hasChanges ? { ...row, apply: checked } : row
+        row.isActionable ? { ...row, apply: checked } : row
       )
     );
   };
 
   const handleApplyImportPreview = async () => {
-    const actionableRows = importPreviewRows.filter(
-      (row) => row.apply && row.matchedJobId && row.hasChanges
-    );
+    const actionableRows = importPreviewRows.filter((row) => row.apply && row.isActionable);
 
     if (actionableRows.length === 0) {
-      setImportFeedback("No selected rows to apply. Select matched rows with valid changes.");
+      setImportFeedback("No selected rows to apply. Select rows marked as ready to update or create.");
       return;
     }
 
     setImporting(true);
     try {
       let updated = 0;
+      let created = 0;
       let failed = 0;
       const failedRows: string[] = [];
 
       for (const row of actionableRows) {
         try {
-          await registerFieldsApi.update(row.matchedJobId!, {
-            actualRegionalNumber: row.hasRegionalNumber ? row.regionalNumber : undefined,
-            stages: row.hasStageData ? row.stages : undefined,
-          });
-          updated += 1;
+          if (row.matchedJobId && row.hasChanges) {
+            await registerFieldsApi.update(row.matchedJobId, {
+              actualRegionalNumber: row.hasRegionalNumber ? row.regionalNumber : undefined,
+              stages: row.hasStageData ? row.stages : undefined,
+            });
+            updated += 1;
+            continue;
+          }
+
+          if (row.canCreate) {
+            const clientName = row.rowClientName?.trim() || "Client";
+            const description = row.rowClientName?.trim()
+              ? `Client Name: ${row.rowClientName.trim()}`
+              : "";
+
+            const createdJob = await jobsApi.create({
+              rn: row.rowJobId,
+              jobId: row.rowJobId,
+              regionalNumber: row.regionalNumber ?? row.rowJobId,
+              clientName,
+              title: `${clientName} - ${row.rowJobId}`,
+              jobType: "Land Survey",
+              description,
+            });
+
+            const createdJobId = createdJob.job.jobId || row.rowJobId;
+            if (row.hasStageData || row.hasRegionalNumber) {
+              await registerFieldsApi.update(createdJobId, {
+                actualRegionalNumber: row.hasRegionalNumber ? row.regionalNumber : undefined,
+                stages: row.hasStageData ? row.stages : undefined,
+              });
+            }
+
+            created += 1;
+            continue;
+          }
+
+          failed += 1;
+          failedRows.push(`Row ${row.rowNumber} (${row.rowJobId}): Row not actionable`);
         } catch (error) {
           failed += 1;
           const message = error instanceof Error ? error.message : "Update failed";
@@ -1310,7 +1359,7 @@ export default function JobsRegisterPage() {
         }
       }
 
-      const skipped = Math.max(0, importPreviewRows.length - updated - failed);
+      const skipped = Math.max(0, importPreviewRows.length - updated - created - failed);
       const notFound = importPreviewRows.filter((row) => !row.matchedJobId).length;
       const failureSummary =
         failedRows.length > 0
@@ -1322,7 +1371,7 @@ export default function JobsRegisterPage() {
       setImportPreviewRows([]);
       setImportFileName("");
       setImportFeedback(
-        `Import complete: ${updated} updated, ${failed} failed, ${skipped} skipped, ${notFound} rows did not match a job.${failureSummary}`
+        `Import complete: ${updated} updated, ${created} created, ${failed} failed, ${skipped} skipped, ${notFound} source rows were originally unmatched.${failureSummary}`
       );
     } catch (error) {
       setImportFeedback(
@@ -1445,7 +1494,7 @@ export default function JobsRegisterPage() {
                 </span>
               </div>
               <p className="text-[12px] text-[#6b7280] mt-2">
-                Review parsed rows below. Only matched rows with valid stage/regional data can be applied.
+                Review parsed rows below. Rows can now be applied as update (matched jobs) or create (new jobs).
               </p>
             </div>
 
@@ -1473,8 +1522,10 @@ export default function JobsRegisterPage() {
                       <td className="border border-[#e5e7eb] px-2 py-2">
                         {row.issue ? (
                           <span className="text-[#b91c1c]">{row.issue}</span>
+                        ) : !row.matchedJobId ? (
+                          <span className="text-[#1e40af]">Ready to create new job</span>
                         ) : (
-                          <span className="text-[#166534]">Ready</span>
+                          <span className="text-[#166534]">Ready to update</span>
                         )}
                       </td>
                       <td className="border border-[#e5e7eb] px-2 py-2 text-center">
@@ -1482,7 +1533,7 @@ export default function JobsRegisterPage() {
                           type="checkbox"
                           checked={row.apply}
                           onChange={() => toggleImportRow(row.rowNumber)}
-                          disabled={!row.matchedJobId || !row.hasChanges || importing}
+                          disabled={!row.isActionable || importing}
                         />
                       </td>
                     </tr>
@@ -1499,7 +1550,7 @@ export default function JobsRegisterPage() {
                   disabled={importing}
                   className="h-[34px] px-3 border border-[#d1d5db] rounded-lg text-[12px] font-semibold text-[#374151] hover:bg-white disabled:opacity-60"
                 >
-                  Select All Valid
+                  Select All Ready
                 </button>
                 <button
                   type="button"
