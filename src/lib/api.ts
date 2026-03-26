@@ -1030,16 +1030,16 @@ async function findJobInList(rnOrId: string): Promise<BackendJobListItem | null>
 async function resolveBackendJobPathKey(rnOrId: string): Promise<string> {
   const query = rnOrId.trim();
   if (!query) return query;
-  if (isNumericJobId(query)) return query;
+
+  if (isNumericJobId(query)) {
+    const byIdMatch = await findJobInList(query);
+    return byIdMatch?.rn?.trim() || query;
+  }
 
   // RN strings containing spaces/slashes can fail as path params on some backends.
   if (!/[\s/]/.test(query)) return query;
 
   const listMatch = await findJobInList(query);
-  if (listMatch?.id !== undefined && listMatch?.id !== null) {
-    return String(listMatch.id);
-  }
-
   return listMatch?.rn?.trim() || query;
 }
 
@@ -1249,19 +1249,15 @@ export const jobsApi = {
   get: async (rnOrId: string) => {
     const rawLookup = rnOrId.trim();
 
-    // Backend detail endpoints cannot resolve RN values containing '/'.
-    // Resolve list match first, then prefer numeric-id detail lookup for reliability.
+    // RN values containing '/' are frequently unsupported on backend detail routes.
+    // Prefer list fallback to avoid repeated noisy 404 requests.
     if (hasPathSeparator(rawLookup)) {
       const slashFallback = await findJobInList(rawLookup);
       if (!slashFallback) {
         throw new Error("Job not found.");
       }
 
-      try {
-        return await fetchJobDetailWithHistory(String(slashFallback.id));
-      } catch {
-        return { job: mapListItemToFallbackJob(slashFallback) };
-      }
+      return { job: mapListItemToFallbackJob(slashFallback) };
     }
 
     const lookupKey = await resolveBackendJobPathKey(rnOrId);

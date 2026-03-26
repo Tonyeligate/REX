@@ -63,7 +63,6 @@ type ImportPreviewRow = {
   hasRegionalNumber: boolean;
   hasChanges: boolean;
   canCreate: boolean;
-  isActionable: boolean;
   issue?: string;
   apply: boolean;
 };
@@ -200,6 +199,14 @@ function formatBackendImportSummary(payload: Record<string, unknown>): string {
   return parts.join(" | ");
 }
 
+function canApplyImportRow(row: ImportPreviewRow, allowCreateUnmatched: boolean): boolean {
+  if (row.matchedJobId) {
+    return row.hasChanges;
+  }
+
+  return allowCreateUnmatched && row.canCreate;
+}
+
 function buildImportPreviewRows(
   rows: Record<string, unknown>[],
   jobs: Job[]
@@ -268,8 +275,6 @@ function buildImportPreviewRows(
     const hasRegionalChange = hasRegionalNumber && normalizedRegional !== currentRegional;
     const hasChanges = hasStageData || hasRegionalChange;
     const canCreate = !matchedJob && Boolean(rowJobId.trim());
-    const hasUpdateChanges = Boolean(matchedJob && hasChanges);
-    const isActionable = hasUpdateChanges || canCreate;
 
     const issue = matchedJob
       ? !hasChanges
@@ -290,9 +295,8 @@ function buildImportPreviewRows(
       hasRegionalNumber,
       hasChanges,
       canCreate,
-      isActionable,
       issue,
-      apply: Boolean(!issue && isActionable),
+      apply: Boolean(!issue && matchedJob && hasChanges),
     };
   });
 }
@@ -1057,6 +1061,7 @@ export default function JobsRegisterPage() {
   const [importFileName, setImportFileName] = useState("");
   const [importPreviewRows, setImportPreviewRows] = useState<ImportPreviewRow[]>([]);
   const [showImportPreview, setShowImportPreview] = useState(false);
+  const [allowCreateUnmatched, setAllowCreateUnmatched] = useState(false);
   const [search, setSearch] = useState(urlSearch);
   const [statusFilter, setStatusFilter] = useState("");
   const importInputRef = useRef<HTMLInputElement | null>(null);
@@ -1149,10 +1154,10 @@ export default function JobsRegisterPage() {
     const total = importPreviewRows.length;
     const matched = importPreviewRows.filter((row) => Boolean(row.matchedJobId)).length;
     const unmatched = importPreviewRows.filter((row) => !row.matchedJobId).length;
-    const validChanges = importPreviewRows.filter((row) => row.isActionable).length;
-    const selected = importPreviewRows.filter((row) => row.apply).length;
+    const validChanges = importPreviewRows.filter((row) => canApplyImportRow(row, allowCreateUnmatched)).length;
+    const selected = importPreviewRows.filter((row) => row.apply && canApplyImportRow(row, allowCreateUnmatched)).length;
     return { total, matched, unmatched, validChanges, selected };
-  }, [importPreviewRows]);
+  }, [importPreviewRows, allowCreateUnmatched]);
 
   const handleExport = async () => {
     const XLSX = await import("xlsx");
@@ -1265,6 +1270,7 @@ export default function JobsRegisterPage() {
       setImportFileName(file.name);
       setImportPreviewRows(previewRows);
       setShowImportPreview(true);
+      setAllowCreateUnmatched(false);
       setImportFeedback(
         `Backend bulk import failed; preview fallback ready (${previewRows.length} rows). Error: ${backendMessage}`
       );
@@ -1280,7 +1286,7 @@ export default function JobsRegisterPage() {
   const toggleImportRow = (rowNumber: number) => {
     setImportPreviewRows((current) =>
       current.map((row) => {
-        if (row.rowNumber !== rowNumber || !row.isActionable) {
+        if (row.rowNumber !== rowNumber || !canApplyImportRow(row, allowCreateUnmatched)) {
           return row;
         }
         return { ...row, apply: !row.apply };
@@ -1288,16 +1294,27 @@ export default function JobsRegisterPage() {
     );
   };
 
+  const toggleAllowCreateUnmatched = (checked: boolean) => {
+    setAllowCreateUnmatched(checked);
+    if (!checked) {
+      setImportPreviewRows((current) =>
+        current.map((row) => (!row.matchedJobId && row.canCreate ? { ...row, apply: false } : row))
+      );
+    }
+  };
+
   const setImportSelectionForAll = (checked: boolean) => {
     setImportPreviewRows((current) =>
       current.map((row) =>
-        row.isActionable ? { ...row, apply: checked } : row
+        canApplyImportRow(row, allowCreateUnmatched) ? { ...row, apply: checked } : row
       )
     );
   };
 
   const handleApplyImportPreview = async () => {
-    const actionableRows = importPreviewRows.filter((row) => row.apply && row.isActionable);
+    const actionableRows = importPreviewRows.filter(
+      (row) => row.apply && canApplyImportRow(row, allowCreateUnmatched)
+    );
 
     if (actionableRows.length === 0) {
       setImportFeedback("No selected rows to apply. Select rows marked as ready to update or create.");
@@ -1496,6 +1513,15 @@ export default function JobsRegisterPage() {
               <p className="text-[12px] text-[#6b7280] mt-2">
                 Review parsed rows below. Rows can now be applied as update (matched jobs) or create (new jobs).
               </p>
+              <label className="mt-2 inline-flex items-center gap-2 text-[12px] text-[#374151] font-medium">
+                <input
+                  type="checkbox"
+                  checked={allowCreateUnmatched}
+                  onChange={(event) => toggleAllowCreateUnmatched(event.target.checked)}
+                  disabled={importing}
+                />
+                Allow creating unmatched rows
+              </label>
             </div>
 
             <div className="max-h-[55vh] overflow-auto">
@@ -1522,6 +1548,8 @@ export default function JobsRegisterPage() {
                       <td className="border border-[#e5e7eb] px-2 py-2">
                         {row.issue ? (
                           <span className="text-[#b91c1c]">{row.issue}</span>
+                        ) : !row.matchedJobId && !allowCreateUnmatched ? (
+                          <span className="text-[#92400e]">Create disabled (toggle off)</span>
                         ) : !row.matchedJobId ? (
                           <span className="text-[#1e40af]">Ready to create new job</span>
                         ) : (
@@ -1533,7 +1561,7 @@ export default function JobsRegisterPage() {
                           type="checkbox"
                           checked={row.apply}
                           onChange={() => toggleImportRow(row.rowNumber)}
-                          disabled={!row.isActionable || importing}
+                          disabled={!canApplyImportRow(row, allowCreateUnmatched) || importing}
                         />
                       </td>
                     </tr>
