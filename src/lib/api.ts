@@ -1036,6 +1036,10 @@ async function resolveBackendJobPathKey(rnOrId: string): Promise<string> {
   if (!/[\s/]/.test(query)) return query;
 
   const listMatch = await findJobInList(query);
+  if (listMatch?.id !== undefined && listMatch?.id !== null) {
+    return String(listMatch.id);
+  }
+
   return listMatch?.rn?.trim() || query;
 }
 
@@ -1211,17 +1215,53 @@ export const jobsApi = {
     return { jobs, total: jobs.length };
   },
 
+  import: async (file: File) => {
+    const endpoints = ["/jobs/import/", "/import/"];
+    const failures: string[] = [];
+
+    for (const endpoint of endpoints) {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("excel", file);
+      formData.append("excel_file", file);
+      formData.append("upload", file);
+
+      try {
+        const response = await backendRequest<Record<string, unknown>>(endpoint, {
+          method: "POST",
+          body: formData,
+        });
+
+        return { endpoint, response };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Import failed";
+        failures.push(`${endpoint} -> ${message}`);
+      }
+    }
+
+    throw new Error(
+      failures.length > 0
+        ? `Backend import failed on all endpoints. ${failures.join(" | ")}`
+        : "Backend import failed."
+    );
+  },
+
   get: async (rnOrId: string) => {
     const rawLookup = rnOrId.trim();
 
     // Backend detail endpoints cannot resolve RN values containing '/'.
-    // Use list payload fallback directly to avoid noisy repeated 404 calls.
+    // Resolve list match first, then prefer numeric-id detail lookup for reliability.
     if (hasPathSeparator(rawLookup)) {
       const slashFallback = await findJobInList(rawLookup);
       if (!slashFallback) {
         throw new Error("Job not found.");
       }
-      return { job: mapListItemToFallbackJob(slashFallback) };
+
+      try {
+        return await fetchJobDetailWithHistory(String(slashFallback.id));
+      } catch {
+        return { job: mapListItemToFallbackJob(slashFallback) };
+      }
     }
 
     const lookupKey = await resolveBackendJobPathKey(rnOrId);

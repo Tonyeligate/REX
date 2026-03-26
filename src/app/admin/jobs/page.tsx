@@ -95,6 +95,10 @@ function normalizeImportColumnName(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
+function normalizeImportJobIdentifier(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
 const IMPORT_JOB_ID_COLUMNS = ["RNR", "RN", "Job ID", "JobId", "Job Id"];
 const IMPORT_REGIONAL_NUMBER_COLUMNS = ["Regional Number", "Actual Regional Number", "ARN", "Regional No", "Regional No."];
 
@@ -151,11 +155,66 @@ function formatImportStageSummary(
   return parts.join(" | ");
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+}
+
+function formatBackendImportSummary(payload: Record<string, unknown>): string {
+  const nestedData = asRecord(payload.data);
+  const source = nestedData ?? payload;
+
+  const numericFields = [
+    "total",
+    "processed",
+    "imported",
+    "updated",
+    "created",
+    "failed",
+    "skipped",
+    "duplicates",
+  ];
+
+  const parts: string[] = [];
+  for (const key of numericFields) {
+    const value = source[key];
+    if (typeof value === "number") {
+      parts.push(`${key}: ${value}`);
+    }
+  }
+
+  const message =
+    (typeof payload.message === "string" && payload.message.trim()) ||
+    (typeof source.message === "string" && source.message.trim()) ||
+    (typeof payload.detail === "string" && payload.detail.trim()) ||
+    (typeof source.detail === "string" && source.detail.trim()) ||
+    "";
+
+  if (message) {
+    parts.push(message);
+  }
+
+  return parts.join(" | ");
+}
+
 function buildImportPreviewRows(
   rows: Record<string, unknown>[],
   jobs: Job[]
 ): ImportPreviewRow[] {
-  const jobsById = new Map(jobs.map((job) => [job.jobId.trim().toLowerCase(), job]));
+  const jobsById = new Map<string, Job>();
+
+  for (const job of jobs) {
+    const candidateIds = [job.jobId, job.regionalNumber]
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean);
+
+    for (const candidateId of candidateIds) {
+      jobsById.set(candidateId.toLowerCase(), job);
+      const normalizedId = normalizeImportJobIdentifier(candidateId);
+      if (normalizedId) {
+        jobsById.set(normalizedId, job);
+      }
+    }
+  }
 
   return rows.map((row, index) => {
     const columnLookup = buildImportColumnLookup(row);
@@ -174,7 +233,9 @@ function buildImportPreviewRows(
       };
     }
 
-    const matchedJob = jobsById.get(rowJobId.toLowerCase());
+    const matchedJob =
+      jobsById.get(rowJobId.toLowerCase()) ??
+      jobsById.get(normalizeImportJobIdentifier(rowJobId));
     const stagePayload: Partial<Record<RegisterStageKey, RegisterStageEntry | null>> = {};
     let hasStageData = false;
 
@@ -198,13 +259,10 @@ function buildImportPreviewRows(
     const currentRegional = (matchedJob?.regionalNumber || "").trim().toLowerCase();
     const hasRegionalChange = hasRegionalNumber && normalizedRegional !== currentRegional;
     const hasChanges = hasStageData || hasRegionalChange;
-    const hasSlashRnr = Boolean(matchedJob?.jobId?.includes("/"));
 
     const issue = !matchedJob
       ? "No matching job in register"
-      : hasSlashRnr
-        ? "Blocked: RN contains '/' and backend cannot update this job route yet"
-        : !hasChanges
+      : !hasChanges
           ? "No valid stage/regional updates found"
           : undefined;
 
@@ -1151,6 +1209,24 @@ export default function JobsRegisterPage() {
     setImporting(true);
 
     try {
+      try {
+        const backendImport = await jobsApi.import(file);
+        const summary = formatBackendImportSummary(backendImport.response);
+
+        await loadJobs();
+        setShowImportPreview(false);
+        setImportPreviewRows([]);
+        setImportFileName(file.name);
+        setImportFeedback(
+          summary
+            ? `Backend import complete via ${backendImport.endpoint}: ${summary}`
+            : `Backend import complete via ${backendImport.endpoint}.`
+        );
+        return;
+      } catch (backendError) {
+        const backendMessage =
+          backendError instanceof Error ? backendError.message : "Unknown backend import error";
+
       const XLSX = await import("xlsx");
       const fileBuffer = await file.arrayBuffer();
       const workbook = XLSX.read(fileBuffer, { type: "array" });
@@ -1174,8 +1250,9 @@ export default function JobsRegisterPage() {
       setImportPreviewRows(previewRows);
       setShowImportPreview(true);
       setImportFeedback(
-        `Preview ready: ${previewRows.length} rows parsed. Confirm rows before applying updates.`
+        `Backend bulk import failed; preview fallback ready (${previewRows.length} rows). Error: ${backendMessage}`
       );
+      }
     } catch (error) {
       setImportFeedback(error instanceof Error ? error.message : "Failed to import Excel file.");
     } finally {
@@ -1203,44 +1280,6 @@ export default function JobsRegisterPage() {
     );
   };
 
-  const syncAcceptedImportStages = async (
-    job: Job,
-    stagePayload: Partial<Record<RegisterStageKey, RegisterStageEntry | null>>
-  ) => {
-    const acceptedStages = REGISTER_STAGE_KEYS
-      .map((key) => ({
-        key,
-        stage: stagePayload[key],
-        backendStatus: BACKEND_REGISTER_STEP_CODE_MAP[key] as BackendStatus,
-      }))
-      .filter((item) => item.stage?.outcome === "accept")
-      .sort(
-        (a, b) =>
-          (STATUS_STEP_MAP[a.backendStatus] ?? 0) -
-          (STATUS_STEP_MAP[b.backendStatus] ?? 0)
-      );
-
-    let currentStep = STATUS_STEP_MAP[job.backendStatus ?? "request_received"] ?? 1;
-
-    for (const item of acceptedStages) {
-      const targetStep = STATUS_STEP_MAP[item.backendStatus] ?? currentStep;
-      if (targetStep <= currentStep) continue;
-      if (targetStep > REGISTER_BACKEND_SYNC_MAX_STEP) continue;
-
-      const label = REGISTER_STAGE_LABELS[item.key];
-      const notes = `IMPORTED APPROVED (${label})`;
-
-      while (currentStep < targetStep) {
-        await jobsApi.advanceStep(
-          job.jobId,
-          { comment: notes },
-          { currentBackendStatus: getBackendStatusForStep(currentStep) }
-        );
-        currentStep += 1;
-      }
-    }
-  };
-
   const handleApplyImportPreview = async () => {
     const actionableRows = importPreviewRows.filter(
       (row) => row.apply && row.matchedJobId && row.hasChanges
@@ -1255,54 +1294,40 @@ export default function JobsRegisterPage() {
     try {
       let updated = 0;
       let failed = 0;
-      const failures: string[] = [];
-      const jobsById = new Map(jobs.map((job) => [job.jobId, job]));
+      const failedRows: string[] = [];
 
       for (const row of actionableRows) {
         try {
-          const matchedJob = jobsById.get(row.matchedJobId!);
-
-          if (matchedJob && row.hasStageData) {
-            await syncAcceptedImportStages(matchedJob, row.stages);
-          }
-
           await registerFieldsApi.update(row.matchedJobId!, {
             actualRegionalNumber: row.hasRegionalNumber ? row.regionalNumber : undefined,
             stages: row.hasStageData ? row.stages : undefined,
           });
-
           updated += 1;
         } catch (error) {
           failed += 1;
-          const message =
-            error instanceof Error && error.message.trim()
-              ? error.message.trim()
-              : "Unknown error";
-          failures.push(`row ${row.rowNumber}: ${message}`);
+          const message = error instanceof Error ? error.message : "Update failed";
+          failedRows.push(`Row ${row.rowNumber} (${row.rowJobId}): ${message}`);
         }
       }
 
-      const skipped = importPreviewRows.length - updated - failed;
+      const skipped = Math.max(0, importPreviewRows.length - updated - failed);
       const notFound = importPreviewRows.filter((row) => !row.matchedJobId).length;
+      const failureSummary =
+        failedRows.length > 0
+          ? ` First errors: ${failedRows.slice(0, 3).join(" | ")}`
+          : "";
 
       await loadJobs();
-
-      if (failed === 0) {
-        setShowImportPreview(false);
-        setImportPreviewRows([]);
-        setImportFileName("");
-        setImportFeedback(
-          `Import complete: ${updated} updated, ${skipped} skipped, ${notFound} rows did not match a job.`
-        );
-      } else {
-        setImportFeedback(
-          `Import partially completed: ${updated} updated, ${failed} failed, ${skipped} skipped, ${notFound} unmatched. ${failures
-            .slice(0, 3)
-            .join(" | ")}`
-        );
-      }
+      setShowImportPreview(false);
+      setImportPreviewRows([]);
+      setImportFileName("");
+      setImportFeedback(
+        `Import complete: ${updated} updated, ${failed} failed, ${skipped} skipped, ${notFound} rows did not match a job.${failureSummary}`
+      );
     } catch (error) {
-      setImportFeedback(error instanceof Error ? error.message : "Failed to apply import updates.");
+      setImportFeedback(
+        error instanceof Error ? error.message : "Failed to apply import updates."
+      );
     } finally {
       setImporting(false);
     }
