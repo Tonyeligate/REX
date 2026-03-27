@@ -427,22 +427,22 @@ export default function ClientDashboardPage() {
         transition={{ duration: 0.45 }}
         className="text-center mb-8 rounded-[28px] px-4 py-8 sm:px-8 sm:py-10 client-surface-glass client-orb-glow"
       >
-        <div className="inline-flex items-center gap-2 rounded-full bg-white/70 border border-white/80 px-3 py-1.5 text-[11px] sm:text-[12px] font-[700] text-[#334155] mb-3">
+        <div className="inline-flex items-center gap-2 rounded-full bg-white/70 dark:bg-slate-800/70 border border-white/80 dark:border-slate-600/60 px-3 py-1.5 text-[11px] sm:text-[12px] font-[700] text-[#334155] dark:text-slate-200 mb-3">
           <Sparkles size={14} className="text-[#F07000]" />
           HD Workflow Intelligence
         </div>
 
-        <h1 className="m-0 text-[29px] leading-[1.15] sm:text-[40px] font-[900] text-[#0f172a] mb-2">
+        <h1 className="m-0 text-[29px] leading-[1.15] sm:text-[40px] font-[900] text-[#0f172a] dark:text-slate-100 mb-2">
           Track Your <span className="client-gradient-text">Job Status</span>
         </h1>
-        <p className="m-0 text-[#475569] text-[14px] sm:text-[16px] max-w-[640px] mx-auto mb-6">
+        <p className="m-0 text-[#475569] dark:text-slate-300 text-[14px] sm:text-[16px] max-w-[640px] mx-auto mb-6">
           Enter your RNR or actual regional number to view the latest backend workflow progress.
         </p>
 
         {/* Search bar */}
         <div className="max-w-[560px] mx-auto">
           <div className="flex items-center gap-2">
-            <div className="flex-1 flex items-center gap-2.5 bg-white/95 border-2 border-[#F0E6DA] rounded-[16px] px-4 py-3.5 focus-within:border-[#F07000] focus-within:shadow-[0_0_0_4px_rgba(240,112,0,0.08)] transition-all">
+            <div className="flex-1 flex items-center gap-2.5 bg-white/95 dark:bg-slate-900/80 border-2 border-[#F0E6DA] dark:border-slate-600/60 rounded-[16px] px-4 py-3.5 focus-within:border-[#F07000] focus-within:shadow-[0_0_0_4px_rgba(240,112,0,0.08)] transition-all">
               <Search size={20} className="text-[#94a3b8]" />
               <input
                 id="jobInput"
@@ -451,7 +451,7 @@ export default function ClientDashboardPage() {
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="e.g. RN-GAR-2026-001 or ARN/Regional Number"
-                className="border-none outline-none w-full text-[15px] bg-transparent text-[#0f172a] placeholder:text-[#b0b8c4]"
+                className="border-none outline-none w-full text-[15px] bg-transparent text-[#0f172a] dark:text-slate-100 placeholder:text-[#b0b8c4] dark:placeholder:text-slate-500"
               />
             </div>
             <button
@@ -518,8 +518,8 @@ export default function ClientDashboardPage() {
             <div className="w-16 h-16 mx-auto mb-4 bg-[#FFF5EB] rounded-full flex items-center justify-center shadow-[0_8px_20px_rgba(240,112,0,0.18)]">
               <Search size={28} className="text-[#F07000]" />
             </div>
-            <h2 className="m-0 mb-2 text-[18px] font-[800] text-[#0f172a]">Search for Your Job</h2>
-            <p className="m-0 text-[#64748b] text-[14px] max-w-[380px] mx-auto">
+            <h2 className="m-0 mb-2 text-[18px] font-[800] text-[#0f172a] dark:text-slate-100">Search for Your Job</h2>
+            <p className="m-0 text-[#64748b] dark:text-slate-300 text-[14px] max-w-[380px] mx-auto">
               Enter your RNR or actual regional number above and click <b>Search</b> to view the full certification workflow progress on one page.
             </p>
           </motion.div>
@@ -535,7 +535,7 @@ export default function ClientDashboardPage() {
             className="client-surface-elevated rounded-[22px] p-8 sm:p-10 text-center"
           >
             <div className="w-10 h-10 mx-auto mb-4 border-4 border-[#F07000] border-t-transparent rounded-full animate-spin" />
-            <p className="m-0 text-[#64748b] text-[14px]">Searching...</p>
+            <p className="m-0 text-[#64748b] dark:text-slate-300 text-[14px]">Searching...</p>
           </motion.div>
         )}
 
@@ -552,8 +552,8 @@ export default function ClientDashboardPage() {
             <div className="w-16 h-16 mx-auto mb-4 bg-[#FEF2F2] rounded-full flex items-center justify-center">
               <Radar size={28} className="text-[#b91c1c]" />
             </div>
-            <h2 className="m-0 mb-2 text-[18px] font-[800] text-[#0f172a]">Job Not Found</h2>
-            <p className="m-0 text-[#64748b] text-[14px]">
+            <h2 className="m-0 mb-2 text-[18px] font-[800] text-[#0f172a] dark:text-slate-100">Job Not Found</h2>
+            <p className="m-0 text-[#64748b] dark:text-slate-300 text-[14px]">
               {searchError || "No job matches that number. Please check and try again."}
             </p>
           </motion.div>
@@ -605,32 +605,32 @@ export default function ClientDashboardPage() {
                   {workflowSummary.progressPercent}%
                 </motion.span>
               </div>
-              <p className="m-0 mt-2 text-[12px] text-[#94a3b8]">
+              <p className="m-0 mt-2 text-[12px] text-[#94a3b8] dark:text-slate-400">
                 {workflowSummary.approvedCount} of {workflowSummary.totalStages} stages approved
               </p>
             </motion.div>
 
             <motion.div variants={fadeUp} className="client-surface-elevated rounded-[20px] p-5 sm:p-6 overflow-hidden">
-              <h3 className="m-0 text-[15px] font-[800] text-[#0f172a] pb-3 mb-4 border-b border-[#f5f0ea]">
+              <h3 className="m-0 text-[15px] font-[800] text-[#0f172a] dark:text-slate-100 pb-3 mb-4 border-b border-[#f5f0ea] dark:border-slate-700/70">
                 10-Step Workflow Stages
               </h3>
-              <div className="overflow-x-auto rounded-[14px] border border-[#efe2d2] bg-white/85">
+              <div className="overflow-x-auto rounded-[14px] border border-[#efe2d2] dark:border-slate-700/70 bg-white/85 dark:bg-slate-900/70">
                 <table className="min-w-full border-separate border-spacing-0 text-[13px]">
                   <thead>
                     <tr>
-                      <th className="text-left font-[700] text-[#475569] bg-gradient-to-r from-[#fff9f1] to-[#fff4e8] px-4 py-3 border-y border-[#F0E6DA] border-l rounded-tl-[10px]">
+                      <th className="text-left font-[700] text-[#475569] dark:text-slate-300 bg-gradient-to-r from-[#fff9f1] to-[#fff4e8] dark:from-slate-800 dark:to-slate-850 px-4 py-3 border-y border-[#F0E6DA] dark:border-slate-700/70 border-l rounded-tl-[10px]">
                         <span className="inline-flex items-center gap-2">
                           <ClipboardList size={14} className="text-[#F07000]" />
                           Job Step/Stage Type
                         </span>
                       </th>
-                      <th className="text-left font-[700] text-[#475569] bg-gradient-to-r from-[#fff9f1] to-[#fff4e8] px-4 py-3 border-y border-[#F0E6DA]">
+                      <th className="text-left font-[700] text-[#475569] dark:text-slate-300 bg-gradient-to-r from-[#fff9f1] to-[#fff4e8] dark:from-slate-800 dark:to-slate-850 px-4 py-3 border-y border-[#F0E6DA] dark:border-slate-700/70">
                         <span className="inline-flex items-center gap-2">
                           <BadgeCheck size={14} className="text-[#16a34a]" />
                           Status
                         </span>
                       </th>
-                      <th className="text-left font-[700] text-[#475569] bg-gradient-to-r from-[#fff9f1] to-[#fff4e8] px-4 py-3 border-y border-[#F0E6DA] border-r rounded-tr-[10px]">
+                      <th className="text-left font-[700] text-[#475569] dark:text-slate-300 bg-gradient-to-r from-[#fff9f1] to-[#fff4e8] dark:from-slate-800 dark:to-slate-850 px-4 py-3 border-y border-[#F0E6DA] dark:border-slate-700/70 border-r rounded-tr-[10px]">
                         <span className="inline-flex items-center gap-2">
                           <BadgeInfo size={14} className="text-[#2563eb]" />
                           Comment
@@ -644,27 +644,27 @@ export default function ClientDashboardPage() {
                       const statusIcon = getStatusIcon(stage.statusLabel);
 
                       return (
-                        <tr key={`${stage.stepNumber}-${index}`} className="align-top odd:bg-[#fffdfa] hover:bg-[#fff8f1] transition-colors">
-                          <td className="px-4 py-3 border-b border-l border-[#F4EBDD]">
+                        <tr key={`${stage.stepNumber}-${index}`} className="align-top odd:bg-[#fffdfa] dark:odd:bg-slate-900/35 hover:bg-[#fff8f1] dark:hover:bg-orange-500/10 transition-colors">
+                          <td className="px-4 py-3 border-b border-l border-[#F4EBDD] dark:border-slate-700/60">
                             <p className="m-0 text-[11px] font-[700] text-[#94a3b8] uppercase tracking-wider">
                               Stage {index + 1}/{workflowSummary.totalStages}
                             </p>
                             <div className="mt-1 inline-flex items-center gap-2">
-                              <span className="w-6 h-6 rounded-full bg-white border border-[#f0e6da] flex items-center justify-center shadow-[0_3px_8px_rgba(15,23,42,0.08)]">
+                              <span className="w-6 h-6 rounded-full bg-white dark:bg-slate-800 border border-[#f0e6da] dark:border-slate-700 flex items-center justify-center shadow-[0_3px_8px_rgba(15,23,42,0.08)]">
                                 {statusIcon}
                               </span>
-                              <p className="m-0 text-[14px] font-[700] text-[#0f172a]">
+                              <p className="m-0 text-[14px] font-[700] text-[#0f172a] dark:text-slate-100">
                                 {stage.title}
                               </p>
                             </div>
                           </td>
-                          <td className="px-4 py-3 border-b border-[#F4EBDD]">
+                          <td className="px-4 py-3 border-b border-[#F4EBDD] dark:border-slate-700/60">
                             <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-[700] ${badgeTone}`}>
                               {statusIcon}
                               {stage.statusLabel}
                             </span>
                           </td>
-                          <td className="px-4 py-3 border-b border-r border-[#F4EBDD] text-[#475569] leading-relaxed">
+                          <td className="px-4 py-3 border-b border-r border-[#F4EBDD] dark:border-slate-700/60 text-[#475569] dark:text-slate-300 leading-relaxed">
                             {stage.comment}
                           </td>
                         </tr>
@@ -677,7 +677,7 @@ export default function ClientDashboardPage() {
 
             {/* ═══ Job Information ═══ */}
             <motion.div variants={fadeUp} className="client-surface-elevated rounded-[20px] p-5 sm:p-6">
-              <h3 className="m-0 text-[15px] font-[800] text-[#0f172a] pb-3 mb-4 border-b border-[#f5f0ea]">
+              <h3 className="m-0 text-[15px] font-[800] text-[#0f172a] dark:text-slate-100 pb-3 mb-4 border-b border-[#f5f0ea] dark:border-slate-700/70">
                 Job Information
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[13px]">
@@ -691,13 +691,13 @@ export default function ClientDashboardPage() {
                   { label: "Assigned to", value: job.assignedTo ?? "—", icon: <UserRound size={14} className="text-[#4f46e5]" /> },
                   { label: "Payment", value: job.paymentAmount ?? "—", icon: <Wallet size={14} className="text-[#be123c]" /> },
                 ].map((row) => (
-                  <div key={row.label} className="rounded-[14px] border border-[#efe2d2] bg-gradient-to-br from-white to-[#fffaf3] p-3.5 sm:p-4 client-surface-interactive">
+                  <div key={row.label} className="rounded-[14px] border border-[#efe2d2] dark:border-slate-700/70 bg-gradient-to-br from-white to-[#fffaf3] dark:from-slate-900/85 dark:to-slate-800/60 p-3.5 sm:p-4 client-surface-interactive">
                     <div className="flex items-center justify-between gap-4">
-                      <span className="inline-flex items-center gap-1.5 text-[#64748b]">
+                      <span className="inline-flex items-center gap-1.5 text-[#64748b] dark:text-slate-300">
                         {row.icon}
                         {row.label}
                       </span>
-                      <b className="text-[#0f172a] text-right">{row.value}</b>
+                      <b className="text-[#0f172a] dark:text-slate-100 text-right">{row.value}</b>
                     </div>
                   </div>
                 ))}
@@ -726,7 +726,7 @@ export default function ClientDashboardPage() {
 
             <motion.div
               variants={fadeUp}
-              className="client-surface-glass rounded-[16px] py-3.5 px-4 sm:px-6 flex items-center justify-center gap-2 text-[12px] sm:text-[13px] text-[#475569]"
+              className="client-surface-glass rounded-[16px] py-3.5 px-4 sm:px-6 flex items-center justify-center gap-2 text-[12px] sm:text-[13px] text-[#475569] dark:text-slate-200"
             >
               <ShieldCheck size={15} className="text-[#15803d]" />
               Secure workflow data synced with backend every 20 seconds while this tracker is active.

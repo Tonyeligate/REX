@@ -1,12 +1,13 @@
 import React from "react";
 import Image from "next/image";
 import Link from "next/link";
+import ThemeToggleButton from "@/components/theme/theme-toggle-button";
 
 export default function ClientLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen client-premium-bg text-[#0f172a] flex flex-col">
+    <div className="min-h-screen client-premium-bg text-foreground flex flex-col">
       {/* ── Header ── */}
-      <header className="bg-white border-b border-[#F0E6DA] shadow-[0_2px_12px_rgba(240,112,0,0.06)]">
+      <header className="bg-card/90 border-b border-border shadow-[0_2px_12px_rgba(240,112,0,0.06)] backdrop-blur-sm">
         <div className="w-[min(1100px,calc(100vw-32px))] mx-auto flex items-center justify-between py-3 px-1">
           <Link href="/client/dashboard" className="flex items-center gap-3">
             <Image
@@ -20,15 +21,16 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
             />
           </Link>
           <div className="flex items-center gap-4 text-[13px]">
+            <ThemeToggleButton className="h-8 w-8" />
             <a
               href="mailto:info@recsgeo.com"
-              className="text-[#64748b] hover:text-[#F07000] transition-colors hidden sm:inline"
+              className="text-muted-foreground hover:text-[#F07000] transition-colors hidden sm:inline"
             >
               info@recsgeo.com
             </a>
             <a
               href="tel:+233243671972"
-              className="text-[#64748b] hover:text-[#F07000] transition-colors hidden sm:inline"
+              className="text-muted-foreground hover:text-[#F07000] transition-colors hidden sm:inline"
             >
               +233 243 671 972
             </a>
@@ -41,7 +43,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
       <main className="flex-1">{children}</main>
 
       {/* ── Footer ── */}
-      <footer className="bg-[#1a1a1a] text-[#a0a0a0] py-8 mt-auto">
+      <footer className="bg-[#1a1a1a] dark:bg-[#05070b] text-[#a0a0a0] py-8 mt-auto border-t border-black/30">
         <div className="w-[min(1100px,calc(100vw-32px))] mx-auto px-1">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 text-[13px]">
             <div>

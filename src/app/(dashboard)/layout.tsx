@@ -31,17 +31,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   if (isLoading || !isAuthenticated || user?.role !== "ADMIN") {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-[#f4f7f6]">
+      <div className="flex items-center justify-center min-h-screen bg-background">
         <div className="flex flex-col items-center gap-3">
           <div className="w-8 h-8 border-4 border-[#F07000] border-t-transparent rounded-full animate-spin" />
-          <p className="text-[13px] text-[#9ca3af]">Loading...</p>
+          <p className="text-[13px] text-muted-foreground">Loading...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-screen bg-[#f4f7f6]">
+    <div className="flex min-h-screen bg-background text-foreground">
       <AppSidebar />
       <div className="flex-1 ml-[280px] flex flex-col min-h-screen">
         <AppHeader />

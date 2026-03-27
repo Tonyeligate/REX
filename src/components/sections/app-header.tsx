@@ -6,8 +6,6 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   Search,
   Bell,
-  Moon,
-  Sun,
   Settings,
   ChevronDown,
   LogOut,
@@ -15,6 +13,7 @@ import {
   PanelLeft,
 } from "lucide-react";
 import { useAuthStore, getUserDisplayName } from "@/lib/auth-store";
+import ThemeToggleButton from "@/components/theme/theme-toggle-button";
 
 export default function AppHeader({
   showMenuButton = false,
@@ -30,18 +29,8 @@ export default function AppHeader({
   const [searchQuery, setSearchQuery] = useState("");
   const [showProfile, setShowProfile] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
-  const [isDark, setIsDark] = useState(false);
   const bellRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
-
-  // Initialise theme from localStorage
-  useEffect(() => {
-    const saved = localStorage.getItem("theme");
-    if (saved === "dark") {
-      document.documentElement.classList.add("dark");
-      setIsDark(true);
-    }
-  }, []);
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -56,18 +45,6 @@ export default function AppHeader({
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
-
-  const toggleTheme = () => {
-    const next = !isDark;
-    setIsDark(next);
-    if (next) {
-      document.documentElement.classList.add("dark");
-      localStorage.setItem("theme", "dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-      localStorage.setItem("theme", "light");
-    }
-  };
 
   // Derive breadcrumbs from pathname
   const segments = pathname.split("/").filter(Boolean);
@@ -112,7 +89,7 @@ export default function AppHeader({
             <button
               type="button"
               onClick={onMenuClick}
-              className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-border bg-white text-[#4b5563] hover:bg-muted transition-colors"
+              className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-border bg-card text-foreground/80 hover:bg-muted transition-colors"
               aria-label="Toggle sidebar"
             >
               <PanelLeft size={18} />
@@ -130,7 +107,7 @@ export default function AppHeader({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-white border border-border rounded-full py-2 pl-10 pr-4 text-[14px] focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+              className="w-full bg-card border border-border rounded-full py-2 pl-10 pr-4 text-[14px] focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
               placeholder="Search jobs by ID, client, or RN..."
             />
           </div>
@@ -145,12 +122,12 @@ export default function AppHeader({
               className="p-2 rounded-full hover:bg-muted text-muted-foreground transition-colors relative"
             >
               <Bell size={18} />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-destructive rounded-full border-2 border-white" />
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-destructive rounded-full border-2 border-card" />
             </button>
             {showNotifications && (
-              <div className="absolute right-0 top-full mt-2 w-72 bg-white border border-border rounded-xl shadow-xl py-2 z-50">
+              <div className="absolute right-0 top-full mt-2 w-72 bg-popover border border-border rounded-xl shadow-xl py-2 z-50">
                 <div className="px-4 py-2 border-b border-border">
-                  <h4 className="text-[13px] font-bold text-[#1f2937]">Notifications</h4>
+                  <h4 className="text-[13px] font-bold text-foreground">Notifications</h4>
                 </div>
                 <div className="px-4 py-6 text-center text-[13px] text-muted-foreground">
                   <Bell size={28} className="mx-auto mb-2 opacity-30" />
@@ -161,13 +138,7 @@ export default function AppHeader({
           </div>
 
           {/* Theme Toggle */}
-          <button
-            onClick={toggleTheme}
-            title={isDark ? "Switch to light mode" : "Switch to dark mode"}
-            className="p-2 rounded-full hover:bg-muted text-muted-foreground transition-colors"
-          >
-            {isDark ? <Sun size={18} /> : <Moon size={18} />}
-          </button>
+          <ThemeToggleButton />
 
           {/* Profile Dropdown */}
           <div ref={profileRef} className="relative ml-2">
@@ -186,7 +157,7 @@ export default function AppHeader({
             </button>
 
             {showProfile && (
-              <div className="absolute right-0 top-full mt-2 w-48 bg-white border border-border rounded-xl shadow-lg py-2 z-50">
+              <div className="absolute right-0 top-full mt-2 w-48 bg-popover border border-border rounded-xl shadow-lg py-2 z-50">
                 <Link href="/admin/profile" className="flex items-center gap-2 px-4 py-2 text-[13px] text-foreground hover:bg-muted transition-colors" onClick={() => setShowProfile(false)}>
                   <User size={14} /> My Profile
                 </Link>
@@ -194,7 +165,7 @@ export default function AppHeader({
                   <Settings size={14} /> Settings
                 </Link>
                 <div className="border-t border-border my-1" />
-                <button onClick={logout} className="flex items-center gap-2 px-4 py-2 text-[13px] text-red-600 hover:bg-red-50 w-full transition-colors">
+                <button onClick={logout} className="flex items-center gap-2 px-4 py-2 text-[13px] text-red-600 hover:bg-red-500/10 w-full transition-colors">
                   <LogOut size={14} /> Sign Out
                 </button>
               </div>

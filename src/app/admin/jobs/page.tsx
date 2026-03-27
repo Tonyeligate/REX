@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
   CheckCircle,
+  ClipboardList,
   Clock,
   Download,
   Eye,
@@ -112,7 +113,7 @@ const IMPORT_STAGE_COLUMNS: Record<RegisterStageKey, string[]> = {
   examinationCertified: ["Examination Cert.", "Examination Certification", "6_2_certified"],
   regionChecked: ["Region Checked", "7_1_checked"],
   regionApproved: ["Region Approved", "7_2_approved"],
-  regionBatched: ["Region Barcode", "Region Batched", "7_3_barcoded"],
+  regionBatched: ["Region Barcoded", "Region Barcode", "Region Batched", "7_3_barcoded"],
 };
 
 function buildImportColumnLookup(row: Record<string, unknown>): Map<string, string> {
@@ -856,7 +857,7 @@ function RegisterRowModal({
         const targetStep = STATUS_STEP_MAP[item.backendStatus] ?? currentStep;
         if (targetStep <= currentStep) continue;
 
-        // Region Approved / Region Barcode are register-only stages for this backend.
+        // Region Approved / Region Barcoded are register-only stages for this backend.
         // Keep them as local register values instead of forcing workflow transitions.
         if (targetStep > REGISTER_BACKEND_SYNC_MAX_STEP) {
           continue;
@@ -1173,7 +1174,7 @@ export default function JobsRegisterPage() {
       "Examination Cert.",
       "Region Checked",
       "Region Approved",
-      "Region Barcode",
+      "Region Barcoded",
       "Workflow Status / Notes",
     ];
 
@@ -1194,7 +1195,7 @@ export default function JobsRegisterPage() {
       row["Examination Cert."] = getRegisterStageDisplay(resolvedStages.examinationCertified.entry);
       row["Region Checked"] = getRegisterStageDisplay(resolvedStages.regionChecked.entry);
       row["Region Approved"] = getRegisterStageDisplay(resolvedStages.regionApproved.entry);
-      row["Region Barcode"] = getRegisterStageDisplay(resolvedStages.regionBatched.entry);
+      row["Region Barcoded"] = getRegisterStageDisplay(resolvedStages.regionBatched.entry);
       row["Workflow Status / Notes"] = [
         workflowProgress.currentStatusLabel,
         `${workflowProgress.currentStepLabel} (${workflowProgress.progressPercent}%)`,
@@ -1411,41 +1412,86 @@ export default function JobsRegisterPage() {
   };
 
   return (
-    <div>
-      <div className="flex flex-col gap-4 mb-4 xl:flex-row xl:items-start xl:justify-between">
-        <div>
-          <h3 className="text-[22px] font-bold text-[#1f2937]">Job Management Register</h3>
-          <p className="text-[13px] text-[#9ca3af]">
-            Presented like the physical register. Click any register cell or Edit Register to update register stages, with backend sync where supported.
-          </p>
+    <div className="jobs-register-page admin-future-bg">
+      <div className="admin-surface-glass rounded-2xl border border-border px-4 py-5 mb-4 md:px-5">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-[#F07000]/25 bg-[#fff7ed] px-3 py-1 text-[11px] font-[800] text-[#b45309] dark:bg-[#3b230d]/60 dark:text-[#ffd9b5] dark:border-[#ff8a1f]/30">
+              <ClipboardList size={13} />
+              HD Register Intelligence
+            </div>
+            <h3 className="mt-2 text-[22px] font-bold text-foreground">Job Management Register</h3>
+            <p className="text-[13px] text-muted-foreground">
+              Presented like the physical register. Click any register cell or Edit Register to update register stages, with backend sync where supported.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={loadJobs}
+              className="flex items-center gap-2 h-[38px] px-4 border border-border bg-card rounded-lg text-[13px] font-semibold text-foreground/80 hover:bg-muted transition-colors"
+            >
+              <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Refresh
+            </button>
+            <button
+              onClick={handleExport}
+              className="flex items-center gap-2 h-[38px] px-4 bg-green-600 text-white rounded-lg text-[13px] font-semibold hover:bg-green-700 transition-colors shadow-[0_8px_18px_rgba(22,163,74,0.26)]"
+            >
+              <Download size={14} /> Export Excel
+            </button>
+            <button
+              onClick={() => importInputRef.current?.click()}
+              disabled={importing}
+              className="flex items-center gap-2 h-[38px] px-4 bg-[#1d4ed8] text-white rounded-lg text-[13px] font-semibold hover:bg-[#1e40af] disabled:opacity-60 transition-colors shadow-[0_8px_18px_rgba(29,78,216,0.26)]"
+            >
+              {importing ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+              {importing ? "Importing..." : "Import Excel"}
+            </button>
+            <Link
+              href="/admin/jobs/new"
+              className="flex items-center gap-2 h-[38px] px-4 bg-[#F07000] text-white rounded-lg text-[13px] font-semibold hover:bg-[#D06000] transition-colors shadow-[0_8px_18px_rgba(240,112,0,0.28)]"
+            >
+              <Plus size={14} /> New Job
+            </Link>
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={loadJobs}
-            className="flex items-center gap-2 h-[38px] px-4 border border-[#e5e7eb] rounded-lg text-[13px] font-semibold text-[#4b5563] hover:bg-gray-50 transition-colors"
-          >
-            <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Refresh
-          </button>
-          <button
-            onClick={handleExport}
-            className="flex items-center gap-2 h-[38px] px-4 bg-green-600 text-white rounded-lg text-[13px] font-semibold hover:bg-green-700 transition-colors"
-          >
-            <Download size={14} /> Export Excel
-          </button>
-          <button
-            onClick={() => importInputRef.current?.click()}
-            disabled={importing}
-            className="flex items-center gap-2 h-[38px] px-4 bg-[#1d4ed8] text-white rounded-lg text-[13px] font-semibold hover:bg-[#1e40af] disabled:opacity-60 transition-colors"
-          >
-            {importing ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-            {importing ? "Importing..." : "Import Excel"}
-          </button>
-          <Link
-            href="/admin/jobs/new"
-            className="flex items-center gap-2 h-[38px] px-4 bg-[#F07000] text-white rounded-lg text-[13px] font-semibold hover:bg-[#D06000] transition-colors"
-          >
-            <Plus size={14} /> New Job
-          </Link>
+
+        <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+          <div className="admin-surface-elevated rounded-xl p-4 border border-border">
+            <p className="text-[11px] font-[700] uppercase tracking-wide text-muted-foreground">Total Registers</p>
+            <div className="mt-2 flex items-center justify-between">
+              <p className="text-[24px] font-[900] leading-none text-foreground">{counts.all}</p>
+              <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-[#fff2e6] text-[#F07000] dark:bg-[#3d2510]/70 dark:text-[#ffb27a]">
+                <ClipboardList size={17} />
+              </span>
+            </div>
+          </div>
+          <div className="admin-surface-elevated rounded-xl p-4 border border-border">
+            <p className="text-[11px] font-[700] uppercase tracking-wide text-muted-foreground">In Progress</p>
+            <div className="mt-2 flex items-center justify-between">
+              <p className="text-[24px] font-[900] leading-none text-orange-600">{counts.inProgress}</p>
+              <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-orange-100 text-orange-600 dark:bg-orange-500/20 dark:text-orange-300">
+                <Clock size={17} />
+              </span>
+            </div>
+          </div>
+          <div className="admin-surface-elevated rounded-xl p-4 border border-border">
+            <p className="text-[11px] font-[700] uppercase tracking-wide text-muted-foreground">Queried</p>
+            <div className="mt-2 flex items-center justify-between">
+              <p className="text-[24px] font-[900] leading-none text-amber-600">{counts.queried}</p>
+              <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-300">
+                <AlertTriangle size={17} />
+              </span>
+            </div>
+          </div>
+          <div className="admin-surface-elevated rounded-xl p-4 border border-border">
+            <p className="text-[11px] font-[700] uppercase tracking-wide text-muted-foreground">Completed</p>
+            <div className="mt-2 flex items-center justify-between">
+              <p className="text-[24px] font-[900] leading-none text-green-600">{counts.completed}</p>
+              <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-300">
+                <CheckCircle size={17} />
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1458,7 +1504,7 @@ export default function JobsRegisterPage() {
       />
 
       {importFeedback && (
-        <div className="mb-4 rounded-lg border border-[#bfdbfe] bg-[#eff6ff] px-3 py-2 text-[12px] text-[#1e3a8a]">
+        <div className="mb-4 rounded-lg border border-[#bfdbfe] bg-[#eff6ff] dark:border-[#274574] dark:bg-[#10203a] px-3 py-2 text-[12px] text-[#1e3a8a] dark:text-[#bcd8ff]">
           {importFeedback}
         </div>
       )}
@@ -1613,7 +1659,7 @@ export default function JobsRegisterPage() {
         </div>
       )}
 
-      <div className="bg-white rounded-xl border border-[#e5e7eb] p-4 mb-4">
+      <div className="admin-surface-elevated rounded-xl border border-border p-4 mb-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-1 flex-col gap-3 md:flex-row">
             <div className="relative flex-1 min-w-[260px]">
@@ -1623,13 +1669,13 @@ export default function JobsRegisterPage() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search by RN, client, title, status, or comment..."
-                className="w-full h-[40px] pl-10 pr-4 border border-[#e5e7eb] rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-[#F07000]/20"
+                className="w-full h-[40px] pl-10 pr-4 border border-border bg-card rounded-lg text-[13px] text-foreground focus:outline-none focus:ring-2 focus:ring-[#F07000]/20"
               />
             </div>
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="h-[40px] min-w-[180px] px-4 border border-[#e5e7eb] rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-[#F07000]/20"
+              className="h-[40px] min-w-[180px] px-4 border border-border bg-card rounded-lg text-[13px] text-foreground focus:outline-none focus:ring-2 focus:ring-[#F07000]/20"
             >
               <option value="">All Status</option>
               <option value="IN_PROGRESS">In Progress</option>
@@ -1637,8 +1683,8 @@ export default function JobsRegisterPage() {
               <option value="COMPLETED">Completed</option>
             </select>
           </div>
-          <div className="text-[12px] text-[#6b7280] flex flex-wrap gap-4">
-            <span className="font-semibold text-[#1f2937]">All: {counts.all}</span>
+          <div className="text-[12px] text-muted-foreground flex flex-wrap gap-4">
+            <span className="font-semibold text-foreground">All: {counts.all}</span>
             <span className="font-semibold text-orange-600">Active: {counts.inProgress}</span>
             <span className="font-semibold text-amber-600">Queried: {counts.queried}</span>
             <span className="font-semibold text-green-600">Done: {counts.completed}</span>
@@ -1649,9 +1695,9 @@ export default function JobsRegisterPage() {
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-[#e5e7eb] overflow-hidden shadow-sm">
+      <div className="admin-surface-elevated rounded-xl border border-border overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full text-[12px] border-collapse table-fixed min-w-[1180px] xl:min-w-0">
+          <table className="jobs-register-table w-full text-[12px] border-collapse table-fixed min-w-[1180px] xl:min-w-0">
             <thead>
               <tr className="bg-[#1f2937] text-white">
                 <th rowSpan={2} className="border border-[#374151] px-3 py-2 text-center font-bold w-8">#</th>
@@ -1674,7 +1720,7 @@ export default function JobsRegisterPage() {
                 <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold bg-[#1e3a5f] w-[60px]">Cert.<span className="block mt-0.5 text-[10px] font-[500] text-[#9fb4d4]">6_2_certified</span></th>
                 <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold w-[60px]">Checked<span className="block mt-0.5 text-[10px] font-[500] text-[#cbd5e1]">7_1_checked</span></th>
                 <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold w-[60px]">Approved<span className="block mt-0.5 text-[10px] font-[500] text-[#cbd5e1]">7_2_approved</span></th>
-                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold w-[60px]">Barcode<span className="block mt-0.5 text-[10px] font-[500] text-[#cbd5e1]">7_3_barcoded</span></th>
+                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold w-[60px]">Barcoded<span className="block mt-0.5 text-[10px] font-[500] text-[#cbd5e1]">7_3_barcoded</span></th>
               </tr>
             </thead>
             <tbody>
@@ -1702,18 +1748,18 @@ export default function JobsRegisterPage() {
                   const registerProgress = getRegisterProgressSummary(buildResolvedRegisterRecord(job, record));
 
                   return (
-                    <tr key={job.id} className={`hover:bg-orange-50/40 transition-colors ${isEven ? "bg-white" : "bg-[#fafafa]"}`}>
-                      <td className="border border-[#e5e7eb] px-2 py-2 text-center text-[#9ca3af] font-medium">{index + 1}</td>
+                    <tr key={job.id} className={`transition-colors hover:bg-orange-50/40 dark:hover:bg-orange-500/10 ${isEven ? "bg-white/95 dark:bg-slate-900/60" : "bg-[#fafafa] dark:bg-slate-950/40"}`}>
+                      <td className="border border-[#e5e7eb] dark:border-border px-2 py-2 text-center text-[#9ca3af] dark:text-slate-400 font-medium">{index + 1}</td>
                       <td className="border border-[#e5e7eb] px-3 py-2 align-top">
                         <button
                           type="button"
                           onClick={() => setRegisterModalJob(job)}
-                          className="font-semibold text-[#1f2937] hover:text-[#F07000] transition-colors"
+                          className="font-semibold text-foreground hover:text-[#F07000] transition-colors"
                         >
                           {registerName}
                         </button>
                         {registerReference && (
-                          <div className="text-[11px] text-[#6b7280] mt-0.5 line-clamp-1">{registerReference}</div>
+                          <div className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">{registerReference}</div>
                         )}
                         <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-[#9ca3af]">
                           <span>Workflow {workflowProgress.currentStepLabel}</span>
@@ -1752,7 +1798,7 @@ export default function JobsRegisterPage() {
                           </button>
                         </div>
                         {job.queryReason && (
-                          <div className="text-[11px] text-amber-700 mt-1 line-clamp-2">{job.queryReason}</div>
+                          <div className="text-[11px] text-amber-700 dark:text-amber-300 mt-1 line-clamp-2">{job.queryReason}</div>
                         )}
                       </td>
                       <td className="border border-[#e5e7eb] px-2 py-2 font-mono text-[#F07000] font-semibold align-top">{job.jobId}</td>

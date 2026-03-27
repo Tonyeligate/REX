@@ -10,9 +10,7 @@ import {
   MoreHorizontal,
   Home,
   Briefcase,
-  PlusCircle,
   ClipboardList,
-  Search,
   Users,
   UserCircle,
   BarChart3,
@@ -76,7 +74,7 @@ export default function AppSidebar({
   const logout = useAuthStore((s) => s.logout);
 
   return (
-    <aside className={`fixed left-0 top-0 h-screen w-[280px] bg-[#F4F7F6] border-r border-[#E5E7EB] z-[9] flex flex-col p-2 py-4 ${className}`}>
+    <aside className={`fixed left-0 top-0 h-screen w-[280px] bg-sidebar border-r border-sidebar-border z-[9] flex flex-col p-2 py-4 ${className}`}>
       <div className="px-3">
         {/* Branding */}
         <div className="flex items-center justify-between mb-6 mt-1">
@@ -107,10 +105,10 @@ export default function AppSidebar({
         {adminNav.map((section) => (
           <div key={section.category} className="mb-4">
             <div className="px-3 py-2 leading-tight">
-              <span className="text-[12px] font-bold text-[#4B5563] uppercase tracking-wider">
+              <span className="text-[12px] font-bold text-sidebar-foreground uppercase tracking-wider">
                 {section.category}
               </span>
-              <div className="text-[11px] text-[#9CA3AF]">{section.desc}</div>
+              <div className="text-[11px] text-muted-foreground">{section.desc}</div>
             </div>
             <nav className="space-y-0.5 mt-1">
               {section.items.map((item) => (
@@ -122,10 +120,10 @@ export default function AppSidebar({
       </div>
 
       {/* Footer */}
-      <div className="mt-auto border-t border-[#E5E7EB] pt-2 px-3">
+      <div className="mt-auto border-t border-sidebar-border pt-2 px-3">
         <button
           onClick={logout}
-          className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-[14px] font-medium text-[#4B5563] hover:bg-red-50 hover:text-red-600 transition-all"
+          className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-[14px] font-medium text-sidebar-foreground hover:bg-red-500/10 hover:text-red-500 transition-all"
         >
           <Power size={18} />
           <span>Sign Out</span>
@@ -147,21 +145,21 @@ function SidebarItem({ item, pathname }: { item: NavItem; pathname: string }) {
           className={`group flex items-center w-full px-3 py-2.5 rounded-lg text-[14px] font-medium transition-all duration-200 ${
             isActive
               ? "bg-[#F07000]/10 text-[#F07000]"
-              : "text-[#4B5563] hover:bg-[#FFF5EB] hover:text-[#F07000]"
+              : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
           }`}
         >
-          <span className={isActive ? "text-[#F07000]" : "text-[#4B5563] group-hover:text-[#F07000]"}>
+          <span className={isActive ? "text-[#F07000]" : "text-sidebar-foreground group-hover:text-sidebar-accent-foreground"}>
             {item.icon}
           </span>
           <span className="ml-3 truncate">{item.label}</span>
           {open ? (
-            <ChevronDown size={14} className="ml-auto text-[#9CA3AF]" />
+            <ChevronDown size={14} className="ml-auto text-muted-foreground" />
           ) : (
-            <ChevronRight size={14} className="ml-auto text-[#9CA3AF]" />
+            <ChevronRight size={14} className="ml-auto text-muted-foreground" />
           )}
         </button>
         {open && (
-          <div className="ml-7 mt-0.5 space-y-0.5 border-l-2 border-[#E5E7EB] pl-3">
+          <div className="ml-7 mt-0.5 space-y-0.5 border-l-2 border-sidebar-border pl-3">
             {item.children.map((child) => {
               const childActive = pathname === child.href;
               return (
@@ -171,7 +169,7 @@ function SidebarItem({ item, pathname }: { item: NavItem; pathname: string }) {
                   className={`block px-3 py-2 rounded-lg text-[13px] font-medium transition-all ${
                     childActive
                       ? "bg-[#F07000] text-white"
-                      : "text-[#4B5563] hover:bg-[#FFF5EB] hover:text-[#F07000]"
+                      : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                   }`}
                 >
                   {child.label}
@@ -190,10 +188,10 @@ function SidebarItem({ item, pathname }: { item: NavItem; pathname: string }) {
       className={`group flex items-center px-3 py-2.5 rounded-lg text-[14px] font-medium transition-all duration-200 ${
         isActive
           ? "bg-[#F07000] text-white"
-          : "text-[#4B5563] hover:bg-[#FFF5EB] hover:text-[#F07000]"
+          : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
       }`}
     >
-      <span className={isActive ? "text-white" : "text-[#4B5563] group-hover:text-[#F07000]"}>
+      <span className={isActive ? "text-white" : "text-sidebar-foreground group-hover:text-sidebar-accent-foreground"}>
         {item.icon}
       </span>
       <span className="ml-3 truncate">{item.label}</span>

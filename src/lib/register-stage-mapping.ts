@@ -11,7 +11,7 @@ export const REGISTER_STAGE_COLS: Array<{
   { key: "examinationCertified", label: "Examination", subLabel: "Cert." },
   { key: "regionChecked", label: "Region", subLabel: "Checked" },
   { key: "regionApproved", label: "Region", subLabel: "Approved" },
-  { key: "regionBatched", label: "Region", subLabel: "Barcode" },
+  { key: "regionBatched", label: "Region", subLabel: "Barcoded" },
 ];
 
 export const REGISTER_STAGE_LABELS: Record<RegisterStageKey, string> = {
@@ -21,7 +21,7 @@ export const REGISTER_STAGE_LABELS: Record<RegisterStageKey, string> = {
   examinationCertified: "Examination Certification",
   regionChecked: "Region Checked",
   regionApproved: "Region Approved",
-  regionBatched: "Region Barcode",
+  regionBatched: "Region Barcoded",
 };
 
 export const BACKEND_REGISTER_STEP_CODE_MAP: Record<RegisterStageKey, string> = {
@@ -57,5 +57,5 @@ export const CLIENT_STAGE_MATCH_META: Record<
   11: { adminSurface: "Admin Workflow", adminLabel: "Batched for Region", backendCodes: ["batched_for_region"] },
   12: { adminSurface: "Admin Register", adminLabel: "Region Checked", backendCodes: ["7_1_checked", "7_region"] },
   13: { adminSurface: "Admin Register", adminLabel: "Region Approved", backendCodes: ["7_2_approved"] },
-  14: { adminSurface: "Admin Register", adminLabel: "Region Barcode", backendCodes: ["7_3_barcoded"] },
+  14: { adminSurface: "Admin Register", adminLabel: "Region Barcoded", backendCodes: ["7_3_barcoded"] },
 };
