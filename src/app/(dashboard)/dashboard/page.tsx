@@ -29,13 +29,13 @@ export default function DashboardHome() {
   }, []);
 
   return (
-    <div>
+    <div className="admin-future-bg">
       {/* Welcome */}
       <div className="mb-6">
-        <h3 className="text-[22px] font-bold text-[#1f2937] mb-1">
+        <h3 className="text-[22px] font-bold text-foreground mb-1">
           Welcome back, <span className="text-[#F07000]">{getUserDisplayName(user)}</span>
         </h3>
-        <p className="text-[13px] text-[#9ca3af]">
+        <p className="text-[13px] text-muted-foreground">
           Here&apos;s an overview of your Recs Geomatics Consult operations.
         </p>
       </div>
@@ -77,7 +77,7 @@ export default function DashboardHome() {
       </div>
 
       {/* Quick Actions */}
-      <h4 className="text-[16px] font-bold text-[#1f2937] mb-3">Quick Actions</h4>
+      <h4 className="text-[16px] font-bold text-foreground mb-3">Quick Actions</h4>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <QuickAction
           title="Create New Job"
@@ -118,14 +118,14 @@ function StatCard({
   href: string;
 }) {
   return (
-    <Link href={href} className="block bg-white rounded-xl border border-[#e5e7eb] p-5 hover:shadow-md transition-shadow group">
+    <Link href={href} className="block admin-surface-elevated rounded-xl border border-border p-5 hover:shadow-md transition-shadow group">
       <div className="flex items-start justify-between mb-3">
         <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${iconBg}`}>{icon}</div>
-        <ArrowUpRight size={16} className="text-[#9ca3af] group-hover:text-[#F07000] transition-colors" />
+        <ArrowUpRight size={16} className="text-muted-foreground group-hover:text-[#F07000] transition-colors" />
       </div>
-      <div className="text-[24px] font-bold text-[#1f2937]">{value}</div>
-      <div className="text-[13px] font-semibold text-[#4b5563]">{label}</div>
-      <div className="text-[11px] text-[#9ca3af] mt-0.5">{sub}</div>
+      <div className="text-[24px] font-bold text-foreground">{value}</div>
+      <div className="text-[13px] font-semibold text-foreground/85">{label}</div>
+      <div className="text-[11px] text-muted-foreground mt-0.5">{sub}</div>
     </Link>
   );
 }
@@ -144,7 +144,7 @@ function QuickAction({
   return (
     <Link
       href={href}
-      className={`${color} text-white rounded-xl p-5 hover:opacity-90 transition-opacity block`}
+      className={`${color} text-white rounded-xl p-5 hover:opacity-90 transition-opacity block shadow-[0_12px_26px_rgba(15,23,42,0.2)] dark:shadow-[0_16px_30px_rgba(2,8,22,0.45)]`}
     >
       <h5 className="text-[16px] font-bold mb-1">{title}</h5>
       <p className="text-[13px] text-white/80">{desc}</p>

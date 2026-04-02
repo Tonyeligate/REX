@@ -17,6 +17,7 @@ import {
   RefreshCw,
   Search,
   Send,
+  Trash2,
   Upload,
   X,
 } from "lucide-react";
@@ -1065,6 +1066,10 @@ export default function JobsRegisterPage() {
   const [allowCreateUnmatched, setAllowCreateUnmatched] = useState(false);
   const [search, setSearch] = useState(urlSearch);
   const [statusFilter, setStatusFilter] = useState("");
+  const [deletingJobId, setDeletingJobId] = useState<string | null>(null);
+  const [jobFeedback, setJobFeedback] = useState<
+    { type: "success" | "error"; text: string } | null
+  >(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const [workflowModal, setWorkflowModal] = useState<{
     job: Job;
@@ -1411,6 +1416,51 @@ export default function JobsRegisterPage() {
     });
   };
 
+  const handleDeleteJob = async (job: Job) => {
+    if (deletingJobId) return;
+
+    const confirmed = window.confirm(
+      `Delete job ${job.jobId} for ${getRegisterName(job)}? This action cannot be undone.`
+    );
+
+    if (!confirmed) return;
+
+    setDeletingJobId(job.id);
+    setJobFeedback(null);
+
+    try {
+      await jobsApi.delete(job.jobId);
+
+      setJobs((current) => current.filter((entry) => entry.id !== job.id));
+      setRegisterRecords((current) => {
+        const next = { ...current };
+        delete next[job.jobId];
+        return next;
+      });
+
+      if (registerModalJob?.jobId === job.jobId) {
+        setRegisterModalJob(null);
+      }
+
+      if (workflowModal?.job.jobId === job.jobId) {
+        setWorkflowModal(null);
+      }
+
+      setJobFeedback({
+        type: "success",
+        text: `Job ${job.jobId} deleted successfully.`,
+      });
+    } catch (error) {
+      setJobFeedback({
+        type: "error",
+        text:
+          error instanceof Error ? error.message : "Failed to delete selected job.",
+      });
+    } finally {
+      setDeletingJobId(null);
+    }
+  };
+
   return (
     <div className="jobs-register-page admin-future-bg">
       <div className="admin-surface-glass rounded-2xl border border-border px-4 py-5 mb-4 md:px-5">
@@ -1506,6 +1556,18 @@ export default function JobsRegisterPage() {
       {importFeedback && (
         <div className="mb-4 rounded-lg border border-[#bfdbfe] bg-[#eff6ff] dark:border-[#274574] dark:bg-[#10203a] px-3 py-2 text-[12px] text-[#1e3a8a] dark:text-[#bcd8ff]">
           {importFeedback}
+        </div>
+      )}
+
+      {jobFeedback && (
+        <div
+          className={`mb-4 rounded-lg border px-3 py-2 text-[12px] ${
+            jobFeedback.type === "success"
+              ? "border-green-200 bg-green-50 text-green-700 dark:border-green-900/60 dark:bg-green-950/30 dark:text-green-300"
+              : "border-red-200 bg-red-50 text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300"
+          }`}
+        >
+          {jobFeedback.text}
         </div>
       )}
 
@@ -1795,6 +1857,19 @@ export default function JobsRegisterPage() {
                             className="inline-flex items-center gap-1 text-[#F07000] hover:underline"
                           >
                             <Eye size={11} /> Open Register
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteJob(job)}
+                            disabled={deletingJobId === job.id}
+                            className="inline-flex items-center gap-1 text-red-600 hover:underline disabled:opacity-60 disabled:no-underline"
+                          >
+                            {deletingJobId === job.id ? (
+                              <Loader2 size={11} className="animate-spin" />
+                            ) : (
+                              <Trash2 size={11} />
+                            )}
+                            {deletingJobId === job.id ? "Deleting..." : "Delete Job"}
                           </button>
                         </div>
                         {job.queryReason && (

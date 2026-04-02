@@ -1385,8 +1385,56 @@ export const jobsApi = {
     return { job: mapBackendJob(updated) };
   },
 
-  delete: async (_rnOrId: string) => {
-    throw new Error("Delete is not supported by the backend API");
+  delete: async (rnOrId: string) => {
+    const query = rnOrId.trim();
+    if (!query) {
+      throw new Error("Job identifier is required for deletion.");
+    }
+
+    const matchedJob = await findJobInList(query).catch(() => null);
+    const candidateIdOrRn = matchedJob ? String(matchedJob.id) : query;
+
+    try {
+      await localRequest<Record<string, unknown>>(
+        `/jobs/${encodeURIComponent(candidateIdOrRn)}`,
+        { method: "DELETE" }
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+
+      if (!isLikelyNotFoundError(message)) {
+        throw error;
+      }
+
+      const lookupKey = matchedJob?.rn?.trim()
+        ? matchedJob.rn.trim()
+        : await resolveBackendJobPathKey(query);
+
+      await requestJobEndpoint<Record<string, unknown>>(lookupKey, "/", {
+        method: "DELETE",
+      });
+    }
+
+    const records = readRegisterFieldsMap();
+    const keysToDelete = new Set<string>([
+      query,
+      candidateIdOrRn,
+      matchedJob?.rn?.trim() ?? "",
+    ]);
+    let changed = false;
+
+    for (const key of keysToDelete) {
+      if (!key) continue;
+      if (!(key in records)) continue;
+      delete records[key];
+      changed = true;
+    }
+
+    if (changed) {
+      writeRegisterFieldsMap(records);
+    }
+
+    return { success: true };
   },
 
   advanceStep: async (
