@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { BarChart3, PieChart, TrendingUp, Loader2 } from "lucide-react";
+import { BarChart3, PieChart, Loader2 } from "lucide-react";
 import { reportsApi } from "@/lib/api";
 
 interface JobStats {
