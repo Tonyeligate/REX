@@ -1,31 +1,34 @@
 import { NextResponse } from "next/server";
+import { settings as defaultSettings, type AppSettings } from "@/lib/demo-db";
 
-function notAvailable() {
-  return NextResponse.json(
-    {
-      error:
-        "Mock route removed. This endpoint is not implemented on the Railway backend yet.",
-    },
-    { status: 501 }
-  );
+let currentSettings: AppSettings = { ...defaultSettings };
+
+function respond() {
+  return NextResponse.json({ settings: currentSettings });
 }
 
 export async function GET() {
-  return notAvailable();
+  return respond();
 }
 
-export async function POST() {
-  return notAvailable();
+export async function POST(request: Request) {
+  return PUT(request);
 }
 
-export async function PUT() {
-  return notAvailable();
+export async function PUT(request: Request) {
+  try {
+    const payload = (await request.json()) as Partial<AppSettings>;
+    currentSettings = { ...currentSettings, ...payload };
+    return respond();
+  } catch {
+    return NextResponse.json({ error: "Invalid settings payload" }, { status: 400 });
+  }
 }
 
-export async function PATCH() {
-  return notAvailable();
+export async function PATCH(request: Request) {
+  return PUT(request);
 }
 
 export async function DELETE() {
-  return notAvailable();
+  return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
 }

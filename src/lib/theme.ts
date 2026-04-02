@@ -7,6 +7,14 @@ function canUseDOM(): boolean {
   return typeof window !== "undefined" && typeof document !== "undefined";
 }
 
+function emitThemeChange(theme: ResolvedTheme): void {
+  if (!canUseDOM()) {
+    return;
+  }
+
+  window.dispatchEvent(new CustomEvent("themechange", { detail: { theme } }));
+}
+
 export function getStoredThemePreference(): ThemePreference {
   if (!canUseDOM()) {
     return "system";
@@ -44,6 +52,7 @@ export function applyResolvedTheme(theme: ResolvedTheme): void {
   const root = document.documentElement;
   root.classList.toggle("dark", theme === "dark");
   root.style.colorScheme = theme;
+  emitThemeChange(theme);
 }
 
 export function applyThemePreference(preference: ThemePreference): ResolvedTheme {

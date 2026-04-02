@@ -36,6 +36,7 @@ function useResolvedTheme(): [ResolvedTheme, () => void] {
     }
 
     window.addEventListener("storage", syncTheme);
+    window.addEventListener("themechange", syncTheme as EventListener);
 
     return () => {
       if (media) {
@@ -46,6 +47,7 @@ function useResolvedTheme(): [ResolvedTheme, () => void] {
         }
       }
       window.removeEventListener("storage", syncTheme);
+      window.removeEventListener("themechange", syncTheme as EventListener);
     };
   }, []);
 

@@ -1067,9 +1067,12 @@ export default function JobsRegisterPage() {
   const [search, setSearch] = useState(urlSearch);
   const [statusFilter, setStatusFilter] = useState("");
   const [deletingJobId, setDeletingJobId] = useState<string | null>(null);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [selectedJobIds, setSelectedJobIds] = useState<string[]>([]);
   const [jobFeedback, setJobFeedback] = useState<
     { type: "success" | "error"; text: string } | null
   >(null);
+  const selectAllVisibleRef = useRef<HTMLInputElement | null>(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const [workflowModal, setWorkflowModal] = useState<{
     job: Job;
@@ -1145,6 +1148,38 @@ export default function JobsRegisterPage() {
       return matchesSearch && matchesStatus;
     });
   }, [jobs, registerRecords, search, statusFilter]);
+
+  const selectedJobIdSet = useMemo(() => new Set(selectedJobIds), [selectedJobIds]);
+
+  const visibleJobIds = useMemo(
+    () => filteredJobs.map((job) => job.id),
+    [filteredJobs]
+  );
+
+  const selectedVisibleCount = useMemo(
+    () => visibleJobIds.filter((jobId) => selectedJobIdSet.has(jobId)).length,
+    [visibleJobIds, selectedJobIdSet]
+  );
+
+  const allVisibleSelected =
+    visibleJobIds.length > 0 && selectedVisibleCount === visibleJobIds.length;
+  const someVisibleSelected = selectedVisibleCount > 0 && !allVisibleSelected;
+
+  useEffect(() => {
+    setSelectedJobIds((current) => {
+      const existingJobIds = new Set(jobs.map((job) => job.id));
+      const next = current.filter((jobId) => existingJobIds.has(jobId));
+      return next.length === current.length ? current : next;
+    });
+  }, [jobs]);
+
+  useEffect(() => {
+    if (!selectAllVisibleRef.current) {
+      return;
+    }
+
+    selectAllVisibleRef.current.indeterminate = someVisibleSelected;
+  }, [someVisibleSelected]);
 
   const counts = useMemo(
     () => ({
@@ -1416,8 +1451,30 @@ export default function JobsRegisterPage() {
     });
   };
 
+  const toggleJobSelection = (jobId: string) => {
+    setSelectedJobIds((current) =>
+      current.includes(jobId)
+        ? current.filter((id) => id !== jobId)
+        : [...current, jobId]
+    );
+  };
+
+  const toggleSelectAllVisible = (checked: boolean) => {
+    setSelectedJobIds((current) => {
+      const next = new Set(current);
+
+      if (checked) {
+        visibleJobIds.forEach((jobId) => next.add(jobId));
+      } else {
+        visibleJobIds.forEach((jobId) => next.delete(jobId));
+      }
+
+      return Array.from(next);
+    });
+  };
+
   const handleDeleteJob = async (job: Job) => {
-    if (deletingJobId) return;
+    if (deletingJobId || bulkDeleting) return;
 
     const confirmed = window.confirm(
       `Delete job ${job.jobId} for ${getRegisterName(job)}? This action cannot be undone.`
@@ -1432,6 +1489,7 @@ export default function JobsRegisterPage() {
       const deleteResult = await jobsApi.delete(job.jobId);
 
       setJobs((current) => current.filter((entry) => entry.id !== job.id));
+      setSelectedJobIds((current) => current.filter((jobId) => jobId !== job.id));
       setRegisterRecords((current) => {
         const next = { ...current };
         delete next[job.jobId];
@@ -1461,6 +1519,90 @@ export default function JobsRegisterPage() {
       });
     } finally {
       setDeletingJobId(null);
+    }
+  };
+
+  const handleBulkDeleteSelected = async () => {
+    if (bulkDeleting || deletingJobId || selectedJobIds.length === 0) {
+      return;
+    }
+
+    const selectedJobs = jobs.filter((job) => selectedJobIdSet.has(job.id));
+    if (selectedJobs.length === 0) {
+      setSelectedJobIds([]);
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete ${selectedJobs.length} selected job${selectedJobs.length === 1 ? "" : "s"}? This action cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    setBulkDeleting(true);
+    setJobFeedback(null);
+
+    let deletedCount = 0;
+    let failedCount = 0;
+    const deletedIds = new Set<string>();
+    const deletedJobIds = new Set<string>();
+    const failedMessages: string[] = [];
+
+    try {
+      for (const job of selectedJobs) {
+        try {
+          await jobsApi.delete(job.jobId);
+          deletedCount += 1;
+          deletedIds.add(job.id);
+          deletedJobIds.add(job.jobId);
+        } catch (error) {
+          failedCount += 1;
+          const message =
+            error instanceof Error ? error.message : "Failed to delete";
+          failedMessages.push(`${job.jobId}: ${message}`);
+        }
+      }
+
+      if (deletedIds.size > 0) {
+        setJobs((current) => current.filter((job) => !deletedIds.has(job.id)));
+        setRegisterRecords((current) => {
+          const next = { ...current };
+          for (const jobId of deletedJobIds) {
+            delete next[jobId];
+          }
+          return next;
+        });
+      }
+
+      setSelectedJobIds((current) =>
+        current.filter((jobId) => !deletedIds.has(jobId))
+      );
+
+      if (registerModalJob && deletedJobIds.has(registerModalJob.jobId)) {
+        setRegisterModalJob(null);
+      }
+
+      if (workflowModal && deletedJobIds.has(workflowModal.job.jobId)) {
+        setWorkflowModal(null);
+      }
+
+      if (failedCount === 0) {
+        setJobFeedback({
+          type: "success",
+          text: `${deletedCount} job${deletedCount === 1 ? "" : "s"} deleted successfully.`,
+        });
+      } else {
+        const summary =
+          deletedCount > 0
+            ? `${deletedCount} deleted, ${failedCount} failed.`
+            : `Bulk delete failed for ${failedCount} selected job${failedCount === 1 ? "" : "s"}.`;
+        const detail = failedMessages.slice(0, 2).join(" | ");
+        setJobFeedback({
+          type: "error",
+          text: detail ? `${summary} ${detail}` : summary,
+        });
+      }
+    } finally {
+      setBulkDeleting(false);
     }
   };
 
@@ -1498,6 +1640,33 @@ export default function JobsRegisterPage() {
             >
               {importing ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
               {importing ? "Importing..." : "Import Excel"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedJobIds([])}
+              disabled={selectedJobIds.length === 0 || bulkDeleting || deletingJobId !== null}
+              className="flex items-center gap-2 h-[38px] px-4 border border-border bg-card rounded-lg text-[13px] font-semibold text-foreground/80 hover:bg-muted disabled:opacity-60 transition-colors"
+            >
+              Clear Selection
+            </button>
+            <button
+              type="button"
+              onClick={handleBulkDeleteSelected}
+              disabled={
+                selectedJobIds.length === 0 ||
+                bulkDeleting ||
+                deletingJobId !== null
+              }
+              className="flex items-center gap-2 h-[38px] px-4 bg-red-600 text-white rounded-lg text-[13px] font-semibold hover:bg-red-700 disabled:opacity-60 transition-colors shadow-[0_8px_18px_rgba(220,38,38,0.26)]"
+            >
+              {bulkDeleting ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <Trash2 size={14} />
+              )}
+              {bulkDeleting
+                ? "Deleting..."
+                : `Delete Selected (${selectedJobIds.length})`}
             </button>
             <Link
               href="/admin/jobs/new"
@@ -1753,6 +1922,7 @@ export default function JobsRegisterPage() {
             <span className="font-semibold text-orange-600">Active: {counts.inProgress}</span>
             <span className="font-semibold text-amber-600">Queried: {counts.queried}</span>
             <span className="font-semibold text-green-600">Done: {counts.completed}</span>
+            <span className="font-semibold text-red-600">Selected: {selectedJobIds.length}</span>
             <span className="flex items-center gap-1.5"><span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full border border-[#bfdbfe] bg-[#dbeafe] px-1 text-[10px] font-[800] text-[#1d4ed8]">B</span> Backend decision value</span>
             <span className="flex items-center gap-1.5"><span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full border border-[#d1d5db] bg-[#f3f4f6] px-1 text-[10px] font-[800] text-[#4b5563]">L</span> Local browser fallback</span>
             <span className="flex items-center gap-1.5"><AlertTriangle size={13} className="text-amber-500" /> L appears only when backend persistence fails or stale cache exists; use Reset to restore backend value</span>
@@ -1765,6 +1935,21 @@ export default function JobsRegisterPage() {
           <table className="jobs-register-table w-full text-[12px] border-collapse table-fixed min-w-[1180px] xl:min-w-0">
             <thead>
               <tr className="bg-[#1f2937] text-white">
+                <th rowSpan={2} className="border border-[#374151] px-2 py-2 text-center font-bold w-[40px]">
+                  <input
+                    ref={selectAllVisibleRef}
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    onChange={(e) => toggleSelectAllVisible(e.target.checked)}
+                    disabled={
+                      loading ||
+                      filteredJobs.length === 0 ||
+                      bulkDeleting ||
+                      deletingJobId !== null
+                    }
+                    aria-label="Select all visible jobs"
+                  />
+                </th>
                 <th rowSpan={2} className="border border-[#374151] px-3 py-2 text-center font-bold w-8">#</th>
                 <th rowSpan={2} className="border border-[#374151] px-3 py-2 text-left font-bold w-[200px]">Client Name</th>
                 <th rowSpan={2} className="border border-[#374151] px-3 py-2 text-left font-bold w-[135px]">RNR</th>
@@ -1791,20 +1976,21 @@ export default function JobsRegisterPage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={11} className="text-center py-12 text-[#9ca3af]">
+                  <td colSpan={12} className="text-center py-12 text-[#9ca3af]">
                     <Loader2 size={20} className="animate-spin mx-auto mb-2" />
                     Loading jobs...
                   </td>
                 </tr>
               ) : filteredJobs.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="text-center py-12 text-[#9ca3af]">
+                  <td colSpan={12} className="text-center py-12 text-[#9ca3af]">
                     No jobs match the current filters. <Link href="/admin/jobs/new" className="text-[#F07000] hover:underline font-semibold">Create a new job →</Link>
                   </td>
                 </tr>
               ) : (
                 filteredJobs.map((job, index) => {
                   const isEven = index % 2 === 0;
+                  const isSelected = selectedJobIdSet.has(job.id);
                   const registerName = getRegisterName(job);
                   const registerReference = getRegisterReference(job);
                   const record = registerRecords[job.jobId];
@@ -1813,7 +1999,16 @@ export default function JobsRegisterPage() {
                   const registerProgress = getRegisterProgressSummary(buildResolvedRegisterRecord(job, record));
 
                   return (
-                    <tr key={job.id} className={`transition-colors hover:bg-orange-50/40 dark:hover:bg-orange-500/10 ${isEven ? "bg-white/95 dark:bg-slate-900/60" : "bg-[#fafafa] dark:bg-slate-950/40"}`}>
+                    <tr key={job.id} className={`transition-colors hover:bg-orange-50/40 dark:hover:bg-orange-500/10 ${isSelected ? "bg-orange-50/70 dark:bg-orange-500/15" : isEven ? "bg-white/95 dark:bg-slate-900/60" : "bg-[#fafafa] dark:bg-slate-950/40"}`}>
+                      <td className="border border-[#e5e7eb] dark:border-border px-2 py-2 text-center align-top">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleJobSelection(job.id)}
+                          disabled={bulkDeleting || deletingJobId !== null}
+                          aria-label={`Select job ${job.jobId}`}
+                        />
+                      </td>
                       <td className="border border-[#e5e7eb] dark:border-border px-2 py-2 text-center text-[#9ca3af] dark:text-slate-400 font-medium">{index + 1}</td>
                       <td className="border border-[#e5e7eb] px-3 py-2 align-top">
                         <button
@@ -1864,7 +2059,7 @@ export default function JobsRegisterPage() {
                           <button
                             type="button"
                             onClick={() => handleDeleteJob(job)}
-                            disabled={deletingJobId === job.id}
+                            disabled={bulkDeleting || deletingJobId !== null}
                             className="inline-flex items-center gap-1 text-red-600 hover:underline disabled:opacity-60 disabled:no-underline"
                           >
                             {deletingJobId === job.id ? (
