@@ -1429,7 +1429,7 @@ export default function JobsRegisterPage() {
     setJobFeedback(null);
 
     try {
-      await jobsApi.delete(job.jobId);
+      const deleteResult = await jobsApi.delete(job.jobId);
 
       setJobs((current) => current.filter((entry) => entry.id !== job.id));
       setRegisterRecords((current) => {
@@ -1448,7 +1448,10 @@ export default function JobsRegisterPage() {
 
       setJobFeedback({
         type: "success",
-        text: `Job ${job.jobId} deleted successfully.`,
+        text:
+          typeof deleteResult.message === "string" && deleteResult.message.trim()
+            ? deleteResult.message
+            : `Job ${job.jobId} deleted successfully.`,
       });
     } catch (error) {
       setJobFeedback({

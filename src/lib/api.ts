@@ -21,6 +21,7 @@ const LOCAL_URL = "/api"; // Local Next.js API routes
 /* ── Member metadata helper (extra fields not in backend Clients schema) ── */
 const MEMBER_META_KEY = "_member_meta_by_client_id";
 const REGISTER_FIELDS_KEY = "_register_fields_by_job_id";
+const DELETED_JOBS_KEY = "_deleted_job_lookup_keys";
 const REGISTER_META_START = "[[REGISTER_META_V1]]";
 const REGISTER_META_END = "[[/REGISTER_META_V1]]";
 
@@ -116,6 +117,100 @@ function readRegisterFieldsMap(): Record<string, JobRegisterRecord> {
 function writeRegisterFieldsMap(data: Record<string, JobRegisterRecord>) {
   if (typeof window === "undefined") return;
   localStorage.setItem(REGISTER_FIELDS_KEY, JSON.stringify(data));
+}
+
+function readDeletedJobLookupKeys(): Set<string> {
+  if (typeof window === "undefined") return new Set<string>();
+
+  try {
+    const raw = localStorage.getItem(DELETED_JOBS_KEY);
+    if (!raw) return new Set<string>();
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return new Set<string>();
+
+    return new Set(
+      parsed
+        .map((value) => normalizeJobLookupKey(String(value ?? "")))
+        .filter(Boolean)
+    );
+  } catch {
+    return new Set<string>();
+  }
+}
+
+function writeDeletedJobLookupKeys(values: Set<string>) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(DELETED_JOBS_KEY, JSON.stringify(Array.from(values)));
+}
+
+function collectJobLookupKeys(input: {
+  id?: string | number | null;
+  rn?: string | null;
+  jobId?: string | null;
+  regionalNumber?: string | null;
+  regional_number?: string | null;
+}): string[] {
+  const candidates = [
+    input.id,
+    input.rn,
+    input.jobId,
+    input.regionalNumber,
+    input.regional_number,
+  ]
+    .map((value) => normalizeJobLookupKey(String(value ?? "")))
+    .filter(Boolean);
+
+  return Array.from(new Set(candidates));
+}
+
+function markJobAsDeletedLocally(keys: string[]) {
+  if (keys.length === 0) return;
+
+  const store = readDeletedJobLookupKeys();
+  let changed = false;
+
+  for (const key of keys) {
+    const normalized = normalizeJobLookupKey(key);
+    if (!normalized || store.has(normalized)) continue;
+    store.add(normalized);
+    changed = true;
+  }
+
+  if (changed) {
+    writeDeletedJobLookupKeys(store);
+  }
+}
+
+function unmarkJobDeletedLocally(keys: string[]) {
+  if (keys.length === 0) return;
+
+  const store = readDeletedJobLookupKeys();
+  let changed = false;
+
+  for (const key of keys) {
+    const normalized = normalizeJobLookupKey(key);
+    if (!normalized || !store.has(normalized)) continue;
+    store.delete(normalized);
+    changed = true;
+  }
+
+  if (changed) {
+    writeDeletedJobLookupKeys(store);
+  }
+}
+
+function isDeletedJobLocally(input: {
+  id?: string | number | null;
+  rn?: string | null;
+  jobId?: string | null;
+  regionalNumber?: string | null;
+  regional_number?: string | null;
+}): boolean {
+  const keys = collectJobLookupKeys(input);
+  if (keys.length === 0) return false;
+
+  const store = readDeletedJobLookupKeys();
+  return keys.some((key) => store.has(key));
 }
 
 function extractRegisterMetaJson(description?: string): string | null {
@@ -1002,6 +1097,12 @@ function isLikelyNotFoundError(message: string): boolean {
   return /(\b404\b|not\s*found|request failed:\s*404)/i.test(message);
 }
 
+function isMethodNotAllowedError(message: string): boolean {
+  return /(\b405\b|method\s*"?delete"?\s*not\s*allowed|method\s*not\s*allowed)/i.test(
+    message
+  );
+}
+
 function isPermissionError(message: string): boolean {
   return /(forbidden|permission|only clients)/i.test(message);
 }
@@ -1017,6 +1118,35 @@ function matchesJobIdentifier(item: BackendJobListItem, query: string): boolean 
   ].map(normalizeJobLookupKey);
 
   return candidates.includes(normalizedQuery);
+}
+
+let backendSupportsJobDelete: boolean | null = null;
+
+async function detectBackendJobDeleteSupport(): Promise<boolean> {
+  if (backendSupportsJobDelete !== null) {
+    return backendSupportsJobDelete;
+  }
+
+  try {
+    const schema = await backendRequest<{
+      paths?: Record<string, Record<string, unknown>>;
+    }>("/schema/?format=json");
+
+    const paths = schema.paths ?? {};
+    backendSupportsJobDelete = Object.entries(paths).some(
+      ([path, methods]) => {
+        if (!/^\/api\/jobs\/\{[^}]+\}\/$/.test(path)) return false;
+        return Object.keys(methods ?? {}).some(
+          (method) => method.toLowerCase() === "delete"
+        );
+      }
+    );
+  } catch {
+    // If schema fetch fails, do not block delete attempts.
+    backendSupportsJobDelete = true;
+  }
+
+  return backendSupportsJobDelete;
 }
 
 async function findJobInList(rnOrId: string): Promise<BackendJobListItem | null> {
@@ -1211,7 +1341,16 @@ function getNextPatchStatusForWorkflow(current: BackendStatus): BackendStatus | 
 export const jobsApi = {
   list: async (_params?: Record<string, string>) => {
     const items = await backendRequest<BackendJobListItem[]>("/jobs/");
-    const jobs = items.map(mapBackendJob);
+    const jobs = items
+      .map(mapBackendJob)
+      .filter(
+        (job) =>
+          !isDeletedJobLocally({
+            id: job.id,
+            jobId: job.jobId,
+            regionalNumber: job.regionalNumber,
+          })
+      );
     return { jobs, total: jobs.length };
   },
 
@@ -1247,6 +1386,20 @@ export const jobsApi = {
   },
 
   get: async (rnOrId: string) => {
+    const ensureJobVisible = (job: Job) => {
+      if (
+        isDeletedJobLocally({
+          id: job.id,
+          jobId: job.jobId,
+          regionalNumber: job.regionalNumber,
+        })
+      ) {
+        throw new Error("Job not found.");
+      }
+
+      return { job };
+    };
+
     const rawLookup = rnOrId.trim();
 
     // RN values containing '/' are frequently unsupported on backend detail routes.
@@ -1257,13 +1410,14 @@ export const jobsApi = {
         throw new Error("Job not found.");
       }
 
-      return { job: mapListItemToFallbackJob(slashFallback) };
+      return ensureJobVisible(mapListItemToFallbackJob(slashFallback));
     }
 
     const lookupKey = await resolveBackendJobPathKey(rnOrId);
 
     try {
-      return await fetchJobDetailWithHistory(lookupKey);
+      const result = await fetchJobDetailWithHistory(lookupKey);
+      return ensureJobVisible(result.job);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "";
 
@@ -1273,10 +1427,11 @@ export const jobsApi = {
           const fallback = await findJobInList(rnOrId);
           if (fallback) {
             try {
-              return await fetchJobDetailWithHistory(fallback.rn);
+              const result = await fetchJobDetailWithHistory(fallback.rn);
+              return ensureJobVisible(result.job);
             } catch {
               // Keep UX functional even when detail route cannot resolve RNs with slashes.
-              return { job: mapListItemToFallbackJob(fallback) };
+              return ensureJobVisible(mapListItemToFallbackJob(fallback));
             }
           }
         } catch {
@@ -1295,7 +1450,7 @@ export const jobsApi = {
 
       const job = mapListItemToFallbackJob(fallback);
 
-      return { job };
+      return ensureJobVisible(job);
     }
   },
 
@@ -1369,10 +1524,29 @@ export const jobsApi = {
     }
 
     if (didBootstrap) {
-      return jobsApi.get(created.rn);
+      const result = await jobsApi.get(created.rn);
+      unmarkJobDeletedLocally(
+        collectJobLookupKeys({
+          id: result.job.id,
+          rn: result.job.jobId,
+          jobId: result.job.jobId,
+          regionalNumber: result.job.regionalNumber,
+        })
+      );
+      return result;
     }
 
-    return { job: mapBackendJob(created) };
+    const mapped = mapBackendJob(created);
+    unmarkJobDeletedLocally(
+      collectJobLookupKeys({
+        id: mapped.id,
+        rn: mapped.jobId,
+        jobId: mapped.jobId,
+        regionalNumber: mapped.regionalNumber,
+      })
+    );
+
+    return { job: mapped };
   },
 
   update: async (rnOrId: string, payload: Record<string, unknown>) => {
@@ -1393,6 +1567,50 @@ export const jobsApi = {
 
     const matchedJob = await findJobInList(query).catch(() => null);
     const candidateIdOrRn = matchedJob ? String(matchedJob.id) : query;
+    const deletedLookupKeys = collectJobLookupKeys({
+      id: candidateIdOrRn,
+      rn: matchedJob?.rn ?? query,
+      jobId: query,
+      regional_number: matchedJob?.regional_number,
+    });
+
+    const cleanupRegisterCache = () => {
+      const records = readRegisterFieldsMap();
+      const keysToDelete = new Set<string>([
+        query,
+        candidateIdOrRn,
+        matchedJob?.rn?.trim() ?? "",
+      ]);
+      let changed = false;
+
+      for (const key of keysToDelete) {
+        if (!key) continue;
+        if (!(key in records)) continue;
+        delete records[key];
+        changed = true;
+      }
+
+      if (changed) {
+        writeRegisterFieldsMap(records);
+      }
+    };
+
+    const fallbackToLocalHide = (message: string) => {
+      markJobAsDeletedLocally(deletedLookupKeys);
+      cleanupRegisterCache();
+      return {
+        success: true,
+        mode: "local_hide" as const,
+        message,
+      };
+    };
+
+    const backendCanDeleteJobs = await detectBackendJobDeleteSupport();
+    if (!backendCanDeleteJobs) {
+      return fallbackToLocalHide(
+        "Backend API currently does not expose DELETE for jobs. Hidden from this dashboard."
+      );
+    }
 
     try {
       await localRequest<Record<string, unknown>>(
@@ -1402,6 +1620,13 @@ export const jobsApi = {
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
 
+      if (isMethodNotAllowedError(message)) {
+        backendSupportsJobDelete = false;
+        return fallbackToLocalHide(
+          "Backend returned 405 for job DELETE. Hidden from this dashboard."
+        );
+      }
+
       if (!isLikelyNotFoundError(message)) {
         throw error;
       }
@@ -1410,31 +1635,30 @@ export const jobsApi = {
         ? matchedJob.rn.trim()
         : await resolveBackendJobPathKey(query);
 
-      await requestJobEndpoint<Record<string, unknown>>(lookupKey, "/", {
-        method: "DELETE",
-      });
+      try {
+        await requestJobEndpoint<Record<string, unknown>>(lookupKey, "/", {
+          method: "DELETE",
+        });
+      } catch (innerError) {
+        const innerMessage =
+          innerError instanceof Error ? innerError.message : "";
+        if (isMethodNotAllowedError(innerMessage)) {
+          backendSupportsJobDelete = false;
+          return fallbackToLocalHide(
+            "Backend returned 405 for job DELETE. Hidden from this dashboard."
+          );
+        }
+
+        throw innerError;
+      }
     }
 
-    const records = readRegisterFieldsMap();
-    const keysToDelete = new Set<string>([
-      query,
-      candidateIdOrRn,
-      matchedJob?.rn?.trim() ?? "",
-    ]);
-    let changed = false;
-
-    for (const key of keysToDelete) {
-      if (!key) continue;
-      if (!(key in records)) continue;
-      delete records[key];
-      changed = true;
-    }
-
-    if (changed) {
-      writeRegisterFieldsMap(records);
-    }
-
-    return { success: true };
+    cleanupRegisterCache();
+    return {
+      success: true,
+      mode: "backend" as const,
+      message: "Job deleted successfully.",
+    };
   },
 
   advanceStep: async (
@@ -1539,10 +1763,33 @@ export const jobsApi = {
     };
 
     if (Array.isArray(body.jobs)) {
-      return { jobs: body.jobs.map(mapBackendJob) };
+      return {
+        jobs: body.jobs
+          .map(mapBackendJob)
+          .filter(
+            (job) =>
+              !isDeletedJobLocally({
+                id: job.id,
+                jobId: job.jobId,
+                regionalNumber: job.regionalNumber,
+              })
+          ),
+      };
     }
     if (!body.job) return { jobs: [] as Job[] };
-    return { jobs: [mapBackendJob(body.job)] };
+
+    const mapped = mapBackendJob(body.job);
+    if (
+      isDeletedJobLocally({
+        id: mapped.id,
+        jobId: mapped.jobId,
+        regionalNumber: mapped.regionalNumber,
+      })
+    ) {
+      return { jobs: [] as Job[] };
+    }
+
+    return { jobs: [mapped] };
   },
 };
 
