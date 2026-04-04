@@ -1408,13 +1408,13 @@ export const jobsApi = {
     }
 
     const matchedJob = await findJobInList(query).catch(() => null);
-    const candidateIdOrRn = matchedJob ? String(matchedJob.id) : query;
+    const resolvedLookupKey = await resolveBackendJobPathKey(query);
 
     const cleanupRegisterCache = () => {
       const records = readRegisterFieldsMap();
       const keysToDelete = new Set<string>([
         query,
-        candidateIdOrRn,
+        matchedJob ? String(matchedJob.id) : "",
         matchedJob?.rn?.trim() ?? "",
       ]);
       let changed = false;
@@ -1438,48 +1438,56 @@ export const jobsApi = {
       );
     }
 
-    try {
-      await localRequest<Record<string, unknown>>(
-        `/jobs/${encodeURIComponent(candidateIdOrRn)}`,
-        { method: "DELETE" }
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "";
+    const candidateDeleteKeys = Array.from(
+      new Set(
+        [
+          matchedJob?.rn?.trim() ?? "",
+          resolvedLookupKey,
+          query,
+          matchedJob ? String(matchedJob.id) : "",
+        ].map((value) => value.trim()).filter(Boolean)
+      )
+    );
 
-      if (isMethodNotAllowedError(message)) {
-        backendSupportsJobDelete = false;
-        throw new Error(
-          "Backend API rejected job deletion (405 Method Not Allowed). This job was not removed from the database."
-        );
-      }
+    let deleteSucceeded = false;
+    let lastDeleteError: unknown = null;
 
-      if (!isLikelyNotFoundError(message)) {
-        throw error;
-      }
-
-      const lookupKey = matchedJob?.rn?.trim()
-        ? matchedJob.rn.trim()
-        : await resolveBackendJobPathKey(query);
-
+    for (const candidateKey of candidateDeleteKeys) {
       try {
-        await requestJobEndpoint<Record<string, unknown>>(lookupKey, "/", {
+        await requestJobEndpoint<Record<string, unknown>>(candidateKey, "/", {
           method: "DELETE",
         });
-      } catch (innerError) {
-        const innerMessage =
-          innerError instanceof Error ? innerError.message : "";
-        if (isMethodNotAllowedError(innerMessage)) {
+        deleteSucceeded = true;
+        break;
+      } catch (error) {
+        lastDeleteError = error;
+        const message = error instanceof Error ? error.message : "";
+
+        if (isMethodNotAllowedError(message)) {
           backendSupportsJobDelete = false;
           throw new Error(
             "Backend API rejected job deletion (405 Method Not Allowed). This job was not removed from the database."
           );
         }
 
-        throw innerError;
+        if (!isLikelyNotFoundError(message)) {
+          throw error;
+        }
       }
     }
 
-    const stillExists = await findJobInList(query).catch(() => null);
+    if (!deleteSucceeded) {
+      if (lastDeleteError instanceof Error) {
+        throw lastDeleteError;
+      }
+
+      throw new Error(
+        "Job could not be deleted from backend. The record was not found on the backend delete endpoint."
+      );
+    }
+
+    const verifyLookup = matchedJob?.rn?.trim() || resolvedLookupKey || query;
+    const stillExists = await findJobInList(verifyLookup).catch(() => null);
     if (stillExists) {
       throw new Error(
         "Delete request completed but the job still exists on the backend. No database deletion was confirmed."
