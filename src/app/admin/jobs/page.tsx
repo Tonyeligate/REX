@@ -1394,6 +1394,7 @@ export default function JobsRegisterPage() {
               title: `${clientName} - ${row.rowJobId}`,
               jobType: "Land Survey",
               description,
+              skipBootstrapWorkflow: true,
             });
 
             const createdJobId = createdJob.job.jobId || row.rowJobId;

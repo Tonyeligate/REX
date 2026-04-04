@@ -1325,11 +1325,14 @@ export const jobsApi = {
     clientName?: string;
     regionalNumber?: string;
     parcelSize?: string;
+    skipBootstrapWorkflow?: boolean;
     [key: string]: unknown;
   }) => {
     const normalizedRn = normalizeRnInput(
       (payload.rn ?? payload.jobId ?? payload.regionalNumber ?? "") as string
     );
+    const regionalNumber =
+      String(payload.regionalNumber ?? payload.rn ?? payload.jobId ?? "").trim() || null;
 
     const client_id = await ensureBackendClientId({
       clientId: payload.clientId,
@@ -1342,6 +1345,7 @@ export const jobsApi = {
 
     const body = {
       rn: normalizedRn,
+      regional_number: regionalNumber,
       title: payload.title ?? payload.jobType ?? payload.clientName ?? "",
       description: payload.description ?? "",
       parcel_acreage: payload.parcel_acreage ?? payload.parcelSize ?? null,
@@ -1353,12 +1357,15 @@ export const jobsApi = {
       body: JSON.stringify(body),
     });
 
+    if (payload.skipBootstrapWorkflow) {
+      return { job: mapBackendJob(created) };
+    }
+
     // Product rule: newly created jobs should start with the first three
     // workflow milestones already captured.
     const bootstrapStatuses: BackendStatus[] = [
-      "rn_assigned",
-      "in_production",
-      "submitted_to_ls461",
+      "2_regional_number",
+      "3_job_production",
     ];
 
     let currentStatus = created.status as BackendStatus;
