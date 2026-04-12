@@ -341,6 +341,44 @@ async function refreshAccessToken(): Promise<string | null> {
   }
 }
 
+async function parseResponsePayload(res: Response): Promise<unknown> {
+  const text = await res.text().catch(() => "");
+  if (!text) return {};
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { detail: text };
+  }
+}
+
+function extractPayloadMessage(payload: unknown, status: number): string {
+  if (payload && typeof payload === "object") {
+    const body = payload as Record<string, unknown>;
+    const direct =
+      (typeof body.error === "string" && body.error.trim()) ||
+      (typeof body.detail === "string" && body.detail.trim()) ||
+      (typeof body.message === "string" && body.message.trim()) ||
+      "";
+
+    if (direct) return direct;
+
+    const flattened = Object.values(body)
+      .flatMap((value) => (Array.isArray(value) ? value : [value]))
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean)
+      .join(", ");
+
+    if (flattened) return flattened;
+  }
+
+  if (typeof payload === "string" && payload.trim()) {
+    return payload.trim();
+  }
+
+  return `Request failed: ${status}`;
+}
+
 /** Call the Railway backend (Auth / Jobs / Batches). */
 async function backendRequest<T>(
   path: string,
@@ -389,14 +427,8 @@ async function backendRequest<T>(
   }
 
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    const message =
-      typeof body === "object"
-        ? body.detail ??
-          body.error ??
-          Object.values(body).flat().join(", ") ??
-          `Request failed: ${res.status}`
-        : `Request failed: ${res.status}`;
+    const body = await parseResponsePayload(res);
+    const message = extractPayloadMessage(body, res.status);
 
     if (res.status === 403) {
       throw new Error(
@@ -411,7 +443,9 @@ async function backendRequest<T>(
 
   if (res.status === 204 || res.headers.get("content-length") === "0")
     return {} as T;
-  return res.json();
+
+  const payload = await parseResponsePayload(res);
+  return payload as T;
 }
 
 /** Call a local Next.js API route (Members / SMS / Dues / Reports / Settings). */
@@ -431,24 +465,21 @@ async function localRequest<T>(
   const res = await fetch(url, { ...options, headers });
 
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    const message =
-      typeof body === "object" && body
-        ? body.error ??
-          body.detail ??
-          body.message ??
-          Object.values(body)
-            .flat()
-            .map((value) => String(value))
-            .join(", ")
-        : undefined;
+    const body = await parseResponsePayload(res);
+    const message = extractPayloadMessage(body, res.status);
     throw new Error(
       typeof message === "string" && message.trim()
         ? message
         : `Request failed: ${res.status}`
     );
   }
-  return res.json();
+
+  if (res.status === 204 || res.headers.get("content-length") === "0") {
+    return {} as T;
+  }
+
+  const payload = await parseResponsePayload(res);
+  return payload as T;
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -1227,15 +1258,13 @@ export const jobsApi = {
   },
 
   import: async (file: File) => {
-    const endpoints = ["/jobs/import/", "/import/"];
+    // Backend handles field mapping and row interpretation; frontend is only a gateway.
+    const endpoints = ["/import/", "/jobs/import/"];
     const failures: string[] = [];
 
     for (const endpoint of endpoints) {
       const formData = new FormData();
       formData.append("file", file);
-      formData.append("excel", file);
-      formData.append("excel_file", file);
-      formData.append("upload", file);
 
       try {
         const response = await backendRequest<Record<string, unknown>>(endpoint, {

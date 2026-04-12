@@ -69,6 +69,22 @@ type ImportPreviewRow = {
   apply: boolean;
 };
 
+type ImportMappingConfidence = "exact" | "fuzzy" | "missing";
+
+type ImportDetectedMapping = {
+  key: string;
+  label: string;
+  matchedColumn?: string;
+  confidence: ImportMappingConfidence;
+  score: number;
+};
+
+type ImportFieldTarget = {
+  key: string;
+  label: string;
+  candidates: string[];
+};
+
 function normalizeRegisterStage(value?: RegisterStageValue): RegisterStageEntry | undefined {
   if (value === true) {
     return { outcome: "accept" };
@@ -103,19 +119,265 @@ function normalizeImportJobIdentifier(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-const IMPORT_JOB_ID_COLUMNS = ["RNR", "RN", "Job ID", "JobId", "Job Id"];
-const IMPORT_REGIONAL_NUMBER_COLUMNS = ["Regional Number", "Actual Regional Number", "ARN", "Regional No", "Regional No."];
-const IMPORT_CLIENT_NAME_COLUMNS = ["Client Name", "CL NAME", "Client", "Name"];
+const IMPORT_JOB_ID_COLUMNS = [
+  "RNR",
+  "RN",
+  "Job ID",
+  "JobId",
+  "Job Id",
+  "Input RNR",
+  "Input RN",
+  "RNR/RN",
+  "RNR / RN",
+  "Reference Number",
+  "Job Reference",
+];
+const IMPORT_REGIONAL_NUMBER_COLUMNS = [
+  "Regional Number",
+  "Actual Regional Number",
+  "Act. Regional Number",
+  "Act Regional Number",
+  "ARN",
+  "Regional No",
+  "Regional No.",
+  "Regional #",
+  "Actual Regional No.",
+  "Regional",
+];
+const IMPORT_CLIENT_NAME_COLUMNS = [
+  "Client Name",
+  "CL NAME",
+  "Client",
+  "Name",
+  "Client Full Name",
+  "Name of Client",
+  "Owner Name",
+  "Applicant Name",
+  "Customer Name",
+];
 
 const IMPORT_STAGE_COLUMNS: Record<RegisterStageKey, string[]> = {
-  jobProductionLsCertification: ["Job Production / L/S Certification", "Job Production LS Certification", "4_ls_cert"],
-  examinationReceived: ["CSAU", "CSAU Received", "5_csau_payment"],
-  examinationChecking: ["Examination Checking", "6_1_checking"],
-  examinationCertified: ["Examination Cert.", "Examination Certification", "6_2_certified"],
-  regionChecked: ["Region Checked", "7_1_checked"],
-  regionApproved: ["Region Approved", "7_2_approved"],
-  regionBatched: ["Region Barcoded", "Region Barcode", "Region Batched", "7_3_barcoded"],
+  jobProductionLsCertification: [
+    "Job Production / L/S Certification",
+    "Job Production LS Certification",
+    "Job Production",
+    "L/S Certification",
+    "LS Certification",
+    "4_ls_cert",
+    "Stage 4",
+    "Step 4",
+  ],
+  examinationReceived: [
+    "CSAU",
+    "CSAU Received",
+    "CSAU - Payment",
+    "Payment",
+    "5_csau_payment",
+    "Stage 5",
+    "Step 5",
+  ],
+  examinationChecking: [
+    "Examination Checking",
+    "Examination Check",
+    "Checking",
+    "6_1_checking",
+    "Stage 6.1",
+    "Step 6.1",
+  ],
+  examinationCertified: [
+    "Examination Cert.",
+    "Examination Certification",
+    "Examination Certified",
+    "6_2_certified",
+    "Stage 6.2",
+    "Step 6.2",
+  ],
+  regionChecked: ["Region Checked", "Region Check", "7_1_checked", "Stage 7.1", "Step 7.1"],
+  regionApproved: ["Region Approved", "Region Approve", "7_2_approved", "Stage 7.2", "Step 7.2"],
+  regionBatched: [
+    "Region Barcoded",
+    "Region Barcode",
+    "Region Batched",
+    "Region Batch",
+    "7_3_barcoded",
+    "Stage 7.3",
+    "Step 7.3",
+  ],
 };
+
+const IMPORT_DETECTED_FIELD_TARGETS: ImportFieldTarget[] = [
+  { key: "clientName", label: "Client Name", candidates: IMPORT_CLIENT_NAME_COLUMNS },
+  { key: "rnr", label: "RNR", candidates: IMPORT_JOB_ID_COLUMNS },
+  { key: "regionalNumber", label: "Regional Number", candidates: IMPORT_REGIONAL_NUMBER_COLUMNS },
+  {
+    key: "jobProductionLsCertification",
+    label: "Job Production / L/S Certification",
+    candidates: IMPORT_STAGE_COLUMNS.jobProductionLsCertification,
+  },
+  {
+    key: "examinationReceived",
+    label: "CSAU",
+    candidates: IMPORT_STAGE_COLUMNS.examinationReceived,
+  },
+  {
+    key: "examinationChecking",
+    label: "Examination Checking",
+    candidates: IMPORT_STAGE_COLUMNS.examinationChecking,
+  },
+  {
+    key: "examinationCertified",
+    label: "Examination Cert.",
+    candidates: IMPORT_STAGE_COLUMNS.examinationCertified,
+  },
+  {
+    key: "regionChecked",
+    label: "Region Checked",
+    candidates: IMPORT_STAGE_COLUMNS.regionChecked,
+  },
+  {
+    key: "regionApproved",
+    label: "Region Approved",
+    candidates: IMPORT_STAGE_COLUMNS.regionApproved,
+  },
+  {
+    key: "regionBatched",
+    label: "Region Barcoded",
+    candidates: IMPORT_STAGE_COLUMNS.regionBatched,
+  },
+];
+
+function scoreImportColumnMatch(columnName: string, candidate: string): number {
+  const normalizedColumn = normalizeImportColumnName(columnName);
+  const normalizedCandidate = normalizeImportColumnName(candidate);
+
+  if (!normalizedColumn || !normalizedCandidate) {
+    return 0;
+  }
+
+  if (normalizedColumn === normalizedCandidate) {
+    return 100;
+  }
+
+  if (normalizedColumn.includes(normalizedCandidate)) {
+    return 88;
+  }
+
+  if (normalizedCandidate.includes(normalizedColumn)) {
+    return 72;
+  }
+
+  const columnTokens = new Set(normalizedColumn.split(" ").filter(Boolean));
+  const candidateTokens = normalizedCandidate.split(" ").filter(Boolean);
+  if (candidateTokens.length === 0) {
+    return 0;
+  }
+
+  let overlap = 0;
+  for (const token of candidateTokens) {
+    if (columnTokens.has(token)) {
+      overlap += 1;
+    }
+  }
+
+  if (overlap === 0) {
+    return 0;
+  }
+
+  const coverage = overlap / candidateTokens.length;
+  return Math.round(coverage * 65 + overlap * 5);
+}
+
+function looksLikeJobIdentifier(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  if (trimmed.length < 6 || trimmed.length > 64) {
+    return false;
+  }
+
+  if (!/[a-z]/i.test(trimmed) || !/\d/.test(trimmed)) {
+    return false;
+  }
+
+  if (!/[-/]/.test(trimmed) && !/\d{4}/.test(trimmed)) {
+    return false;
+  }
+
+  return /^[a-z0-9\s\-/]+$/i.test(trimmed);
+}
+
+// Retained for optional QA experiments; import flow is backend-only gateway mode.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function detectImportFieldMappings(
+  rows: Record<string, unknown>[]
+): ImportDetectedMapping[] {
+  if (rows.length === 0) {
+    return [];
+  }
+
+  const headers = Array.from(
+    new Set(
+      rows.flatMap((row) =>
+        Object.keys(row)
+          .map((name) => String(name ?? "").trim())
+          .filter(Boolean)
+      )
+    )
+  );
+
+  if (headers.length === 0) {
+    return [];
+  }
+
+  const usedHeaders = new Set<string>();
+
+  return IMPORT_DETECTED_FIELD_TARGETS.map((target) => {
+    let bestMatch:
+      | { header: string; score: number; exact: boolean }
+      | null = null;
+
+    for (const header of headers) {
+      if (usedHeaders.has(header)) continue;
+
+      for (const candidate of target.candidates) {
+        const score = scoreImportColumnMatch(header, candidate);
+        if (score <= 0) continue;
+
+        const exact =
+          normalizeImportColumnName(header) ===
+          normalizeImportColumnName(candidate);
+
+        if (
+          !bestMatch ||
+          score > bestMatch.score ||
+          (score === bestMatch.score && exact && !bestMatch.exact)
+        ) {
+          bestMatch = { header, score, exact };
+        }
+      }
+    }
+
+    if (bestMatch && bestMatch.score >= 52) {
+      usedHeaders.add(bestMatch.header);
+      return {
+        key: target.key,
+        label: target.label,
+        matchedColumn: bestMatch.header,
+        confidence: bestMatch.exact ? "exact" : "fuzzy",
+        score: bestMatch.score,
+      };
+    }
+
+    return {
+      key: target.key,
+      label: target.label,
+      confidence: "missing" as const,
+      score: 0,
+    };
+  });
+}
 
 function buildImportColumnLookup(row: Record<string, unknown>): Map<string, string> {
   const columnLookup = new Map<string, string>();
@@ -133,9 +395,33 @@ function readImportColumnValue(
   columnLookup: Map<string, string>,
   candidates: string[]
 ): string {
-  for (const candidate of candidates) {
-    const value = columnLookup.get(normalizeImportColumnName(candidate));
+  const normalizedCandidates = candidates
+    .map((candidate) => normalizeImportColumnName(candidate))
+    .filter(Boolean);
+
+  for (const candidate of normalizedCandidates) {
+    const value = columnLookup.get(candidate);
     if (value) return value;
+  }
+
+  let bestScore = 0;
+  let bestValue = "";
+
+  for (const [columnName, value] of columnLookup.entries()) {
+    if (!value) continue;
+
+    for (const candidate of normalizedCandidates) {
+      const score = scoreImportColumnMatch(columnName, candidate);
+      if (score > bestScore) {
+        bestScore = score;
+        bestValue = value;
+      }
+    }
+  }
+
+  // Keep threshold conservative so unrelated columns are not auto-mapped.
+  if (bestScore >= 52) {
+    return bestValue;
   }
 
   return "";
@@ -165,8 +451,13 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 }
 
 function formatBackendImportSummary(payload: Record<string, unknown>): string {
-  const nestedData = asRecord(payload.data);
-  const source = nestedData ?? payload;
+  const sources = [
+    payload,
+    asRecord(payload.data),
+    asRecord(payload.result),
+    asRecord(payload.summary),
+    asRecord(payload.stats),
+  ].filter((value): value is Record<string, unknown> => Boolean(value));
 
   const numericFields = [
     "total",
@@ -177,25 +468,54 @@ function formatBackendImportSummary(payload: Record<string, unknown>): string {
     "failed",
     "skipped",
     "duplicates",
+    "errors_count",
+    "warnings_count",
   ];
 
   const parts: string[] = [];
-  for (const key of numericFields) {
-    const value = source[key];
-    if (typeof value === "number") {
+  const seen = new Set<string>();
+
+  for (const source of sources) {
+    for (const key of numericFields) {
+      const value = source[key];
+      if (typeof value !== "number") continue;
+      const tag = `${key}:${value}`;
+      if (seen.has(tag)) continue;
+      seen.add(tag);
       parts.push(`${key}: ${value}`);
     }
   }
 
-  const message =
-    (typeof payload.message === "string" && payload.message.trim()) ||
-    (typeof source.message === "string" && source.message.trim()) ||
-    (typeof payload.detail === "string" && payload.detail.trim()) ||
-    (typeof source.detail === "string" && source.detail.trim()) ||
-    "";
+  for (const source of sources) {
+    const message =
+      (typeof source.message === "string" && source.message.trim()) ||
+      (typeof source.detail === "string" && source.detail.trim()) ||
+      "";
+    if (message && !seen.has(`msg:${message}`)) {
+      seen.add(`msg:${message}`);
+      parts.push(message);
+    }
 
-  if (message) {
-    parts.push(message);
+    const errors = source.errors;
+    if (Array.isArray(errors) && errors.length > 0) {
+      const firstErrors = errors
+        .slice(0, 2)
+        .map((entry) =>
+          typeof entry === "string"
+            ? entry
+            : JSON.stringify(entry)
+        )
+        .join(" | ");
+      parts.push(`errors: ${errors.length}${firstErrors ? ` (${firstErrors})` : ""}`);
+      break;
+    }
+  }
+
+  if (parts.length === 0) {
+    const raw = JSON.stringify(payload);
+    if (raw && raw !== "{}") {
+      return raw.length > 420 ? `${raw.slice(0, 420)}...` : raw;
+    }
   }
 
   return parts.join(" | ");
@@ -209,6 +529,8 @@ function canApplyImportRow(row: ImportPreviewRow, allowCreateUnmatched: boolean)
   return allowCreateUnmatched && row.canCreate;
 }
 
+// Retained for optional QA experiments; import flow is backend-only gateway mode.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function buildImportPreviewRows(
   rows: Record<string, unknown>[],
   jobs: Job[]
@@ -231,7 +553,19 @@ function buildImportPreviewRows(
 
   return rows.map((row, index) => {
     const columnLookup = buildImportColumnLookup(row);
-    const rowJobId = readImportColumnValue(columnLookup, IMPORT_JOB_ID_COLUMNS);
+    const regionalNumberFromColumns = readImportColumnValue(
+      columnLookup,
+      IMPORT_REGIONAL_NUMBER_COLUMNS
+    );
+    const rowJobIdFromColumns = readImportColumnValue(
+      columnLookup,
+      IMPORT_JOB_ID_COLUMNS
+    );
+    const rowJobId =
+      rowJobIdFromColumns ||
+      (looksLikeJobIdentifier(regionalNumberFromColumns)
+        ? regionalNumberFromColumns
+        : "");
 
     if (!rowJobId) {
       return {
@@ -270,7 +604,7 @@ function buildImportPreviewRows(
       hasStageData = true;
     }
 
-    const regionalNumber = readImportColumnValue(columnLookup, IMPORT_REGIONAL_NUMBER_COLUMNS);
+    const regionalNumber = regionalNumberFromColumns;
     const hasRegionalNumber = Boolean(regionalNumber);
     const normalizedRegional = (regionalNumber || "").trim().toLowerCase();
     const currentRegional = (matchedJob?.regionalNumber || "").trim().toLowerCase();
@@ -1062,6 +1396,7 @@ export default function JobsRegisterPage() {
   const [importFeedback, setImportFeedback] = useState("");
   const [importFileName, setImportFileName] = useState("");
   const [importPreviewRows, setImportPreviewRows] = useState<ImportPreviewRow[]>([]);
+  const [importDetectedMappings, setImportDetectedMappings] = useState<ImportDetectedMapping[]>([]);
   const [showImportPreview, setShowImportPreview] = useState(false);
   const [allowCreateUnmatched, setAllowCreateUnmatched] = useState(false);
   const [search, setSearch] = useState(urlSearch);
@@ -1268,56 +1603,33 @@ export default function JobsRegisterPage() {
     if (!file) return;
 
     setImportFeedback("");
+    setImportDetectedMappings([]);
     setImporting(true);
 
     try {
-      try {
-        const backendImport = await jobsApi.import(file);
-        const summary = formatBackendImportSummary(backendImport.response);
+      const backendImport = await jobsApi.import(file);
+      const summary = formatBackendImportSummary(backendImport.response);
 
-        await loadJobs();
-        setShowImportPreview(false);
-        setImportPreviewRows([]);
-        setImportFileName(file.name);
-        setImportFeedback(
-          summary
-            ? `Backend import complete via ${backendImport.endpoint}: ${summary}`
-            : `Backend import complete via ${backendImport.endpoint}.`
-        );
-        return;
-      } catch (backendError) {
-        const backendMessage =
-          backendError instanceof Error ? backendError.message : "Unknown backend import error";
-
-      const XLSX = await import("xlsx");
-      const fileBuffer = await file.arrayBuffer();
-      const workbook = XLSX.read(fileBuffer, { type: "array" });
-      const firstSheetName = workbook.SheetNames[0];
-
-      if (!firstSheetName) {
-        throw new Error("Excel file has no worksheet.");
-      }
-
-      const sheet = workbook.Sheets[firstSheetName];
-      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
-        defval: "",
-      });
-
-      if (rows.length === 0) {
-        setImportFeedback("No rows found in the selected Excel file.");
-        return;
-      }
-      const previewRows = buildImportPreviewRows(rows, jobs);
-      setImportFileName(file.name);
-      setImportPreviewRows(previewRows);
-      setShowImportPreview(true);
+      await loadJobs();
+      setShowImportPreview(false);
+      setImportPreviewRows([]);
+      setImportDetectedMappings([]);
       setAllowCreateUnmatched(false);
+      setImportFileName(file.name);
       setImportFeedback(
-        `Backend bulk import failed; preview fallback ready (${previewRows.length} rows). Error: ${backendMessage}`
+        summary
+          ? `Backend import complete via ${backendImport.endpoint}: ${summary}`
+          : `Backend import complete via ${backendImport.endpoint}.`
       );
-      }
     } catch (error) {
-      setImportFeedback(error instanceof Error ? error.message : "Failed to import Excel file.");
+      setShowImportPreview(false);
+      setImportPreviewRows([]);
+      setImportDetectedMappings([]);
+      const message =
+        error instanceof Error && error.message.trim()
+          ? error.message
+          : "Backend import failed.";
+      setImportFeedback(message);
     } finally {
       setImporting(false);
       event.target.value = "";
@@ -1428,6 +1740,7 @@ export default function JobsRegisterPage() {
       await loadJobs();
       setShowImportPreview(false);
       setImportPreviewRows([]);
+      setImportDetectedMappings([]);
       setImportFileName("");
       setImportFeedback(
         `Import complete: ${updated} updated, ${created} created, ${failed} failed, ${skipped} skipped, ${notFound} source rows were originally unmatched.${failureSummary}`
@@ -1748,7 +2061,10 @@ export default function JobsRegisterPage() {
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
           onClick={() => {
-            if (!importing) setShowImportPreview(false);
+            if (!importing) {
+              setShowImportPreview(false);
+              setImportDetectedMappings([]);
+            }
           }}
         >
           <div
@@ -1764,7 +2080,10 @@ export default function JobsRegisterPage() {
               </div>
               <button
                 onClick={() => {
-                  if (!importing) setShowImportPreview(false);
+                  if (!importing) {
+                    setShowImportPreview(false);
+                    setImportDetectedMappings([]);
+                  }
                 }}
                 className="p-1 rounded-lg hover:bg-gray-100 text-[#9ca3af]"
                 disabled={importing}
@@ -1803,6 +2122,43 @@ export default function JobsRegisterPage() {
                 />
                 Allow creating unmatched rows
               </label>
+
+              {importDetectedMappings.length > 0 && (
+                <div className="mt-3 rounded-lg border border-[#dbeafe] bg-[#f8fbff] px-3 py-3">
+                  <p className="text-[12px] font-semibold text-[#1e3a8a] mb-2">Detected Column Mapping</p>
+                  <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                    {importDetectedMappings.map((mapping) => {
+                      const confidenceTone =
+                        mapping.confidence === "exact"
+                          ? "bg-[#ecfdf3] text-[#166534]"
+                          : mapping.confidence === "fuzzy"
+                            ? "bg-[#fffbeb] text-[#b45309]"
+                            : "bg-[#f3f4f6] text-[#4b5563]";
+
+                      const confidenceLabel =
+                        mapping.confidence === "exact"
+                          ? "Exact"
+                          : mapping.confidence === "fuzzy"
+                            ? "Fuzzy"
+                            : "Missing";
+
+                      return (
+                        <div key={mapping.key} className="rounded-md border border-[#dbeafe] bg-white px-2.5 py-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-semibold text-[#1f2937]">{mapping.label}</span>
+                            <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${confidenceTone}`}>
+                              {confidenceLabel}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-[11px] text-[#4b5563] truncate" title={mapping.matchedColumn || "Not detected"}>
+                            {mapping.matchedColumn || "Not detected"}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="max-h-[55vh] overflow-auto">
@@ -1873,7 +2229,10 @@ export default function JobsRegisterPage() {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setShowImportPreview(false)}
+                  onClick={() => {
+                    setShowImportPreview(false);
+                    setImportDetectedMappings([]);
+                  }}
                   disabled={importing}
                   className="h-[36px] px-4 border border-[#d1d5db] rounded-lg text-[12px] font-semibold text-[#374151] hover:bg-white disabled:opacity-60"
                 >
