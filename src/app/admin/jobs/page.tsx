@@ -126,8 +126,8 @@ type ImportHistoryEntry = {
 
 const IMPORT_HISTORY_STORAGE_KEY = "_jobs_import_history_v1";
 
-const JOBS_PAGE_SIZE_OPTIONS = [50, 100, 200] as const;
-const DEFAULT_JOBS_PAGE_SIZE = 100;
+const JOBS_PAGE_SIZE_OPTIONS = [50] as const;
+const DEFAULT_JOBS_PAGE_SIZE = 50;
 
 function normalizeRegisterStage(value?: RegisterStageValue): RegisterStageEntry | undefined {
   if (value === true) {
