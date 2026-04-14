@@ -9,7 +9,11 @@
  */
 
 /* ─── Base URLs ───────────────────────────────────────────── */
-import type { JobRegisterRecord, UpdateJobRegisterPayload } from "@/types/register";
+import type {
+  JobRegisterRecord,
+  RegisterStageKey,
+  UpdateJobRegisterPayload,
+} from "@/types/register";
 
 const BACKEND_URL = "/backend-api"; // Proxied → Railway backend
 const LOCAL_URL = "/api"; // Local Next.js API routes
@@ -176,6 +180,12 @@ function parseRegisterRecordFromDescription(
       typeof parsed.actualRegionalNumber === "string"
         ? parsed.actualRegionalNumber
         : undefined;
+    const clearedStageKeys = Array.isArray(parsed.clearedStageKeys)
+      ? parsed.clearedStageKeys.filter(
+          (key): key is RegisterStageKey =>
+            typeof key === "string" && key.trim().length > 0
+        )
+      : undefined;
 
     const updatedAt =
       typeof parsed.updatedAt === "string" && parsed.updatedAt.trim()
@@ -186,6 +196,7 @@ function parseRegisterRecordFromDescription(
       jobId,
       actualRegionalNumber,
       stages,
+      clearedStageKeys,
       updatedAt,
       source: "backend",
     };
@@ -203,6 +214,10 @@ function buildDescriptionWithRegisterRecord(
     jobId: record.jobId,
     actualRegionalNumber: record.actualRegionalNumber,
     stages: record.stages,
+    clearedStageKeys:
+      Array.isArray(record.clearedStageKeys) && record.clearedStageKeys.length > 0
+        ? record.clearedStageKeys
+        : undefined,
     updatedAt: record.updatedAt,
   };
 
@@ -1298,25 +1313,30 @@ async function requestJobEndpoint<T>(
 
   for (let i = 0; i < candidates.length; i += 1) {
     const candidate = candidates[i];
-    try {
-      // Encode the candidate with encodeURIComponent() - converts SGGA C5467/2026 → SGGA%20C5467%2F2026
-      let encodedCandidate = encodeURIComponent(candidate);
-      
-      // Double-encode slashes as fallback: if next.config rewrite decodes, %2F → %252F stays encoded
-      if (candidate.includes("/")) {
-        encodedCandidate = encodedCandidate.replace(/%2F/g, "%252F");
-      }
-      
-      return await backendRequest<T>(
-        `/jobs/${encodedCandidate}${suffix}`,
-        options
-      );
-    } catch (err) {
-      lastError = err;
-      const message = err instanceof Error ? err.message : "";
-      const isLast = i === candidates.length - 1;
-      if (isLast || !isLikelyNotFoundError(message)) {
-        throw err;
+    const singleEncodedCandidate = encodeURIComponent(candidate);
+    const encodedVariants = candidate.includes("/")
+      ? [
+          singleEncodedCandidate,
+          // Fallback for environments where an intermediate layer decodes `%2F`.
+          singleEncodedCandidate.replace(/%2F/g, "%252F"),
+        ]
+      : [singleEncodedCandidate];
+
+    const uniqueEncodedVariants = Array.from(new Set(encodedVariants));
+
+    for (let j = 0; j < uniqueEncodedVariants.length; j += 1) {
+      const encodedCandidate = uniqueEncodedVariants[j];
+      const isLastAttempt =
+        i === candidates.length - 1 && j === uniqueEncodedVariants.length - 1;
+
+      try {
+        return await backendRequest<T>(`/jobs/${encodedCandidate}${suffix}`, options);
+      } catch (err) {
+        lastError = err;
+        const message = err instanceof Error ? err.message : "";
+        if (isLastAttempt || !isLikelyNotFoundError(message)) {
+          throw err;
+        }
       }
     }
   }
@@ -1987,15 +2007,20 @@ export const registerFieldsApi = {
         jobId,
         actualRegionalNumber: "",
         stages: {},
+        clearedStageKeys: [],
         updatedAt: new Date().toISOString(),
       };
 
     const mergedStages = { ...existing.stages };
+    const clearedStageKeySet = new Set<RegisterStageKey>(existing.clearedStageKeys ?? []);
     for (const [key, value] of Object.entries(payload.stages ?? {})) {
+      const typedKey = key as RegisterStageKey;
       if (value === null) {
-        delete mergedStages[key as keyof typeof mergedStages];
+        delete mergedStages[typedKey as keyof typeof mergedStages];
+        clearedStageKeySet.add(typedKey);
       } else {
-        mergedStages[key as keyof typeof mergedStages] = value;
+        mergedStages[typedKey as keyof typeof mergedStages] = value;
+        clearedStageKeySet.delete(typedKey);
       }
     }
 
@@ -2004,12 +2029,15 @@ export const registerFieldsApi = {
       actualRegionalNumber:
         payload.actualRegionalNumber?.trim() ?? existing.actualRegionalNumber,
       stages: mergedStages,
+      clearedStageKeys:
+        clearedStageKeySet.size > 0 ? Array.from(clearedStageKeySet) : undefined,
       updatedAt: new Date().toISOString(),
       source: "backend",
     };
 
     const hasPersistedValues =
       Object.keys(mergedStages).length > 0 ||
+      (record.clearedStageKeys?.length ?? 0) > 0 ||
       Boolean(record.actualRegionalNumber?.trim());
 
     const nextDescription = hasPersistedValues

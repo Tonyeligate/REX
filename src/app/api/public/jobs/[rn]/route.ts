@@ -24,6 +24,11 @@ type LookupResult = {
   error?: string;
 };
 
+function isBackendNotFoundDetail(detail: unknown): boolean {
+  if (typeof detail !== "string") return false;
+  return /not\s*found|no\s+\w+\s+matches\s+the\s+given\s+query/i.test(detail);
+}
+
 function normalizeTrackingKey(value?: string | null): string {
   return (value ?? "").trim().toLowerCase().replace(/\s+/g, "");
 }
@@ -111,6 +116,9 @@ async function lookupJob(query: string, authorization?: string): Promise<LookupR
       typeof body === "object"
         ? (body as Record<string, unknown>).detail
         : undefined;
+    if (isBackendNotFoundDetail(detail)) {
+      continue;
+    }
 
     return {
       status: tracking.status,
@@ -139,6 +147,9 @@ async function lookupJob(query: string, authorization?: string): Promise<LookupR
       typeof body === "object"
         ? (body as Record<string, unknown>).detail
         : undefined;
+    if (isBackendNotFoundDetail(detail)) {
+      return { status: 404, job: null };
+    }
 
     return {
       status: direct.status,
@@ -165,6 +176,9 @@ async function lookupJob(query: string, authorization?: string): Promise<LookupR
       typeof body === "object"
         ? (body as Record<string, unknown>).detail
         : undefined;
+    if (isBackendNotFoundDetail(detail)) {
+      return { status: 404, job: null };
+    }
 
     return {
       status: listRes.status,
