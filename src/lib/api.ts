@@ -1142,14 +1142,9 @@ async function resolveBackendJobPathKey(rnOrId: string): Promise<string> {
   }
 
   // RN strings containing spaces/slashes can fail as path params on some backends.
-  // Prefer numeric ID for path parameters when RN has special characters.
   if (!/[\s/]/.test(query)) return query;
 
   const listMatch = await findJobInList(query);
-  // If RN has spaces/slashes, return the numeric ID instead to avoid path routing issues
-  if (listMatch && /[\s/]/.test(listMatch.rn)) {
-    return String(listMatch.id);
-  }
   return listMatch?.rn?.trim() || query;
 }
 
@@ -1157,13 +1152,8 @@ function getJobPathCandidates(lookupKey: string): string[] {
   const key = lookupKey.trim();
   if (!key) return [key];
 
-  const candidates = [key];
-  if (key.includes("/")) {
-    // Double-encode slash as a fallback for backends that decode path segments early.
-    candidates.push(key.replace(/\//g, "%2F"));
-  }
-
-  return Array.from(new Set(candidates));
+  // Return only the raw key; encodeURIComponent() will handle all encoding once
+  return [key];
 }
 
 async function requestJobEndpoint<T>(
