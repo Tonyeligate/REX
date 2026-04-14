@@ -1918,6 +1918,13 @@ export default function JobsRegisterPage() {
     return jobs.filter((job) => job.status === statusFilter);
   }, [jobs, statusFilter]);
 
+  // Slice to current page (backend may return all results; this ensures pagination on frontend)
+  const paginatedJobs = useMemo(() => {
+    const start = (safeCurrentPage - 1) * pageSize;
+    const end = start + pageSize;
+    return visibleJobs.slice(start, end);
+  }, [visibleJobs, safeCurrentPage, pageSize]);
+
   const selectedJobIdSet = useMemo(() => new Set(selectedJobIds), [selectedJobIds]);
 
   const visibleJobIds = useMemo(
@@ -3001,7 +3008,7 @@ export default function JobsRegisterPage() {
                   </td>
                 </tr>
               ) : (
-                visibleJobs.map((job, index) => {
+                paginatedJobs.map((job, index) => {
                   const rowNumber = currentPageStartIndex + index;
                   const isEven = (rowNumber - 1) % 2 === 0;
                   const isSelected = selectedJobIdSet.has(job.id);
