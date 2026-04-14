@@ -1005,7 +1005,9 @@ function isNumericJobId(value: string): boolean {
 }
 
 function isLikelyNotFoundError(message: string): boolean {
-  return /(\b404\b|not\s*found|request failed:\s*404)/i.test(message);
+  return /(\b404\b|not\s*found|request failed:\s*404|no\s+\w+\s+matches\s+the\s+given\s+query)/i.test(
+    message
+  );
 }
 
 function isMethodNotAllowedError(message: string): boolean {
@@ -1249,9 +1251,10 @@ async function getResolvedJobPathCandidates(lookupKey: string): Promise<string[]
   return Array.from(
     new Set(
       [
-        String(listMatch.id),
         listMatch.rn?.trim() ?? "",
+        listMatch.regional_number?.trim() ?? "",
         ...baseCandidates,
+        String(listMatch.id),
       ]
         .map((value) => value.trim())
         .filter(Boolean)
