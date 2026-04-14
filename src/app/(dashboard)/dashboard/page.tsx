@@ -130,7 +130,7 @@ export default function DashboardHome() {
           <ActionCard
             title="Search Job Status"
             desc="Look up a job by ID or regional number in seconds."
-            href="/client/dashboard"
+            href="/client/tracking"
             icon={Search}
             accent="from-emerald-600 to-teal-500"
           />

@@ -22,7 +22,6 @@ import {
   Ruler,
   CalendarDays,
   UserRound,
-  Wallet,
 } from "lucide-react";
 import type { Job, JobStepDecision, WorkflowStep } from "@/types/job";
 import { jobsApi, STATUS_STEP_MAP } from "@/lib/api";
@@ -260,7 +259,7 @@ function buildClientAlignedStages(job: Job): ClientAlignedStage[] {
         registerMetaEntry?.comment?.trim() ||
         latestDecision?.comment?.trim() ||
         fallbackStep?.comment?.trim() ||
-        "No backend comment for this stage yet.",
+        "No comment has been added for this stage yet.",
     };
   });
 }
@@ -287,7 +286,7 @@ export default function ClientDashboardPage() {
     setLoading(true);
     setJob(null);
     setSearchError("");
-    setSyncState({ status: "syncing", updatedAt: Date.now(), message: "Checking latest backend status..." });
+    setSyncState({ status: "syncing", updatedAt: Date.now(), message: "Checking latest status..." });
     try {
       const { jobs } = await jobsApi.search(trimmed);
       await new Promise((r) => setTimeout(r, 250));
@@ -297,7 +296,7 @@ export default function ClientDashboardPage() {
         setSyncState({
           status: "ok",
           updatedAt: Date.now(),
-          message: "Connected to backend updates",
+          message: "Live updates connected",
         });
       } else {
         setJob(null);
@@ -436,7 +435,7 @@ export default function ClientDashboardPage() {
           Track Your <span className="client-gradient-text">Job Status</span>
         </h1>
         <p className="m-0 text-[#475569] dark:text-slate-300 text-[14px] sm:text-[16px] max-w-[640px] mx-auto mb-6">
-          Enter your RNR or actual regional number to view the latest backend workflow progress.
+          Enter your RNR or regional number to view the latest workflow progress.
         </p>
 
         {/* Search bar */}
@@ -685,11 +684,10 @@ export default function ClientDashboardPage() {
                   { label: "Job ID", value: job.jobId, icon: <BadgeInfo size={14} className="text-[#2563eb]" /> },
                   { label: "Title", value: job.jobType, icon: <ClipboardList size={14} className="text-[#0f766e]" /> },
                   { label: "Status", value: workflowSummary.currentStatusLabel, icon: <BadgeCheck size={14} className="text-[#16a34a]" /> },
+                  { label: "Client", value: job.clientName || "—", icon: <UserRound size={14} className="text-[#0f766e]" /> },
                   { label: "Regional No.", value: job.regionalNumber ?? "—", icon: <MapPinned size={14} className="text-[#9333ea]" /> },
                   { label: "Parcel Size", value: job.parcelSize ?? "—", icon: <Ruler size={14} className="text-[#ea580c]" /> },
                   { label: "Created", value: new Date(job.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }), icon: <CalendarDays size={14} className="text-[#0369a1]" /> },
-                  { label: "Assigned to", value: job.assignedTo ?? "—", icon: <UserRound size={14} className="text-[#4f46e5]" /> },
-                  { label: "Payment", value: job.paymentAmount ?? "—", icon: <Wallet size={14} className="text-[#be123c]" /> },
                 ].map((row) => (
                   <div key={row.label} className="rounded-[14px] border border-[#efe2d2] dark:border-slate-700/70 bg-gradient-to-br from-white to-[#fffaf3] dark:from-slate-900/85 dark:to-slate-800/60 p-3.5 sm:p-4 client-surface-interactive">
                     <div className="flex items-center justify-between gap-4">
@@ -729,7 +727,7 @@ export default function ClientDashboardPage() {
               className="client-surface-glass rounded-[16px] py-3.5 px-4 sm:px-6 flex items-center justify-center gap-2 text-[12px] sm:text-[13px] text-[#475569] dark:text-slate-200"
             >
               <ShieldCheck size={15} className="text-[#15803d]" />
-              Secure workflow data synced with backend every 20 seconds while this tracker is active.
+              Secure workflow data refreshes every 20 seconds while this tracker is active.
             </motion.div>
           </motion.div>
         )}

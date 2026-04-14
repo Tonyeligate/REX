@@ -54,7 +54,7 @@ export default function AppHeader({
       rawHref === "/admin"
         ? "/dashboard"
         : rawHref === "/client"
-          ? "/client/dashboard"
+          ? "/client/tracking"
           : rawHref;
 
     return {

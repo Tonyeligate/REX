@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function ClientRegisterPage() {
-  redirect("/client/dashboard");
+  redirect("/client/tracking");
 }
