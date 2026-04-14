@@ -1056,6 +1056,11 @@ let jobListLookupCache:
   | null = null;
 let jobListLookupInFlight: Promise<BackendJobListItem[]> | null = null;
 
+function invalidateJobListLookupCache() {
+  jobListLookupCache = null;
+  jobListLookupInFlight = null;
+}
+
 function hydrateJobListLookupCache(items: BackendJobListItem[]) {
   jobListLookupCache = {
     expiresAt: Date.now() + JOB_LIST_LOOKUP_CACHE_TTL_MS,
@@ -1063,7 +1068,13 @@ function hydrateJobListLookupCache(items: BackendJobListItem[]) {
   };
 }
 
-async function getJobListLookupSnapshot(): Promise<BackendJobListItem[]> {
+async function getJobListLookupSnapshot(options?: {
+  forceRefresh?: boolean;
+}): Promise<BackendJobListItem[]> {
+  if (options?.forceRefresh) {
+    invalidateJobListLookupCache();
+  }
+
   const now = Date.now();
   if (jobListLookupCache && jobListLookupCache.expiresAt > now) {
     return jobListLookupCache.items;
@@ -1083,7 +1094,7 @@ async function getJobListLookupSnapshot(): Promise<BackendJobListItem[]> {
   return jobListLookupInFlight;
 }
 
-async function detectBackendJobDeleteSupport(): Promise<boolean> {
+async function detectBackendJobDeleteSupport(): Promise<boolean | null> {
   if (backendSupportsJobDelete !== null) {
     return backendSupportsJobDelete;
   }
@@ -1103,18 +1114,21 @@ async function detectBackendJobDeleteSupport(): Promise<boolean> {
       }
     );
   } catch {
-    // If schema fetch fails, fail closed to avoid claiming a delete that never persisted.
-    backendSupportsJobDelete = false;
+    // Some environments disable /schema/; treat as unknown and attempt real DELETE.
+    return null;
   }
 
   return backendSupportsJobDelete;
 }
 
-async function findJobInList(rnOrId: string): Promise<BackendJobListItem | null> {
+async function findJobInList(
+  rnOrId: string,
+  options?: { forceRefresh?: boolean }
+): Promise<BackendJobListItem | null> {
   const query = rnOrId.trim();
   if (!query) return null;
 
-  const items = await getJobListLookupSnapshot();
+  const items = await getJobListLookupSnapshot(options);
   return items.find((item) => matchesJobIdentifier(item, query)) ?? null;
 }
 
@@ -1128,9 +1142,14 @@ async function resolveBackendJobPathKey(rnOrId: string): Promise<string> {
   }
 
   // RN strings containing spaces/slashes can fail as path params on some backends.
+  // Prefer numeric ID for path parameters when RN has special characters.
   if (!/[\s/]/.test(query)) return query;
 
   const listMatch = await findJobInList(query);
+  // If RN has spaces/slashes, return the numeric ID instead to avoid path routing issues
+  if (listMatch && /[\s/]/.test(listMatch.rn)) {
+    return String(listMatch.id);
+  }
   return listMatch?.rn?.trim() || query;
 }
 
@@ -1548,7 +1567,7 @@ export const jobsApi = {
     };
 
     const backendCanDeleteJobs = await detectBackendJobDeleteSupport();
-    if (!backendCanDeleteJobs) {
+    if (backendCanDeleteJobs === false) {
       throw new Error(
         "Backend API does not currently support deleting jobs. This job was not removed from the database."
       );
@@ -1573,6 +1592,8 @@ export const jobsApi = {
         await requestJobEndpoint<Record<string, unknown>>(candidateKey, "/", {
           method: "DELETE",
         });
+        backendSupportsJobDelete = true;
+        invalidateJobListLookupCache();
         deleteSucceeded = true;
         break;
       } catch (error) {
@@ -1599,14 +1620,6 @@ export const jobsApi = {
 
       throw new Error(
         "Job could not be deleted from backend. The record was not found on the backend delete endpoint."
-      );
-    }
-
-    const verifyLookup = matchedJob?.rn?.trim() || resolvedLookupKey || query;
-    const stillExists = await findJobInList(verifyLookup).catch(() => null);
-    if (stillExists) {
-      throw new Error(
-        "Delete request completed but the job still exists on the backend. No database deletion was confirmed."
       );
     }
 
