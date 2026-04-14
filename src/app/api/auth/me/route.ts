@@ -1,31 +1,22 @@
 import { NextResponse } from "next/server";
 
-function notAvailable() {
-  return NextResponse.json(
-    {
-      error:
-        "Mock route removed. This endpoint is not implemented on the Railway backend yet.",
-    },
-    { status: 501 }
-  );
-}
+const BACKEND_ORIGIN = process.env.NEXT_PUBLIC_BACKEND_URL;
 
-export async function GET() {
-  return notAvailable();
-}
+// GET /api/auth/me — proxy to backend /api/auth/me/
+export async function GET(req: Request) {
+  if (!BACKEND_ORIGIN) {
+    return NextResponse.json(
+      { error: "Backend URL is not configured." },
+      { status: 500 }
+    );
+  }
 
-export async function POST() {
-  return notAvailable();
-}
+  const authorization = req.headers.get("authorization");
+  const upstream = await fetch(`${BACKEND_ORIGIN}/api/auth/me/`, {
+    headers: authorization ? { Authorization: authorization } : undefined,
+    cache: "no-store",
+  });
 
-export async function PUT() {
-  return notAvailable();
-}
-
-export async function PATCH() {
-  return notAvailable();
-}
-
-export async function DELETE() {
-  return notAvailable();
+  const body = await upstream.json().catch(() => ({}));
+  return NextResponse.json(body, { status: upstream.status });
 }
