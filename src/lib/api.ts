@@ -1167,8 +1167,13 @@ async function requestJobEndpoint<T>(
   for (let i = 0; i < candidates.length; i += 1) {
     const candidate = candidates[i];
     try {
+      // Use the URL constructor to properly encode pathname segments
+      // This handles spaces and slashes correctly without double-encoding
+      const url = new URL(`/jobs/${candidate}${suffix}`, "http://localhost");
+      const encodedPath = url.pathname;
+      
       return await backendRequest<T>(
-        `/jobs/${encodeURIComponent(candidate)}${suffix}`,
+        encodedPath,
         options
       );
     } catch (err) {
