@@ -1346,6 +1346,19 @@ async function requestJobEndpoint<T>(
     : new Error("Unable to resolve job endpoint path.");
 }
 
+function getEncodedJobPathVariants(candidate: string): string[] {
+  const singleEncodedCandidate = encodeURIComponent(candidate);
+  const encodedVariants = candidate.includes("/")
+    ? [
+        singleEncodedCandidate,
+        // Fallback for environments where an intermediate layer decodes `%2F`.
+        singleEncodedCandidate.replace(/%2F/g, "%252F"),
+      ]
+    : [singleEncodedCandidate];
+
+  return Array.from(new Set(encodedVariants));
+}
+
 async function fetchJobDetailWithHistory(lookupKey: string) {
   const detail = await requestJobEndpoint<BackendJobDetail>(lookupKey, "/");
   const job = mapBackendJob(detail);
@@ -1688,10 +1701,7 @@ export const jobsApi = {
       throw new Error("Job identifier is required for deletion.");
     }
 
-    const matchedJob = await findJobInList(query).catch(() => null);
-    const resolvedLookupKey = await resolveBackendJobPathKey(query);
-
-    const cleanupRegisterCache = () => {
+    const cleanupRegisterCache = (matchedJob?: BackendJobListItem | null) => {
       const records = readRegisterFieldsMap();
       const keysToDelete = new Set<string>([
         query,
@@ -1712,69 +1722,105 @@ export const jobsApi = {
       }
     };
 
-    const backendCanDeleteJobs = await detectBackendJobDeleteSupport();
-    if (backendCanDeleteJobs === false) {
+    if (backendSupportsJobDelete === false) {
       throw new Error(
         "Backend API does not currently support deleting jobs. This job was not removed from the database."
       );
     }
 
+    const tryDeleteForKey = async (candidateKey: string): Promise<"deleted" | "not_found"> => {
+      const normalizedKey = candidateKey.trim();
+      if (!normalizedKey) return "not_found";
+
+      const encodedCandidates = getEncodedJobPathVariants(normalizedKey);
+      let lastError: unknown = null;
+
+      for (let i = 0; i < encodedCandidates.length; i += 1) {
+        const encodedCandidate = encodedCandidates[i];
+        try {
+          await backendRequest<Record<string, unknown>>(`/jobs/${encodedCandidate}/`, {
+            method: "DELETE",
+          });
+          backendSupportsJobDelete = true;
+          return "deleted";
+        } catch (error) {
+          lastError = error;
+          const message = error instanceof Error ? error.message : "";
+          if (isMethodNotAllowedError(message)) {
+            backendSupportsJobDelete = false;
+            throw new Error(
+              "Backend API rejected job deletion (405 Method Not Allowed). This job was not removed from the database."
+            );
+          }
+
+          if (!isLikelyNotFoundError(message)) {
+            throw error;
+          }
+        }
+      }
+
+      if (lastError && !isLikelyNotFoundError(lastError instanceof Error ? lastError.message : "")) {
+        throw lastError;
+      }
+
+      return "not_found";
+    };
+
+    // Fast path: try deleting the provided identifier directly first.
+    const fastDelete = await tryDeleteForKey(query);
+    if (fastDelete === "deleted") {
+      invalidateJobListLookupCache();
+      cleanupRegisterCache(null);
+      return {
+        success: true,
+        mode: "backend" as const,
+        message: "Job deleted from backend successfully.",
+      };
+    }
+
+    // Fallback path: resolve candidate ids/rn only if direct delete did not find a job.
+    const matchedJob = await findJobInList(query).catch(() => null);
+    const resolvedLookupKey = await resolveBackendJobPathKey(query).catch(() => query);
     const candidateDeleteKeys = Array.from(
       new Set(
         [
           matchedJob ? String(matchedJob.id) : "",
           matchedJob?.rn?.trim() ?? "",
+          matchedJob?.regional_number?.trim() ?? "",
           resolvedLookupKey,
           query,
-        ].map((value) => value.trim()).filter(Boolean)
+        ]
+          .map((value) => value.trim())
+          .filter(Boolean)
       )
     );
 
-    let deleteSucceeded = false;
-    let lastDeleteError: unknown = null;
-
     for (const candidateKey of candidateDeleteKeys) {
-      try {
-        await requestJobEndpoint<Record<string, unknown>>(candidateKey, "/", {
-          method: "DELETE",
-        });
-        backendSupportsJobDelete = true;
+      const result = await tryDeleteForKey(candidateKey);
+      if (result === "deleted") {
         invalidateJobListLookupCache();
-        deleteSucceeded = true;
-        break;
-      } catch (error) {
-        lastDeleteError = error;
-        const message = error instanceof Error ? error.message : "";
-
-        if (isMethodNotAllowedError(message)) {
-          backendSupportsJobDelete = false;
-          throw new Error(
-            "Backend API rejected job deletion (405 Method Not Allowed). This job was not removed from the database."
-          );
-        }
-
-        if (!isLikelyNotFoundError(message)) {
-          throw error;
-        }
+        cleanupRegisterCache(matchedJob);
+        return {
+          success: true,
+          mode: "backend" as const,
+          message: "Job deleted from backend successfully.",
+        };
       }
     }
 
-    if (!deleteSucceeded) {
-      if (lastDeleteError instanceof Error) {
-        throw lastDeleteError;
+    // Final compatibility check only if delete attempts could not find the record.
+    if (backendSupportsJobDelete === null) {
+      const backendCanDeleteJobs = await detectBackendJobDeleteSupport();
+      if (backendCanDeleteJobs === false) {
+        throw new Error(
+          "Backend API does not currently support deleting jobs. This job was not removed from the database."
+        );
       }
-
-      throw new Error(
-        "Job could not be deleted from backend. The record was not found on the backend delete endpoint."
-      );
     }
 
-    cleanupRegisterCache();
-    return {
-      success: true,
-      mode: "backend" as const,
-      message: "Job deleted from backend successfully.",
-    };
+    throw new Error(
+      "Job could not be deleted from backend. The record was not found on the backend delete endpoint."
+    );
   },
 
   advanceStep: async (

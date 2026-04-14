@@ -1746,6 +1746,57 @@ function RegisterRowModal({
   );
 }
 
+function ConfirmActionModal({
+  title,
+  message,
+  confirmLabel,
+  confirmClassName,
+  loading,
+  onCancel,
+  onConfirm,
+}: {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  confirmClassName: string;
+  loading?: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onCancel}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="px-6 py-4 border-b border-[#e5e7eb] bg-[#f8f9fa] flex items-center gap-2">
+          <AlertTriangle size={16} className="text-amber-600" />
+          <h3 className="text-[15px] font-bold text-[#1f2937]">{title}</h3>
+        </div>
+        <div className="px-6 py-5">
+          <p className="text-[13px] text-[#4b5563] leading-relaxed">{message}</p>
+          <div className="flex gap-3 pt-5">
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={loading}
+              className="flex-1 h-[40px] border border-[#e5e7eb] rounded-lg text-[13px] font-semibold text-[#4b5563] hover:bg-gray-50 disabled:opacity-60"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={onConfirm}
+              disabled={loading}
+              className={`flex-1 h-[40px] rounded-lg text-[13px] font-semibold text-white disabled:opacity-60 flex items-center justify-center gap-2 ${confirmClassName}`}
+            >
+              {loading && <Loader2 size={14} className="animate-spin" />}
+              {confirmLabel}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function JobsRegisterPage() {
   const searchParams = useSearchParams();
   const urlSearch = searchParams.get("q") ?? "";
@@ -1773,6 +1824,11 @@ export default function JobsRegisterPage() {
   const [selectedJobIds, setSelectedJobIds] = useState<string[]>([]);
   const [jobFeedback, setJobFeedback] = useState<
     { type: "success" | "error"; text: string } | null
+  >(null);
+  const [pendingDeleteConfirm, setPendingDeleteConfirm] = useState<
+    | { mode: "single"; job: Job }
+    | { mode: "bulk"; jobs: Job[] }
+    | null
   >(null);
   const selectAllVisibleRef = useRef<HTMLInputElement | null>(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
@@ -2387,15 +2443,7 @@ export default function JobsRegisterPage() {
     });
   };
 
-  const handleDeleteJob = async (job: Job) => {
-    if (deletingJobId || bulkDeleting) return;
-
-    const confirmed = window.confirm(
-      `Delete job ${job.jobId} for ${getRegisterName(job)}? This action cannot be undone.`
-    );
-
-    if (!confirmed) return;
-
+  const performSingleDelete = async (job: Job) => {
     setDeletingJobId(job.id);
     setJobFeedback(null);
 
@@ -2437,22 +2485,7 @@ export default function JobsRegisterPage() {
     }
   };
 
-  const handleBulkDeleteSelected = async () => {
-    if (bulkDeleting || deletingJobId || selectedJobIds.length === 0) {
-      return;
-    }
-
-    const selectedJobs = jobs.filter((job) => selectedJobIdSet.has(job.id));
-    if (selectedJobs.length === 0) {
-      setSelectedJobIds([]);
-      return;
-    }
-
-    const confirmed = window.confirm(
-      `Delete ${selectedJobs.length} selected job${selectedJobs.length === 1 ? "" : "s"}? This action cannot be undone.`
-    );
-    if (!confirmed) return;
-
+  const performBulkDelete = async (selectedJobs: Job[]) => {
     setBulkDeleting(true);
     setJobFeedback(null);
 
@@ -2520,6 +2553,39 @@ export default function JobsRegisterPage() {
     } finally {
       setBulkDeleting(false);
     }
+  };
+
+  const handleDeleteJob = (job: Job) => {
+    if (deletingJobId || bulkDeleting) return;
+    setPendingDeleteConfirm({ mode: "single", job });
+  };
+
+  const handleBulkDeleteSelected = () => {
+    if (bulkDeleting || deletingJobId || selectedJobIds.length === 0) {
+      return;
+    }
+
+    const selectedJobs = jobs.filter((job) => selectedJobIdSet.has(job.id));
+    if (selectedJobs.length === 0) {
+      setSelectedJobIds([]);
+      return;
+    }
+
+    setPendingDeleteConfirm({ mode: "bulk", jobs: selectedJobs });
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!pendingDeleteConfirm) return;
+
+    const pending = pendingDeleteConfirm;
+    setPendingDeleteConfirm(null);
+
+    if (pending.mode === "single") {
+      await performSingleDelete(pending.job);
+      return;
+    }
+
+    await performBulkDelete(pending.jobs);
   };
 
   return (
@@ -3253,6 +3319,43 @@ export default function JobsRegisterPage() {
             const jobId = workflowModal.job.jobId;
             setWorkflowModal(null);
             void refreshJob(jobId);
+          }}
+        />
+      )}
+
+      {pendingDeleteConfirm && (
+        <ConfirmActionModal
+          title={
+            pendingDeleteConfirm.mode === "single"
+              ? "Delete Job"
+              : "Delete Selected Jobs"
+          }
+          message={
+            pendingDeleteConfirm.mode === "single"
+              ? `Delete job ${pendingDeleteConfirm.job.jobId} for ${getRegisterName(
+                  pendingDeleteConfirm.job
+                )}? This action cannot be undone.`
+              : `Delete ${pendingDeleteConfirm.jobs.length} selected job${
+                  pendingDeleteConfirm.jobs.length === 1 ? "" : "s"
+                }? This action cannot be undone.`
+          }
+          confirmLabel={
+            pendingDeleteConfirm.mode === "single"
+              ? "Delete Job"
+              : `Delete ${pendingDeleteConfirm.jobs.length} Job${
+                  pendingDeleteConfirm.jobs.length === 1 ? "" : "s"
+                }`
+          }
+          confirmClassName="bg-red-600 hover:bg-red-700"
+          loading={
+            pendingDeleteConfirm.mode === "single" ? deletingJobId !== null : bulkDeleting
+          }
+          onCancel={() => {
+            if (deletingJobId || bulkDeleting) return;
+            setPendingDeleteConfirm(null);
+          }}
+          onConfirm={() => {
+            void handleConfirmDelete();
           }}
         />
       )}
