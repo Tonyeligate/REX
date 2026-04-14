@@ -1018,6 +1018,21 @@ function isPermissionError(message: string): boolean {
   return /(forbidden|permission|only clients)/i.test(message);
 }
 
+function toProfessionalTrackingErrorMessage(message: string): string {
+  const normalized = message.trim().toLowerCase();
+  if (!normalized) return "We could not complete this request right now. Please try again.";
+  if (normalized.includes("no job matches the given query") || normalized.includes("not found")) {
+    return "No record was found for that tracking number. Please verify the number and try again.";
+  }
+  if (normalized.includes("authentication credentials were not provided")) {
+    return "This service is currently unavailable. Please try again shortly.";
+  }
+  if (normalized.includes("lookup failed")) {
+    return "We could not retrieve tracking details right now. Please try again shortly.";
+  }
+  return message;
+}
+
 function matchesJobIdentifier(item: BackendJobListItem, query: string): boolean {
   const normalizedQuery = normalizeJobLookupKey(query);
   if (!normalizedQuery) return false;
@@ -1700,7 +1715,7 @@ export const jobsApi = {
         throw new Error("Public job tracking is temporarily unavailable. Please try again shortly.");
       }
 
-      throw new Error(errorMessage);
+      throw new Error(toProfessionalTrackingErrorMessage(errorMessage));
     }
 
     const body = (await res.json()) as {

@@ -9,7 +9,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
       {/* ── Header ── */}
       <header className="bg-card/90 border-b border-border shadow-[0_2px_12px_rgba(240,112,0,0.06)] backdrop-blur-sm">
         <div className="w-[min(1100px,calc(100vw-32px))] mx-auto flex items-center justify-between py-3 px-1">
-          <Link href="/client/dashboard" className="flex items-center gap-3">
+          <Link href="/client/tracking" className="flex items-center gap-3">
             <Image
               src="/recs-logo-wide.jpeg"
               alt="Recs Geomatics Consult"

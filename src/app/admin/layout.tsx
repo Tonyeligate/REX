@@ -36,7 +36,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     }
 
     if (!isLoading && isAuthenticated && user?.role !== "ADMIN") {
-      router.replace("/client/dashboard");
+      router.replace("/client/tracking");
     }
   }, [isLoading, isAuthenticated, user, router]);
 

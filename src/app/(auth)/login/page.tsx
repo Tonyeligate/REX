@@ -22,7 +22,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (isAuthenticated && user) {
-      router.replace(user.role === "ADMIN" ? "/dashboard" : "/client/dashboard");
+      router.replace(user.role === "ADMIN" ? "/dashboard" : "/client/tracking");
     }
   }, [isAuthenticated, user, router]);
 
@@ -33,7 +33,7 @@ export default function LoginPage() {
     setError("");
     try {
       const user = await login(data.email, data.password);
-      router.push(user.role === "ADMIN" ? "/dashboard" : "/client/dashboard");
+      router.push(user.role === "ADMIN" ? "/dashboard" : "/client/tracking");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Login failed");
     } finally {

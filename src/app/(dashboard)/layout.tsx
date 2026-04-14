@@ -25,7 +25,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
 
     if (!isLoading && isAuthenticated && user?.role !== "ADMIN") {
-      router.replace("/client/dashboard");
+      router.replace("/client/tracking");
     }
   }, [isLoading, isAuthenticated, user, router]);
 
