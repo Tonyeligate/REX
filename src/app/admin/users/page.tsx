@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { UserPlus, Mail, Loader2, Search, MoreHorizontal } from "lucide-react";
+import { UserPlus, Mail, Loader2, Search, MoreHorizontal, Users, ShieldCheck } from "lucide-react";
 import { usersApi } from "@/lib/api";
 import type { UserRow } from "@/lib/api";
 
@@ -88,16 +88,30 @@ export default function UsersPage() {
   };
 
   return (
-    <div className="admin-future-bg">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h3 className="text-[22px] font-bold text-foreground">Users & Clients</h3>
-          <p className="text-[13px] text-muted-foreground">Manage system users and their roles</p>
+    <div className="admin-future-bg space-y-6">
+      {/* Hero Section */}
+      <div className="admin-surface-glass rounded-[28px] border border-border p-6 sm:p-8">
+        <div className="flex items-start justify-between gap-4 mb-4">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-[#F07000]/25 bg-[#fff7ed] px-3 py-1 text-[11px] font-[800] text-[#b45309] dark:bg-[#3b230d]/60 dark:text-[#ffd9b5] dark:border-[#ff8a1f]/30">
+              <Users size={13} />
+              Team Management
+            </div>
+            <h1 className="mt-3 text-[28px] sm:text-[32px] font-bold text-foreground">Users & Access Control</h1>
+            <p className="mt-1 text-[14px] text-muted-foreground max-w-lg">Manage system users, assign roles, and control access permissions across the platform</p>
+          </div>
+          <div className="hidden sm:flex h-12 w-12 items-center justify-center rounded-[16px] bg-gradient-to-br from-[#F07000]/20 to-[#f59e0b]/10">
+            <ShieldCheck size={24} className="text-[#F07000]" />
+          </div>
         </div>
+      </div>
+
+      {/* Header Controls */}
+      <div className="flex items-center justify-between gap-4 flex-wrap">
         <button
           onClick={() => setShowInvite(true)}
           disabled={usersUnavailable}
-          className="flex items-center gap-1.5 h-[36px] px-4 bg-[#F07000] text-white rounded-lg text-[12px] font-semibold hover:bg-[#D06000] disabled:opacity-60 disabled:hover:bg-[#F07000]"
+          className="flex items-center gap-2 h-[38px] px-4 bg-[#F07000] text-white rounded-lg text-[12px] font-semibold hover:bg-[#D06000] disabled:opacity-60 disabled:hover:bg-[#F07000] shadow-[0_8px_18px_rgba(240,112,0,0.28)]"
         >
           <UserPlus size={14} /> Invite User
         </button>
@@ -144,7 +158,7 @@ export default function UsersPage() {
       )}
 
       {/* Search */}
-      <div className="relative max-w-xs mb-4">
+      <div className="relative max-w-sm mb-4">
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9ca3af]" />
         <input
           value={search}
@@ -155,7 +169,7 @@ export default function UsersPage() {
       </div>
 
       {/* Table */}
-      <div className="admin-surface-elevated rounded-xl border border-border overflow-hidden">
+      <div className="admin-surface-elevated rounded-[18px] border border-border overflow-hidden shadow-[0_4px_12px_rgba(0,0,0,0.08)] dark:shadow-[0_4px_12px_rgba(0,0,0,0.24)]">
         <table className="w-full text-[13px]">
           <thead>
             <tr className="bg-muted border-b border-border">

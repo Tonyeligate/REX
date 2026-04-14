@@ -1032,6 +1032,41 @@ function matchesJobIdentifier(item: BackendJobListItem, query: string): boolean 
 }
 
 let backendSupportsJobDelete: boolean | null = null;
+const JOB_LIST_LOOKUP_CACHE_TTL_MS = 15_000;
+let jobListLookupCache:
+  | {
+      expiresAt: number;
+      items: BackendJobListItem[];
+    }
+  | null = null;
+let jobListLookupInFlight: Promise<BackendJobListItem[]> | null = null;
+
+function hydrateJobListLookupCache(items: BackendJobListItem[]) {
+  jobListLookupCache = {
+    expiresAt: Date.now() + JOB_LIST_LOOKUP_CACHE_TTL_MS,
+    items,
+  };
+}
+
+async function getJobListLookupSnapshot(): Promise<BackendJobListItem[]> {
+  const now = Date.now();
+  if (jobListLookupCache && jobListLookupCache.expiresAt > now) {
+    return jobListLookupCache.items;
+  }
+
+  if (!jobListLookupInFlight) {
+    jobListLookupInFlight = backendRequest<BackendJobListItem[]>("/jobs/")
+      .then((items) => {
+        hydrateJobListLookupCache(items);
+        return items;
+      })
+      .finally(() => {
+        jobListLookupInFlight = null;
+      });
+  }
+
+  return jobListLookupInFlight;
+}
 
 async function detectBackendJobDeleteSupport(): Promise<boolean> {
   if (backendSupportsJobDelete !== null) {
@@ -1064,7 +1099,7 @@ async function findJobInList(rnOrId: string): Promise<BackendJobListItem | null>
   const query = rnOrId.trim();
   if (!query) return null;
 
-  const items = await backendRequest<BackendJobListItem[]>("/jobs/");
+  const items = await getJobListLookupSnapshot();
   return items.find((item) => matchesJobIdentifier(item, query)) ?? null;
 }
 
@@ -1250,11 +1285,41 @@ function getNextPatchStatusForWorkflow(current: BackendStatus): BackendStatus | 
    ═══════════════════════════════════════════════════════════ */
 
 export const jobsApi = {
-  list: async (params?: Record<string, string>) => {
-    void params;
-    const items = await backendRequest<BackendJobListItem[]>("/jobs/");
+  list: async (
+    params?: Record<string, string | number | undefined>,
+    requestOptions?: { signal?: AbortSignal }
+  ) => {
+    const queryParams = new URLSearchParams();
+
+    for (const [key, rawValue] of Object.entries(params ?? {})) {
+      if (rawValue === undefined || rawValue === null) continue;
+      const value = String(rawValue).trim();
+      if (!value) continue;
+      queryParams.set(key, value);
+    }
+
+    const qs = queryParams.toString();
+    const payload = await backendRequest<
+      BackendJobListItem[] | { count?: number; results?: BackendJobListItem[] }
+    >(`/jobs/${qs ? `?${qs}` : ""}`, {
+      signal: requestOptions?.signal,
+    });
+    const items = Array.isArray(payload)
+      ? payload
+      : Array.isArray(payload.results)
+        ? payload.results
+        : [];
+
+    if (!qs) {
+      hydrateJobListLookupCache(items);
+    }
+
     const jobs = items.map(mapBackendJob);
-    return { jobs, total: jobs.length };
+    const total =
+      !Array.isArray(payload) && typeof payload.count === "number"
+        ? payload.count
+        : jobs.length;
+    return { jobs, total };
   },
 
   import: async (file: File) => {

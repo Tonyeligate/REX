@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { BarChart3, PieChart, Loader2 } from "lucide-react";
+import { BarChart3, PieChart, Loader2, TrendingUp, Users, Briefcase, DollarSign } from "lucide-react";
 import { reportsApi } from "@/lib/api";
 
 interface JobStats {
@@ -37,88 +37,116 @@ export default function ReportsPage() {
   }
 
   return (
-    <div>
-      <div className="mb-6">
-        <h3 className="text-[22px] font-bold text-[#1f2937]">Reports & Analytics</h3>
-        <p className="text-[13px] text-[#9ca3af]">Comprehensive overview of job certification and membership data</p>
+    <div className="admin-future-bg space-y-6">
+      {/* Hero Section */}
+      <div className="admin-surface-glass rounded-[28px] border border-border p-6 sm:p-8">
+        <div className="flex items-start justify-between gap-4 mb-4">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-[#F07000]/25 bg-[#fff7ed] px-3 py-1 text-[11px] font-[800] text-[#b45309] dark:bg-[#3b230d]/60 dark:text-[#ffd9b5] dark:border-[#ff8a1f]/30">
+              <BarChart3 size={13} />
+              Analytics Dashboard
+            </div>
+            <h1 className="mt-3 text-[28px] sm:text-[32px] font-bold text-foreground\">Reports & Analytics</h1>
+            <p className="mt-1 text-[14px] text-muted-foreground max-w-lg\">Comprehensive overview of job certification and membership data across the platform</p>
+          </div>
+          <div className="hidden sm:flex h-12 w-12 items-center justify-center rounded-[16px] bg-gradient-to-br from-[#F07000]/20 to-[#f59e0b]/10">
+            <TrendingUp size={24} className="text-[#F07000]" />
+          </div>
+        </div>
       </div>
 
       {/* Job Statistics */}
-      <div className="mb-8">
-        <h4 className="text-[16px] font-bold text-[#1f2937] mb-4 flex items-center gap-2"><BarChart3 size={18} /> Job Certification Statistics</h4>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+      <div>
+        <h4 className="text-[16px] font-bold text-foreground mb-4 flex items-center gap-2"><BarChart3 size={18} className="text-[#F07000]" /> Job Certification Statistics</h4>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {[
-            { label: "Total Jobs", value: jobStats.total, color: "bg-orange-50 text-orange-700" },
-            { label: "In Progress", value: jobStats.inProgress, color: "bg-amber-50 text-amber-700" },
-            { label: "Completed", value: jobStats.completed, color: "bg-green-50 text-green-700" },
-            { label: "Queried", value: jobStats.queried, color: "bg-red-50 text-red-700" },
-          ].map((s, i) => (
-            <div key={i} className="bg-white border border-[#e5e7eb] rounded-xl p-5">
-              <p className="text-[11px] text-[#9ca3af] mb-1">{s.label}</p>
-              <p className="text-[28px] font-black text-[#1f2937]">{s.value}</p>
-              <div className={`mt-2 px-2 py-0.5 rounded text-[11px] font-bold inline-block ${s.color}`}>
-                {jobStats.total > 0 ? Math.round((s.value / jobStats.total) * 100) : 0}%
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Jobs by Step */}
-        <div className="bg-white border border-[#e5e7eb] rounded-xl p-5">
-          <h5 className="text-[14px] font-bold text-[#1f2937] mb-4">Jobs by Workflow Step</h5>
-          <div className="space-y-2">
-            {Object.entries(jobStats.byStep).map(([step, count]) => {
-              const pct = jobStats.total > 0 ? (count / jobStats.total) * 100 : 0;
-              return (
-                <div key={step} className="flex items-center gap-3">
-                  <span className="text-[12px] text-[#4b5563] w-40 flex-shrink-0 truncate" title={step}>Step {step}</span>
-                  <div className="flex-grow bg-gray-100 rounded-full h-5 relative overflow-hidden">
-                    <div className="bg-[#F07000] h-full rounded-full transition-all" style={{ width: `${pct}%` }} />
-                    <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-[#1f2937]">{count}</span>
+            { label: "Total Jobs", value: jobStats.total, icon: Briefcase, color: "from-[#F07000]/20 to-[#f59e0b]/10", textColor: "text-[#F07000]" },
+            { label: "In Progress", value: jobStats.inProgress, icon: TrendingUp, color: "from-amber-500/20 to-amber-400/10", textColor: "text-amber-600" },
+            { label: "Completed", value: jobStats.completed, icon: Briefcase, color: "from-green-500/20 to-green-400/10", textColor: "text-green-600" },
+            { label: "Queried", value: jobStats.queried, icon: Users, color: "from-red-500/20 to-red-400/10", textColor: "text-red-600" },
+          ].map((s, i) => {
+            const Icon = s.icon;
+            return (
+              <div key={i} className="admin-surface-elevated rounded-[18px] border border-border p-5 sm:p-6">
+                <div className="flex items-start justify-between mb-3">
+                  <p className="text-[12px] font-[700] uppercase tracking-wide text-muted-foreground">{s.label}</p>
+                  <div className={`flex h-10 w-10 items-center justify-center rounded-[12px] bg-gradient-to-br ${s.color}`}>
+                    <Icon size={18} className={s.textColor} />
                   </div>
-                  <span className="text-[11px] text-[#9ca3af] w-10 text-right">{pct.toFixed(0)}%</span>
                 </div>
-              );
-            })}
-          </div>
+                <p className="text-[28px] font-[900] text-foreground mb-2">{s.value}</p>
+                <div className="text-[12px] font-semibold text-muted-foreground">
+                  {jobStats.total > 0 ? Math.round((s.value / jobStats.total) * 100) : 0}% of total
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Jobs by Step Chart */}
+      <div className="admin-surface-elevated rounded-[18px] border border-border p-5 sm:p-6 mt-6">
+        <h5 className="text-[14px] font-bold text-foreground mb-4 flex items-center gap-2"><BarChart3 size={16} className="text-[#F07000]" />Jobs by Workflow Step</h5>
+        <div className="space-y-3">
+          {Object.entries(jobStats.byStep).map(([step, count]) => {
+            const pct = jobStats.total > 0 ? (count / jobStats.total) * 100 : 0;
+            return (
+              <div key={step} className="flex items-center gap-3">
+                <span className="text-[12px] text-foreground/70 w-40 flex-shrink-0 truncate font-medium" title={step}>Step {step}</span>
+                <div className="flex-grow relative h-6 bg-muted rounded-full overflow-hidden">
+                  <div className="absolute inset-y-0 left-0 bg-gradient-to-r from-[#F07000] to-[#f59e0b] rounded-full transition-all" style={{ width: `${pct}%` }} />
+                  <span className="absolute inset-0 flex items-center justify-center text-[11px] font-bold text-foreground/80">{count}</span>
+                </div>
+                <span className="text-[12px] text-muted-foreground w-12 text-right">{pct.toFixed(0)}%</span>
+              </div>
+            );
+          })}
         </div>
       </div>
 
       {/* Membership Statistics */}
-      <div>
-        <h4 className="text-[16px] font-bold text-[#1f2937] mb-4 flex items-center gap-2"><PieChart size={18} /> Membership Statistics</h4>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+      <div className="mt-8">
+        <h4 className="text-[16px] font-bold text-foreground mb-4 flex items-center gap-2"><PieChart size={18} className="text-green-600" /> Membership Statistics</h4>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {[
-            { label: "Total Members", value: memberStats.totalMembers.toString() },
-            { label: "Active Members", value: memberStats.activeMembers.toString() },
-            { label: "New This Month", value: memberStats.newThisMonth.toString() },
-            { label: "Dues Collected", value: `GH₵ ${memberStats.duesCollected.toFixed(2)}` },
-          ].map((s, i) => (
-            <div key={i} className="bg-white border border-[#e5e7eb] rounded-xl p-5">
-              <p className="text-[11px] text-[#9ca3af] mb-1">{s.label}</p>
-              <p className="text-[28px] font-black text-[#1f2937]">{s.value}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* Members by Region */}
-        <div className="bg-white border border-[#e5e7eb] rounded-xl p-5">
-          <h5 className="text-[14px] font-bold text-[#1f2937] mb-4">Members by Region</h5>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-            {Object.entries(memberStats.byRegion).map(([region, count]) => {
-              const pct = memberStats.totalMembers > 0 ? (count / memberStats.totalMembers) * 100 : 0;
-              return (
-                <div key={region} className="flex items-center gap-3">
-                  <span className="text-[12px] text-[#4b5563] w-32 flex-shrink-0 truncate">{region}</span>
-                  <div className="flex-grow bg-gray-100 rounded-full h-5 relative overflow-hidden">
-                    <div className="bg-green-500 h-full rounded-full" style={{ width: `${pct}%` }} />
-                    <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-[#1f2937]">{count}</span>
+            { label: "Total Members", value: memberStats.totalMembers.toString(), icon: Users, color: "from-blue-500/20 to-blue-400/10", textColor: "text-blue-600" },
+            { label: "Active Members", value: memberStats.activeMembers.toString(), icon: TrendingUp, color: "from-green-500/20 to-green-400/10", textColor: "text-green-600" },
+            { label: "New This Month", value: memberStats.newThisMonth.toString(), icon: Users, color: "from-purple-500/20 to-purple-400/10", textColor: "text-purple-600" },
+            { label: "Dues Collected", value: `GH₵ ${memberStats.duesCollected.toFixed(2)}`, icon: DollarSign, color: "from-emerald-500/20 to-emerald-400/10", textColor: "text-emerald-600" },
+          ].map((s, i) => {
+            const Icon = s.icon;
+            return (
+              <div key={i} className="admin-surface-elevated rounded-[18px] border border-border p-5 sm:p-6">
+                <div className="flex items-start justify-between mb-3">
+                  <p className="text-[12px] font-[700] uppercase tracking-wide text-muted-foreground">{s.label}</p>
+                  <div className={`flex h-10 w-10 items-center justify-center rounded-[12px] bg-gradient-to-br ${s.color}`}>
+                    <Icon size={18} className={s.textColor} />
                   </div>
-                  <span className="text-[11px] text-[#9ca3af] w-10 text-right">{pct.toFixed(0)}%</span>
                 </div>
-              );
-            })}
-          </div>
+                <p className="text-[26px] font-[900] text-foreground">{s.value}</p>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Members by Region */}
+      <div className="admin-surface-elevated rounded-[18px] border border-border p-5 sm:p-6 mt-6">
+        <h5 className="text-[14px] font-bold text-foreground mb-4 flex items-center gap-2"><PieChart size={16} className="text-green-600" />Members by Region</h5>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {Object.entries(memberStats.byRegion).map(([region, count]) => {
+            const pct = memberStats.totalMembers > 0 ? (count / memberStats.totalMembers) * 100 : 0;
+            return (
+              <div key={region} className="flex items-center gap-3 p-3 rounded-lg bg-muted/40">
+                <span className="text-[12px] text-foreground/70 w-32 flex-shrink-0 truncate font-medium">{region}</span>
+                <div className="flex-grow relative h-6 bg-muted rounded-full overflow-hidden">
+                  <div className="absolute inset-y-0 left-0 bg-gradient-to-r from-green-500 to-emerald-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                  <span className="absolute inset-0 flex items-center justify-center text-[11px] font-bold text-foreground/80">{count}</span>
+                </div>
+                <span className="text-[12px] text-muted-foreground w-12 text-right">{pct.toFixed(0)}%</span>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

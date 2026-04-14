@@ -85,6 +85,50 @@ type ImportFieldTarget = {
   candidates: string[];
 };
 
+type ImportOutcomeStatus = "success" | "partial" | "failed" | "no_changes";
+
+type ImportOutcomeMode = "backend" | "preview";
+
+type ImportOutcomeCounts = {
+  total: number;
+  created: number;
+  updated: number;
+  failed: number;
+  skipped: number;
+  unmatched: number;
+};
+
+type ImportFailureDetail = {
+  rowNumber: string;
+  rn: string;
+  reason: string;
+};
+
+type ImportOutcome = {
+  status: ImportOutcomeStatus;
+  mode: ImportOutcomeMode;
+  endpoint?: string;
+  fileName: string;
+  timestamp: string;
+  counts: ImportOutcomeCounts;
+  message: string;
+  failures: ImportFailureDetail[];
+};
+
+type ImportHistoryEntry = {
+  id: string;
+  status: ImportOutcomeStatus;
+  mode: ImportOutcomeMode;
+  fileName: string;
+  timestamp: string;
+  counts: ImportOutcomeCounts;
+};
+
+const IMPORT_HISTORY_STORAGE_KEY = "_jobs_import_history_v1";
+
+const JOBS_PAGE_SIZE_OPTIONS = [50, 100, 200] as const;
+const DEFAULT_JOBS_PAGE_SIZE = 100;
+
 function normalizeRegisterStage(value?: RegisterStageValue): RegisterStageEntry | undefined {
   if (value === true) {
     return { outcome: "accept" };
@@ -450,6 +494,261 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
 }
 
+function toNonNegativeNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      return parsed;
+    }
+  }
+
+  return undefined;
+}
+
+function collectImportSources(payload: Record<string, unknown>): Record<string, unknown>[] {
+  return [
+    payload,
+    asRecord(payload.data),
+    asRecord(payload.result),
+    asRecord(payload.summary),
+    asRecord(payload.stats),
+  ].filter((value): value is Record<string, unknown> => Boolean(value));
+}
+
+function readImportCount(
+  sources: Record<string, unknown>[],
+  keys: string[]
+): number {
+  for (const source of sources) {
+    for (const key of keys) {
+      const value = toNonNegativeNumber(source[key]);
+      if (value !== undefined) {
+        return value;
+      }
+    }
+  }
+
+  return 0;
+}
+
+function normalizeFailureReason(value: unknown): string {
+  if (typeof value === "string" && value.trim()) {
+    return value.trim();
+  }
+
+  if (Array.isArray(value)) {
+    const joined = value
+      .map((entry) => normalizeFailureReason(entry))
+      .filter(Boolean)
+      .join(" | ");
+    return joined || "Unknown failure reason";
+  }
+
+  const obj = asRecord(value);
+  if (obj) {
+    const directMessage =
+      (typeof obj.message === "string" && obj.message.trim()) ||
+      (typeof obj.error === "string" && obj.error.trim()) ||
+      (typeof obj.detail === "string" && obj.detail.trim());
+    if (directMessage) {
+      return directMessage;
+    }
+
+    const text = JSON.stringify(obj);
+    return text && text !== "{}" ? text : "Unknown failure reason";
+  }
+
+  return "Unknown failure reason";
+}
+
+function extractImportCounts(payload: Record<string, unknown>): ImportOutcomeCounts {
+  const sources = collectImportSources(payload);
+
+  const created = readImportCount(sources, ["created", "inserted", "new", "created_count"]);
+  const updated = readImportCount(sources, ["updated", "modified", "updated_count"]);
+  const imported = readImportCount(sources, ["imported", "processed_success"]);
+  const failed = readImportCount(sources, ["failed", "failed_count", "errors_count"]);
+  const skipped = readImportCount(sources, ["skipped", "duplicate_count", "duplicates", "ignored"]);
+  const unmatched = readImportCount(sources, ["unmatched", "not_found", "not_found_count", "unmatched_count"]);
+  let total = readImportCount(sources, ["total", "rows_total", "processed", "count"]);
+
+  const normalizedUpdated = updated > 0 || created > 0 ? updated : imported;
+  if (total === 0) {
+    total = created + normalizedUpdated + failed + skipped;
+  }
+
+  return {
+    total,
+    created,
+    updated: normalizedUpdated,
+    failed,
+    skipped,
+    unmatched,
+  };
+}
+
+function extractImportFailures(payload: Record<string, unknown>): ImportFailureDetail[] {
+  const sources = collectImportSources(payload);
+  const failureKeys = ["failures", "failed_rows", "errors", "row_errors", "error_rows"];
+  const failures: ImportFailureDetail[] = [];
+
+  for (const source of sources) {
+    for (const key of failureKeys) {
+      const value = source[key];
+      if (!Array.isArray(value)) {
+        continue;
+      }
+
+      for (const entry of value) {
+        if (typeof entry === "string") {
+          failures.push({ rowNumber: "", rn: "", reason: entry });
+          continue;
+        }
+
+        const obj = asRecord(entry);
+        if (!obj) {
+          failures.push({ rowNumber: "", rn: "", reason: normalizeFailureReason(entry) });
+          continue;
+        }
+
+        const rowNumberRaw =
+          obj.row_number ??
+          obj.rowNumber ??
+          obj.row ??
+          obj.line ??
+          obj.index;
+        const rnRaw =
+          obj.rn ??
+          obj.rnr ??
+          obj.job_id ??
+          obj.jobId ??
+          obj.reference ??
+          obj.regional_number;
+        const reasonRaw =
+          obj.reason ??
+          obj.error ??
+          obj.message ??
+          obj.detail ??
+          obj.errors;
+
+        failures.push({
+          rowNumber:
+            rowNumberRaw === undefined || rowNumberRaw === null
+              ? ""
+              : String(rowNumberRaw).trim(),
+          rn: rnRaw === undefined || rnRaw === null ? "" : String(rnRaw).trim(),
+          reason: normalizeFailureReason(reasonRaw),
+        });
+      }
+    }
+  }
+
+  const seen = new Set<string>();
+  return failures.filter((item) => {
+    const key = `${item.rowNumber}|${item.rn}|${item.reason}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function deriveImportOutcomeStatus(counts: ImportOutcomeCounts): ImportOutcomeStatus {
+  const successful = counts.created + counts.updated;
+  if (successful === 0 && counts.failed === 0) {
+    return "no_changes";
+  }
+  if (successful > 0 && counts.failed === 0) {
+    return "success";
+  }
+  if (successful > 0 && counts.failed > 0) {
+    return "partial";
+  }
+  return "failed";
+}
+
+function summarizeImportCounts(counts: ImportOutcomeCounts): string {
+  return `Created ${counts.created} | Updated ${counts.updated} | Failed ${counts.failed} | Skipped ${counts.skipped} | Unmatched ${counts.unmatched}`;
+}
+
+function getImportStatusMeta(status: ImportOutcomeStatus) {
+  if (status === "success") {
+    return {
+      label: "Success",
+      tone: "border-green-200 bg-green-50 text-green-700 dark:border-green-900/60 dark:bg-green-950/30 dark:text-green-300",
+      summaryTone: "text-green-700 dark:text-green-300",
+      icon: CheckCircle,
+    };
+  }
+
+  if (status === "partial") {
+    return {
+      label: "Partial Success",
+      tone: "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300",
+      summaryTone: "text-amber-700 dark:text-amber-300",
+      icon: AlertTriangle,
+    };
+  }
+
+  if (status === "failed") {
+    return {
+      label: "Failed",
+      tone: "border-red-200 bg-red-50 text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300",
+      summaryTone: "text-red-700 dark:text-red-300",
+      icon: AlertTriangle,
+    };
+  }
+
+  return {
+    label: "No Changes",
+    tone: "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-300",
+    summaryTone: "text-blue-700 dark:text-blue-300",
+    icon: Clock,
+  };
+}
+
+function formatImportTimestamp(value: string): string {
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) {
+    return value;
+  }
+  return new Date(parsed).toLocaleString();
+}
+
+function buildBackendImportOutcome(
+  payload: Record<string, unknown>,
+  fileName: string,
+  endpoint?: string
+): ImportOutcome {
+  let counts = extractImportCounts(payload);
+  const successFlag = typeof payload.success === "boolean" ? payload.success : undefined;
+  if (
+    successFlag === false &&
+    counts.created + counts.updated === 0 &&
+    counts.failed === 0
+  ) {
+    counts = { ...counts, failed: 1 };
+  }
+
+  const status = deriveImportOutcomeStatus(counts);
+  const failures = extractImportFailures(payload);
+  const summary = formatBackendImportSummary(payload);
+
+  return {
+    status,
+    mode: "backend",
+    endpoint,
+    fileName,
+    timestamp: new Date().toISOString(),
+    counts,
+    message: summary || "Import request processed.",
+    failures,
+  };
+}
+
 function formatBackendImportSummary(payload: Record<string, unknown>): string {
   const sources = [
     payload,
@@ -576,7 +875,6 @@ function buildImportPreviewRows(
         hasRegionalNumber: false,
         hasChanges: false,
         canCreate: false,
-        isActionable: false,
         issue: "Missing RNR/RN column value",
         apply: false,
       };
@@ -1390,16 +1688,23 @@ export default function JobsRegisterPage() {
   const searchParams = useSearchParams();
   const urlSearch = searchParams.get("q") ?? "";
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [totalJobs, setTotalJobs] = useState(0);
   const [registerRecords, setRegisterRecords] = useState<Record<string, JobRegisterRecord>>({});
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(DEFAULT_JOBS_PAGE_SIZE);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
   const [importFeedback, setImportFeedback] = useState("");
+  const [importOutcome, setImportOutcome] = useState<ImportOutcome | null>(null);
+  const [showImportFailures, setShowImportFailures] = useState(false);
+  const [importHistory, setImportHistory] = useState<ImportHistoryEntry[]>([]);
   const [importFileName, setImportFileName] = useState("");
   const [importPreviewRows, setImportPreviewRows] = useState<ImportPreviewRow[]>([]);
   const [importDetectedMappings, setImportDetectedMappings] = useState<ImportDetectedMapping[]>([]);
   const [showImportPreview, setShowImportPreview] = useState(false);
   const [allowCreateUnmatched, setAllowCreateUnmatched] = useState(false);
   const [search, setSearch] = useState(urlSearch);
+  const [debouncedSearch, setDebouncedSearch] = useState(urlSearch.trim());
   const [statusFilter, setStatusFilter] = useState("");
   const [deletingJobId, setDeletingJobId] = useState<string | null>(null);
   const [bulkDeleting, setBulkDeleting] = useState(false);
@@ -1417,36 +1722,46 @@ export default function JobsRegisterPage() {
   } | null>(null);
   const [registerModalJob, setRegisterModalJob] = useState<Job | null>(null);
 
-  const loadJobs = useCallback(() => {
+  const isAbortError = (error: unknown) => {
+    if (error instanceof DOMException) {
+      return error.name === "AbortError";
+    }
+
+    if (error instanceof Error) {
+      return error.name === "AbortError";
+    }
+
+    return false;
+  };
+
+  const loadJobs = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
-    jobsApi
-      .list()
-      .then(async (jobsData) => {
-        const hydratedJobs = await Promise.all(
-          jobsData.jobs.map(async (job) => {
-            if (job.stepDecisions && job.stepDecisions.length > 0) {
-              return job;
-            }
+    try {
+      const query = debouncedSearch.trim();
+      const jobsData = await jobsApi.list(
+        {
+          page: currentPage,
+          page_size: pageSize,
+          search: query || undefined,
+          q: query || undefined,
+          status: statusFilter || undefined,
+          lifecycle_status: statusFilter || undefined,
+        },
+        { signal }
+      );
 
-            try {
-              const detail = await jobsApi.get(job.jobId);
-              return detail.job;
-            } catch {
-              return job;
-            }
-          })
-        );
-
-        const registerData = await registerFieldsApi.list(
-          hydratedJobs.map((job) => job.jobId)
-        );
-
-        setJobs(hydratedJobs);
-        setRegisterRecords(registerData.records);
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, []);
+      setJobs(jobsData.jobs);
+      setTotalJobs(jobsData.total);
+    } catch (error) {
+      if (!isAbortError(error)) {
+        console.error(error);
+      }
+    } finally {
+      if (!signal?.aborted) {
+        setLoading(false);
+      }
+    }
+  }, [currentPage, debouncedSearch, pageSize, statusFilter]);
 
   const refreshJob = useCallback(async (jobId: string) => {
     try {
@@ -1458,37 +1773,156 @@ export default function JobsRegisterPage() {
   }, []);
 
   useEffect(() => {
-    loadJobs();
-  }, [loadJobs]);
-
-  useEffect(() => {
     setSearch((current) => (current === urlSearch ? current : urlSearch));
   }, [urlSearch]);
 
-  const filteredJobs = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return jobs.filter((job) => {
-      const record = registerRecords[job.jobId];
-      const regionalNumber = getActualRegionalNumber(job, record).toLowerCase();
-      const matchesSearch =
-        !q ||
-        job.jobId.toLowerCase().includes(q) ||
-        job.jobType.toLowerCase().includes(q) ||
-        regionalNumber.includes(q) ||
-        (job.clientName ?? "").toLowerCase().includes(q) ||
-        (job.queryReason ?? "").toLowerCase().includes(q) ||
-        (job.statusDisplay ?? job.status).toLowerCase().includes(q);
+  useEffect(() => {
+    const timerId = window.setTimeout(() => {
+      setDebouncedSearch(search.trim());
+    }, 350);
 
-      const matchesStatus = !statusFilter || job.status === statusFilter;
-      return matchesSearch && matchesStatus;
+    return () => {
+      window.clearTimeout(timerId);
+    };
+  }, [search]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadJobs(controller.signal);
+
+    return () => {
+      controller.abort();
+    };
+  }, [loadJobs]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    try {
+      const raw = localStorage.getItem(IMPORT_HISTORY_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        setImportHistory(
+          parsed.filter((entry) => entry && typeof entry === "object") as ImportHistoryEntry[]
+        );
+      }
+    } catch {
+      // Ignore corrupted local history payloads.
+    }
+  }, []);
+
+  const recordImportOutcome = useCallback((outcome: ImportOutcome) => {
+    setImportOutcome(outcome);
+    setShowImportFailures(false);
+    setImportFeedback("");
+
+    setImportHistory((current) => {
+      const nextEntry: ImportHistoryEntry = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        status: outcome.status,
+        mode: outcome.mode,
+        fileName: outcome.fileName,
+        timestamp: outcome.timestamp,
+        counts: outcome.counts,
+      };
+
+      const next = [nextEntry, ...current].slice(0, 8);
+
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem(IMPORT_HISTORY_STORAGE_KEY, JSON.stringify(next));
+        } catch {
+          // Ignore storage quota errors for history.
+        }
+      }
+
+      return next;
     });
-  }, [jobs, registerRecords, search, statusFilter]);
+  }, []);
+
+  const downloadImportFailures = async (format: "csv" | "xlsx") => {
+    if (!importOutcome || importOutcome.failures.length === 0) return;
+
+    const rows = importOutcome.failures.map((failure, index) => ({
+      "#": index + 1,
+      Row: failure.rowNumber,
+      RNR: failure.rn,
+      Reason: failure.reason,
+    }));
+
+    const fileSuffix = new Date()
+      .toISOString()
+      .slice(0, 19)
+      .replace(/[T:]/g, "-");
+
+    if (format === "csv") {
+      const escapeCsv = (value: string) => {
+        if (value.includes(",") || value.includes("\"") || value.includes("\n")) {
+          return `"${value.replace(/\"/g, '""')}"`;
+        }
+        return value;
+      };
+
+      const headers = ["#", "Row", "RNR", "Reason"];
+      const csvLines = [
+        headers.join(","),
+        ...rows.map((row) =>
+          headers
+            .map((header) => escapeCsv(String(row[header as keyof typeof row] ?? "")))
+            .join(",")
+        ),
+      ];
+
+      const blob = new Blob([csvLines.join("\n")], { type: "text/csv;charset=utf-8" });
+      const href = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = href;
+      anchor.download = `Import-Failures-${fileSuffix}.csv`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(href);
+      return;
+    }
+
+    const XLSX = await import("xlsx");
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Import Failures");
+    XLSX.writeFile(workbook, `Import-Failures-${fileSuffix}.xlsx`);
+  };
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedSearch, statusFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const currentPageStartIndex =
+    totalJobs === 0 ? 0 : (safeCurrentPage - 1) * pageSize + 1;
+  const currentPageEndIndex = Math.min(safeCurrentPage * pageSize, totalJobs);
+
+  useEffect(() => {
+    if (currentPage !== safeCurrentPage) {
+      setCurrentPage(safeCurrentPage);
+    }
+  }, [currentPage, safeCurrentPage]);
+
+  const visibleJobs = useMemo(() => {
+    if (!statusFilter) {
+      return jobs;
+    }
+
+    // Compatibility fallback if backend ignores high-level status filter params.
+    return jobs.filter((job) => job.status === statusFilter);
+  }, [jobs, statusFilter]);
 
   const selectedJobIdSet = useMemo(() => new Set(selectedJobIds), [selectedJobIds]);
 
   const visibleJobIds = useMemo(
-    () => filteredJobs.map((job) => job.id),
-    [filteredJobs]
+    () => visibleJobs.map((job) => job.id),
+    [visibleJobs]
   );
 
   const selectedVisibleCount = useMemo(
@@ -1518,12 +1952,12 @@ export default function JobsRegisterPage() {
 
   const counts = useMemo(
     () => ({
-      all: jobs.length,
-      inProgress: jobs.filter((job) => job.status === "IN_PROGRESS").length,
-      queried: jobs.filter((job) => job.status === "QUERIED").length,
-      completed: jobs.filter((job) => job.status === "COMPLETED").length,
+      all: totalJobs,
+      inProgress: visibleJobs.filter((job) => job.status === "IN_PROGRESS").length,
+      queried: visibleJobs.filter((job) => job.status === "QUERIED").length,
+      completed: visibleJobs.filter((job) => job.status === "COMPLETED").length,
     }),
-    [jobs]
+    [totalJobs, visibleJobs]
   );
 
   const importPreviewStats = useMemo(() => {
@@ -1534,6 +1968,10 @@ export default function JobsRegisterPage() {
     const selected = importPreviewRows.filter((row) => row.apply && canApplyImportRow(row, allowCreateUnmatched)).length;
     return { total, matched, unmatched, validChanges, selected };
   }, [importPreviewRows, allowCreateUnmatched]);
+
+  const importStatusMeta = importOutcome ? getImportStatusMeta(importOutcome.status) : null;
+  const recentImportHistory = importHistory.slice(0, 5);
+  const ImportStatusIcon = importStatusMeta?.icon ?? CheckCircle;
 
   const handleExport = async () => {
     const XLSX = await import("xlsx");
@@ -1553,12 +1991,12 @@ export default function JobsRegisterPage() {
       "Workflow Status / Notes",
     ];
 
-    const rows = filteredJobs.map((job, index) => {
+    const rows = visibleJobs.map((job, index) => {
       const record = registerRecords[job.jobId];
       const resolvedStages = resolveRegisterStages(job, record);
       const workflowProgress = getJobProgressSummary(job);
       const row: Record<string, string | number> = {
-        "#": index + 1,
+        "#": currentPageStartIndex + index,
         "Client Name": getRegisterName(job),
         RNR: job.jobId ?? "",
         "Regional Number": getActualRegionalNumber(job, record),
@@ -1608,7 +2046,12 @@ export default function JobsRegisterPage() {
 
     try {
       const backendImport = await jobsApi.import(file);
-      const summary = formatBackendImportSummary(backendImport.response);
+      const backendPayload = asRecord(backendImport.response) ?? {};
+      const outcome = buildBackendImportOutcome(
+        backendPayload,
+        file.name,
+        backendImport.endpoint
+      );
 
       await loadJobs();
       setShowImportPreview(false);
@@ -1616,11 +2059,12 @@ export default function JobsRegisterPage() {
       setImportDetectedMappings([]);
       setAllowCreateUnmatched(false);
       setImportFileName(file.name);
-      setImportFeedback(
-        summary
-          ? `Backend import complete via ${backendImport.endpoint}: ${summary}`
-          : `Backend import complete via ${backendImport.endpoint}.`
-      );
+      recordImportOutcome({
+        ...outcome,
+        message: outcome.message
+          ? `Endpoint ${backendImport.endpoint}: ${outcome.message}`
+          : `Endpoint ${backendImport.endpoint}: Import request processed.`,
+      });
     } catch (error) {
       setShowImportPreview(false);
       setImportPreviewRows([]);
@@ -1629,7 +2073,22 @@ export default function JobsRegisterPage() {
         error instanceof Error && error.message.trim()
           ? error.message
           : "Backend import failed.";
-      setImportFeedback(message);
+      recordImportOutcome({
+        status: "failed",
+        mode: "backend",
+        fileName: file.name,
+        timestamp: new Date().toISOString(),
+        counts: {
+          total: 0,
+          created: 0,
+          updated: 0,
+          failed: 1,
+          skipped: 0,
+          unmatched: 0,
+        },
+        message,
+        failures: [{ rowNumber: "", rn: "", reason: message }],
+      });
     } finally {
       setImporting(false);
       event.target.value = "";
@@ -1679,7 +2138,7 @@ export default function JobsRegisterPage() {
       let updated = 0;
       let created = 0;
       let failed = 0;
-      const failedRows: string[] = [];
+      const failedRows: ImportFailureDetail[] = [];
 
       for (const row of actionableRows) {
         try {
@@ -1722,29 +2181,50 @@ export default function JobsRegisterPage() {
           }
 
           failed += 1;
-          failedRows.push(`Row ${row.rowNumber} (${row.rowJobId}): Row not actionable`);
+          failedRows.push({
+            rowNumber: String(row.rowNumber),
+            rn: row.rowJobId,
+            reason: "Row not actionable",
+          });
         } catch (error) {
           failed += 1;
           const message = error instanceof Error ? error.message : "Update failed";
-          failedRows.push(`Row ${row.rowNumber} (${row.rowJobId}): ${message}`);
+          failedRows.push({
+            rowNumber: String(row.rowNumber),
+            rn: row.rowJobId,
+            reason: message,
+          });
         }
       }
 
       const skipped = Math.max(0, importPreviewRows.length - updated - created - failed);
       const notFound = importPreviewRows.filter((row) => !row.matchedJobId).length;
-      const failureSummary =
-        failedRows.length > 0
-          ? ` First errors: ${failedRows.slice(0, 3).join(" | ")}`
-          : "";
 
       await loadJobs();
       setShowImportPreview(false);
       setImportPreviewRows([]);
       setImportDetectedMappings([]);
       setImportFileName("");
-      setImportFeedback(
-        `Import complete: ${updated} updated, ${created} created, ${failed} failed, ${skipped} skipped, ${notFound} source rows were originally unmatched.${failureSummary}`
-      );
+
+      const counts: ImportOutcomeCounts = {
+        total: importPreviewRows.length,
+        created,
+        updated,
+        failed,
+        skipped,
+        unmatched: notFound,
+      };
+
+      const status = deriveImportOutcomeStatus(counts);
+      recordImportOutcome({
+        status,
+        mode: "preview",
+        fileName: importFileName || "Preview import",
+        timestamp: new Date().toISOString(),
+        counts,
+        message: "Preview import applied.",
+        failures: failedRows,
+      });
     } catch (error) {
       setImportFeedback(
         error instanceof Error ? error.message : "Failed to apply import updates."
@@ -1753,6 +2233,28 @@ export default function JobsRegisterPage() {
       setImporting(false);
     }
   };
+
+  const openRegisterModal = useCallback((job: Job) => {
+    setRegisterModalJob(job);
+
+    if (registerRecords[job.jobId]) {
+      return;
+    }
+
+    void registerFieldsApi
+      .get(job.jobId)
+      .then((response) => {
+        if (!response.record) return;
+
+        setRegisterRecords((current) => ({
+          ...current,
+          [job.jobId]: response.record,
+        }));
+      })
+      .catch((error) => {
+        console.error(error);
+      });
+  }, [registerRecords]);
 
   const openWorkflowModal = (job: Job) => {
     const stepIndex = getStepIndex(job.backendStatus ?? "request_received");
@@ -1803,6 +2305,7 @@ export default function JobsRegisterPage() {
       const deleteResult = await jobsApi.delete(job.jobId);
 
       setJobs((current) => current.filter((entry) => entry.id !== job.id));
+      setTotalJobs((current) => Math.max(0, current - 1));
       setSelectedJobIds((current) => current.filter((jobId) => jobId !== job.id));
       setRegisterRecords((current) => {
         const next = { ...current };
@@ -1878,6 +2381,7 @@ export default function JobsRegisterPage() {
 
       if (deletedIds.size > 0) {
         setJobs((current) => current.filter((job) => !deletedIds.has(job.id)));
+        setTotalJobs((current) => Math.max(0, current - deletedIds.size));
         setRegisterRecords((current) => {
           const next = { ...current };
           for (const jobId of deletedJobIds) {
@@ -1936,7 +2440,9 @@ export default function JobsRegisterPage() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <button
-              onClick={loadJobs}
+              onClick={() => {
+                void loadJobs();
+              }}
               className="flex items-center gap-2 h-[38px] px-4 border border-border bg-card rounded-lg text-[13px] font-semibold text-foreground/80 hover:bg-muted transition-colors"
             >
               <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Refresh
@@ -2039,9 +2545,109 @@ export default function JobsRegisterPage() {
         className="hidden"
       />
 
+      {importOutcome && importStatusMeta && (
+        <div className={`mb-4 rounded-xl border px-4 py-3 ${importStatusMeta.tone}`}>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-[240px] flex-1">
+              <p className="flex items-center gap-2 text-[13px] font-bold">
+                <ImportStatusIcon size={15} />
+                Import {importStatusMeta.label}
+              </p>
+              <p className={`mt-1 text-[12px] font-semibold ${importStatusMeta.summaryTone}`}>
+                {summarizeImportCounts(importOutcome.counts)}
+              </p>
+              <p className="mt-1 text-[12px] opacity-90">{importOutcome.message}</p>
+              <p className="mt-1 text-[11px] opacity-80">
+                File: {importOutcome.fileName} | Mode: {importOutcome.mode}
+                {importOutcome.endpoint ? ` | Endpoint: ${importOutcome.endpoint}` : ""} | {formatImportTimestamp(importOutcome.timestamp)}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {importOutcome.failures.length > 0 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setShowImportFailures((current) => !current)}
+                    className="h-[32px] px-3 border border-current/30 rounded-lg text-[11px] font-semibold hover:bg-white/40"
+                  >
+                    {showImportFailures ? "Hide Failures" : `Show Failures (${importOutcome.failures.length})`}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => downloadImportFailures("csv")}
+                    className="h-[32px] px-3 border border-current/30 rounded-lg text-[11px] font-semibold hover:bg-white/40 flex items-center gap-1"
+                  >
+                    <Download size={12} /> CSV
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => downloadImportFailures("xlsx")}
+                    className="h-[32px] px-3 border border-current/30 rounded-lg text-[11px] font-semibold hover:bg-white/40 flex items-center gap-1"
+                  >
+                    <Download size={12} /> XLSX
+                  </button>
+                </>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setImportOutcome(null);
+                  setShowImportFailures(false);
+                }}
+                className="h-[32px] w-[32px] border border-current/30 rounded-lg inline-flex items-center justify-center hover:bg-white/40"
+                aria-label="Dismiss import outcome"
+              >
+                <X size={13} />
+              </button>
+            </div>
+          </div>
+
+          {showImportFailures && importOutcome.failures.length > 0 && (
+            <div className="mt-3 rounded-lg border border-current/20 bg-white/60 dark:bg-black/10 overflow-auto">
+              <table className="w-full min-w-[560px] text-[11px]">
+                <thead>
+                  <tr className="border-b border-current/20">
+                    <th className="text-left px-2 py-2 font-semibold">Row</th>
+                    <th className="text-left px-2 py-2 font-semibold">RNR</th>
+                    <th className="text-left px-2 py-2 font-semibold">Reason</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {importOutcome.failures.map((failure, index) => (
+                    <tr key={`${failure.rowNumber}-${failure.rn}-${index}`} className="border-b border-current/10">
+                      <td className="px-2 py-1.5">{failure.rowNumber || "—"}</td>
+                      <td className="px-2 py-1.5 font-mono">{failure.rn || "—"}</td>
+                      <td className="px-2 py-1.5">{failure.reason}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
       {importFeedback && (
         <div className="mb-4 rounded-lg border border-[#bfdbfe] bg-[#eff6ff] dark:border-[#274574] dark:bg-[#10203a] px-3 py-2 text-[12px] text-[#1e3a8a] dark:text-[#bcd8ff]">
           {importFeedback}
+        </div>
+      )}
+
+      {recentImportHistory.length > 0 && (
+        <div className="mb-4 rounded-lg border border-border bg-card px-3 py-2">
+          <p className="text-[12px] font-semibold text-foreground">Recent Imports</p>
+          <div className="mt-2 space-y-1">
+            {recentImportHistory.map((entry) => {
+              const statusMeta = getImportStatusMeta(entry.status);
+              return (
+                <p key={entry.id} className="text-[11px] text-muted-foreground">
+                  <span className={`font-semibold ${statusMeta.summaryTone}`}>{statusMeta.label}</span>
+                  {` | ${entry.fileName} | ${summarizeImportCounts(entry.counts)} | ${formatImportTimestamp(entry.timestamp)}`}
+                </p>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -2290,6 +2896,53 @@ export default function JobsRegisterPage() {
         </div>
       </div>
 
+      <div className="mb-4 rounded-xl border border-border bg-card/70 px-4 py-3">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <p className="text-[12px] text-muted-foreground">
+            Showing {currentPageStartIndex || 0}-{currentPageEndIndex || 0} of {totalJobs} matching jobs
+          </p>
+          <div className="flex items-center gap-2">
+            <label htmlFor="jobs-page-size" className="text-[12px] text-muted-foreground">
+              Rows:
+            </label>
+            <select
+              id="jobs-page-size"
+              value={pageSize}
+              onChange={(event) => {
+                setPageSize(Number(event.target.value));
+                setCurrentPage(1);
+              }}
+              className="h-[34px] rounded-md border border-border bg-card px-2 text-[12px] text-foreground"
+            >
+              {JOBS_PAGE_SIZE_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+              disabled={safeCurrentPage <= 1 || loading}
+              className="h-[34px] rounded-md border border-border px-3 text-[12px] font-semibold text-foreground hover:bg-muted disabled:opacity-60"
+            >
+              Previous
+            </button>
+            <span className="min-w-[96px] text-center text-[12px] font-semibold text-foreground/80">
+              Page {safeCurrentPage} / {totalPages}
+            </span>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+              disabled={safeCurrentPage >= totalPages || loading}
+              className="h-[34px] rounded-md border border-border px-3 text-[12px] font-semibold text-foreground hover:bg-muted disabled:opacity-60"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div className="admin-surface-elevated rounded-xl border border-border overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           <table className="jobs-register-table w-full text-[12px] border-collapse table-fixed min-w-[1180px] xl:min-w-0">
@@ -2303,7 +2956,7 @@ export default function JobsRegisterPage() {
                     onChange={(e) => toggleSelectAllVisible(e.target.checked)}
                     disabled={
                       loading ||
-                      filteredJobs.length === 0 ||
+                      visibleJobs.length === 0 ||
                       bulkDeleting ||
                       deletingJobId !== null
                     }
@@ -2341,15 +2994,16 @@ export default function JobsRegisterPage() {
                     Loading jobs...
                   </td>
                 </tr>
-              ) : filteredJobs.length === 0 ? (
+              ) : visibleJobs.length === 0 ? (
                 <tr>
                   <td colSpan={12} className="text-center py-12 text-[#9ca3af]">
                     No jobs match the current filters. <Link href="/admin/jobs/new" className="text-[#F07000] hover:underline font-semibold">Create a new job →</Link>
                   </td>
                 </tr>
               ) : (
-                filteredJobs.map((job, index) => {
-                  const isEven = index % 2 === 0;
+                visibleJobs.map((job, index) => {
+                  const rowNumber = currentPageStartIndex + index;
+                  const isEven = (rowNumber - 1) % 2 === 0;
                   const isSelected = selectedJobIdSet.has(job.id);
                   const registerName = getRegisterName(job);
                   const registerReference = getRegisterReference(job);
@@ -2369,11 +3023,11 @@ export default function JobsRegisterPage() {
                           aria-label={`Select job ${job.jobId}`}
                         />
                       </td>
-                      <td className="border border-[#e5e7eb] dark:border-border px-2 py-2 text-center text-[#9ca3af] dark:text-slate-400 font-medium">{index + 1}</td>
+                      <td className="border border-[#e5e7eb] dark:border-border px-2 py-2 text-center text-[#9ca3af] dark:text-slate-400 font-medium">{rowNumber}</td>
                       <td className="border border-[#e5e7eb] px-3 py-2 align-top">
                         <button
                           type="button"
-                          onClick={() => setRegisterModalJob(job)}
+                          onClick={() => openRegisterModal(job)}
                           className="font-semibold text-foreground hover:text-[#F07000] transition-colors"
                         >
                           {registerName}
@@ -2397,7 +3051,7 @@ export default function JobsRegisterPage() {
                           <span>{new Date(job.createdAt).toLocaleDateString()}</span>
                           <button
                             type="button"
-                            onClick={() => setRegisterModalJob(job)}
+                            onClick={() => openRegisterModal(job)}
                             className="inline-flex items-center gap-1 text-[#0f766e] hover:underline"
                           >
                             <PencilLine size={11} /> Edit Register
@@ -2411,7 +3065,7 @@ export default function JobsRegisterPage() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => setRegisterModalJob(job)}
+                            onClick={() => openRegisterModal(job)}
                             className="inline-flex items-center gap-1 text-[#F07000] hover:underline"
                           >
                             <Eye size={11} /> Open Register
@@ -2437,7 +3091,7 @@ export default function JobsRegisterPage() {
                       <td className="border border-[#e5e7eb] px-2 py-2 font-mono text-[#F07000] font-semibold align-top">{job.jobId}</td>
                       <td
                         className="border border-[#e5e7eb] px-2 py-2 font-mono text-[#4b5563] align-top cursor-pointer hover:bg-orange-50"
-                        onClick={() => setRegisterModalJob(job)}
+                        onClick={() => openRegisterModal(job)}
                         title="Click to open the register entry"
                       >
                         {getActualRegionalNumber(job, record) || <span className="text-[#9ca3af] font-sans text-[11px]">Not assigned</span>}
@@ -2450,7 +3104,7 @@ export default function JobsRegisterPage() {
                             key={col.key}
                             stage={resolvedStage.entry}
                             source={resolvedStage.source}
-                            onClick={() => setRegisterModalJob(job)}
+                            onClick={() => openRegisterModal(job)}
                           />
                         );
                       })}
@@ -2465,7 +3119,7 @@ export default function JobsRegisterPage() {
 
       {!loading && (
         <p className="mt-3 text-[12px] text-[#9ca3af] text-right">
-          Showing {filteredJobs.length} of {jobs.length} job{jobs.length !== 1 ? "s" : ""}
+          Showing {currentPageStartIndex || 0}-{currentPageEndIndex || 0} of {totalJobs} matching job{totalJobs !== 1 ? "s" : ""}
         </p>
       )}
 
