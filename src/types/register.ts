@@ -21,6 +21,8 @@ export interface JobRegisterRecord {
   jobId: string;
   actualRegionalNumber?: string;
   stages: Partial<Record<RegisterStageKey, RegisterStageValue>>;
+  // Explicitly cleared stages should stay empty even when workflow status suggests completion.
+  clearedStageKeys?: RegisterStageKey[];
   updatedAt: string;
   source?: "backend" | "local";
 }

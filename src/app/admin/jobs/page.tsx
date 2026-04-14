@@ -15,6 +15,7 @@ import {
   PencilLine,
   Plus,
   RefreshCw,
+  RotateCcw,
   Search,
   Send,
   Trash2,
@@ -1006,6 +1007,7 @@ function resolveRegisterStages(
   record?: JobRegisterRecord
 ): Record<RegisterStageKey, ResolvedRegisterStage> {
   const latestByStep = getLatestBackendDecisionByStep(job);
+  const clearedStageKeySet = new Set(record?.clearedStageKeys ?? []);
   const currentStepNumber = STATUS_STEP_MAP[job.backendStatus ?? "request_received"] ?? 0;
   const isQueriedCurrentStatus =
     job.backendStatus === "queried_ls461" || job.backendStatus === "queried_smd";
@@ -1046,6 +1048,14 @@ function resolveRegisterStages(
       } else {
         acc[key] = { entry: localEntry, source: "local" };
       }
+      return acc;
+    }
+
+    if (clearedStageKeySet.has(key)) {
+      acc[key] = {
+        entry: undefined,
+        source: record?.source ?? "local",
+      };
       return acc;
     }
 
@@ -1371,12 +1381,17 @@ function RegisterRowModal({
   onClose: () => void;
   onDone: (record: JobRegisterRecord) => void;
 }) {
+  type RegisterModalStages = Record<
+    RegisterStageKey,
+    { outcome: RegisterStageOutcome | ""; comment: string }
+  >;
+
   const initialResolvedStages = useMemo(
     () => resolveRegisterStages(job, record),
     [job, record]
   );
 
-  const [stages, setStages] = useState<Record<RegisterStageKey, { outcome: RegisterStageOutcome | ""; comment: string }>>(() =>
+  const [stages, setStages] = useState<RegisterModalStages>(() =>
     {
       return REGISTER_STAGE_KEYS.reduce((acc, key) => {
         const stage = initialResolvedStages[key].entry;
@@ -1385,20 +1400,36 @@ function RegisterRowModal({
           comment: stage?.comment ?? "",
         };
         return acc;
-      }, {} as Record<RegisterStageKey, { outcome: RegisterStageOutcome | ""; comment: string }>);
+      }, {} as RegisterModalStages);
     }
   );
+  const [undoStack, setUndoStack] = useState<RegisterModalStages[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
+  const updateStagesWithUndo = (updater: (current: RegisterModalStages) => RegisterModalStages) => {
+    setStages((current) => {
+      const next = updater(current);
+      if (next === current) return current;
+      setUndoStack((stack) => [...stack, current]);
+      return next;
+    });
+  };
+
   const setStageOutcome = (key: RegisterStageKey, outcome: RegisterStageOutcome) => {
-    setStages((current) => ({
-      ...current,
-      [key]: {
-        ...current[key],
-        outcome,
-      },
-    }));
+    updateStagesWithUndo((current) => {
+      const nextOutcome = current[key].outcome === outcome ? "" : outcome;
+      if (current[key].outcome === nextOutcome) return current;
+      const shouldClearComment = nextOutcome === "";
+      return {
+        ...current,
+        [key]: {
+          ...current[key],
+          outcome: nextOutcome,
+          comment: shouldClearComment ? "" : current[key].comment,
+        },
+      };
+    });
   };
 
   const setStageComment = (key: RegisterStageKey, comment: string) => {
@@ -1412,22 +1443,42 @@ function RegisterRowModal({
   };
 
   const clearStage = (key: RegisterStageKey) => {
-    if (initialResolvedStages[key].source === "backend") {
-      const backendStage = initialResolvedStages[key].entry;
-      setStages((current) => ({
-        ...current,
-        [key]: {
-          outcome: backendStage?.outcome ?? "",
-          comment: backendStage?.comment ?? "",
-        },
-      }));
-      return;
-    }
+    updateStagesWithUndo((current) => {
+      if (initialResolvedStages[key].source === "backend") {
+        const backendStage = initialResolvedStages[key].entry;
+        const nextOutcome = backendStage?.outcome ?? "";
+        const nextComment = backendStage?.comment ?? "";
+        if (current[key].outcome === nextOutcome && current[key].comment === nextComment) {
+          return current;
+        }
+        return {
+          ...current,
+          [key]: {
+            outcome: nextOutcome,
+            comment: nextComment,
+          },
+        };
+      }
 
-    setStages((current) => ({
-      ...current,
-      [key]: { outcome: "", comment: "" },
-    }));
+      if (!current[key].outcome && !current[key].comment) {
+        return current;
+      }
+      return {
+        ...current,
+        [key]: { outcome: "", comment: "" },
+      };
+    });
+  };
+
+  const canUndo = undoStack.length > 0;
+  const undoLastChange = () => {
+    setUndoStack((current) => {
+      const previous = current[current.length - 1];
+      if (!previous) return current;
+      setStages(previous);
+      setError("");
+      return current.slice(0, -1);
+    });
   };
 
   const isStageEdited = (key: RegisterStageKey) => {
@@ -1582,7 +1633,18 @@ function RegisterRowModal({
           </div>
 
           <div>
-            <p className="text-[12px] font-semibold text-[#374151] mb-3 uppercase tracking-wide">Book Stages</p>
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <p className="text-[12px] font-semibold text-[#374151] uppercase tracking-wide">Book Stages</p>
+              <button
+                type="button"
+                onClick={undoLastChange}
+                disabled={!canUndo}
+                className="inline-flex items-center gap-1.5 rounded-md border border-[#e5e7eb] bg-white px-2.5 py-1.5 text-[11px] font-semibold text-[#4b5563] hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <RotateCcw size={12} />
+                Undo last change
+              </button>
+            </div>
             <div className="grid gap-4 md:grid-cols-2">
               {REGISTER_STAGE_KEYS.map((key) => {
                 const stage = stages[key];
