@@ -152,8 +152,8 @@ function getRegisterStageDisplay(value?: RegisterStageValue): string {
   return stage.outcome === "accept"
     ? "Approved"
     : stage.outcome === "query"
-      ? "Queried"
-      : "Rejected";
+      ? "Query"
+      : "Pending";
 }
 
 function normalizeImportColumnName(value: string): string {
@@ -483,8 +483,8 @@ function formatImportStageSummary(
       stage.outcome === "accept"
         ? "Approved"
         : stage.outcome === "query"
-          ? "Queried"
-          : "Rejected";
+          ? "Query"
+          : "Pending";
     return [`${label}: ${outcome}`];
   });
 
@@ -1201,13 +1201,13 @@ function RegisterStageCell({
               td: "border-[#fde68a] bg-[#fffbeb] hover:bg-[#fef3c7]",
               icon: <AlertTriangle size={15} className="text-amber-500 mx-auto" />,
               button: "border-amber-200 bg-white text-amber-700 hover:bg-amber-100",
-              prefix: "Queried",
+              prefix: "Query",
             }
           : {
               td: "border-[#fecaca] bg-[#fef2f2] hover:bg-[#fee2e2]",
               icon: <X size={15} className="text-red-600 mx-auto" />,
               button: "border-red-200 bg-white text-red-700 hover:bg-red-100",
-              prefix: "Rejected",
+              prefix: "Pending",
             };
 
     return (
@@ -1500,7 +1500,7 @@ function RegisterRowModal({
       }
 
       if ((stage.outcome === "query" || stage.outcome === "reject") && !comment) {
-        return `Add a comment for ${REGISTER_STAGE_LABELS[key]} when it is queried or rejected.`;
+        return `Add a comment for ${REGISTER_STAGE_LABELS[key]} when it is query or pending.`;
       }
     }
 
@@ -1646,9 +1646,17 @@ function RegisterRowModal({
               </button>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
-              {REGISTER_STAGE_KEYS.map((key) => {
+              {REGISTER_STAGE_KEYS.map((key, index) => {
                 const stage = stages[key];
                 const source = initialResolvedStages[key].source;
+                const previousKey = index > 0 ? REGISTER_STAGE_KEYS[index - 1] : null;
+                const previousStageSaved =
+                  previousKey === null
+                    ? true
+                    : Boolean(initialResolvedStages[previousKey].entry?.outcome);
+                const stageWasSaved = Boolean(initialResolvedStages[key].entry?.outcome);
+                const stageLocked =
+                  !stageWasSaved && !previousStageSaved;
                 const stageHasValue = Boolean(stage.outcome || stage.comment.trim());
                 const stageEdited = isStageEdited(key);
                 const showClearButton = source === "backend" ? stageEdited : stageHasValue;
@@ -1672,6 +1680,7 @@ function RegisterRowModal({
                         <button
                           type="button"
                           onClick={() => clearStage(key)}
+                          disabled={stageLocked}
                           className="text-[11px] font-semibold text-[#9ca3af] hover:text-[#4b5563]"
                         >
                           {clearLabel}
@@ -1685,6 +1694,7 @@ function RegisterRowModal({
                           key={option}
                           type="button"
                           onClick={() => setStageOutcome(key, option)}
+                          disabled={stageLocked}
                           className={`py-2 rounded-lg text-[12px] font-bold border-2 transition-all ${
                             stage.outcome === option
                               ? option === "accept"
@@ -1693,9 +1703,11 @@ function RegisterRowModal({
                                   ? "border-amber-500 bg-amber-50 text-amber-700"
                                   : "border-red-500 bg-red-50 text-red-700"
                               : "border-[#e5e7eb] bg-white text-[#6b7280] hover:border-[#d1d5db]"
+                          } ${
+                            stageLocked ? "cursor-not-allowed opacity-60 hover:border-[#e5e7eb]" : ""
                           }`}
                         >
-                          {option === "accept" ? "✓ Approve" : option === "query" ? "⚠ Query" : "✕ Reject"}
+                          {option === "accept" ? "Approved" : option === "query" ? "Query" : "Pending"}
                         </button>
                       ))}
                     </div>
@@ -1703,6 +1715,7 @@ function RegisterRowModal({
                     <textarea
                       value={stage.comment}
                       onChange={(e) => setStageComment(key, e.target.value)}
+                      disabled={stageLocked}
                       rows={3}
                       placeholder={
                         stage.outcome === "accept"
@@ -1710,7 +1723,7 @@ function RegisterRowModal({
                           : stage.outcome === "query"
                             ? "Comment for query (required)..."
                             : stage.outcome === "reject"
-                              ? "Comment for rejection (required)..."
+                              ? "Comment for pending (required)..."
                               : "Add a comment for this stage..."
                       }
                       className="w-full px-3 py-2 border border-[#e5e7eb] rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-[#F07000]/20 resize-none"
@@ -1722,7 +1735,7 @@ function RegisterRowModal({
           </div>
 
           <div className="rounded-xl border border-dashed border-[#f59e0b] bg-[#fffbeb] px-4 py-3 text-[12px] text-[#92400e]">
-            Accepted stages sync to backend workflow where supported. Query/reject and late-region stage edits are persisted in backend register metadata on the job record.
+            Approved stages sync to backend workflow where supported. Query/pending and late-region stage edits are persisted in backend register metadata on the job record.
           </div>
 
           {error && <p className="text-red-600 text-[12px]">{error}</p>}
