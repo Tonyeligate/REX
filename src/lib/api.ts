@@ -1005,7 +1005,9 @@ function isNumericJobId(value: string): boolean {
 }
 
 function isLikelyNotFoundError(message: string): boolean {
-  return /(\b404\b|not\s*found|request failed:\s*404)/i.test(message);
+  return /(\b404\b|not\s*found|request failed:\s*404|no\s+\w+\s+matches\s+the\s+given\s+query)/i.test(
+    message
+  );
 }
 
 function isMethodNotAllowedError(message: string): boolean {
@@ -1056,6 +1058,74 @@ let jobListLookupCache:
   | null = null;
 let jobListLookupInFlight: Promise<BackendJobListItem[]> | null = null;
 
+type BackendJobListPayload =
+  | BackendJobListItem[]
+  | { count?: number; results?: BackendJobListItem[] };
+
+function invalidateJobListLookupCache() {
+  jobListLookupCache = null;
+  jobListLookupInFlight = null;
+}
+
+function extractBackendJobListItems(payload: BackendJobListPayload): BackendJobListItem[] {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  if (Array.isArray(payload.results)) {
+    return payload.results;
+  }
+
+  return [];
+}
+
+function mergeJobLookupItems(
+  primary: BackendJobListItem[],
+  secondary: BackendJobListItem[]
+): BackendJobListItem[] {
+  const merged = new Map<string, BackendJobListItem>();
+
+  for (const item of [...primary, ...secondary]) {
+    merged.set(String(item.id), item);
+  }
+
+  return Array.from(merged.values());
+}
+
+async function fetchJobLookupCandidates(query: string): Promise<BackendJobListItem[]> {
+  const trimmedQuery = query.trim();
+  if (!trimmedQuery) return [];
+
+  const requestShapes: Array<Record<string, string>> = [
+    { search: trimmedQuery, page_size: "100" },
+    { q: trimmedQuery, page_size: "100" },
+    { search: trimmedQuery, q: trimmedQuery, page_size: "100" },
+  ];
+
+  const collected: BackendJobListItem[] = [];
+
+  for (const shape of requestShapes) {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(shape)) {
+      if (!value.trim()) continue;
+      params.set(key, value);
+    }
+
+    if (!params.toString()) continue;
+
+    try {
+      const payload = await backendRequest<BackendJobListPayload>(
+        `/jobs/?${params.toString()}`
+      );
+      collected.push(...extractBackendJobListItems(payload));
+    } catch {
+      // Search params are backend-version dependent; ignore failed shapes.
+    }
+  }
+
+  return mergeJobLookupItems([], collected);
+}
+
 function hydrateJobListLookupCache(items: BackendJobListItem[]) {
   jobListLookupCache = {
     expiresAt: Date.now() + JOB_LIST_LOOKUP_CACHE_TTL_MS,
@@ -1063,15 +1133,22 @@ function hydrateJobListLookupCache(items: BackendJobListItem[]) {
   };
 }
 
-async function getJobListLookupSnapshot(): Promise<BackendJobListItem[]> {
+async function getJobListLookupSnapshot(options?: {
+  forceRefresh?: boolean;
+}): Promise<BackendJobListItem[]> {
+  if (options?.forceRefresh) {
+    invalidateJobListLookupCache();
+  }
+
   const now = Date.now();
   if (jobListLookupCache && jobListLookupCache.expiresAt > now) {
     return jobListLookupCache.items;
   }
 
   if (!jobListLookupInFlight) {
-    jobListLookupInFlight = backendRequest<BackendJobListItem[]>("/jobs/")
-      .then((items) => {
+    jobListLookupInFlight = backendRequest<BackendJobListPayload>("/jobs/")
+      .then((payload) => {
+        const items = extractBackendJobListItems(payload);
         hydrateJobListLookupCache(items);
         return items;
       })
@@ -1083,7 +1160,7 @@ async function getJobListLookupSnapshot(): Promise<BackendJobListItem[]> {
   return jobListLookupInFlight;
 }
 
-async function detectBackendJobDeleteSupport(): Promise<boolean> {
+async function detectBackendJobDeleteSupport(): Promise<boolean | null> {
   if (backendSupportsJobDelete !== null) {
     return backendSupportsJobDelete;
   }
@@ -1103,19 +1180,35 @@ async function detectBackendJobDeleteSupport(): Promise<boolean> {
       }
     );
   } catch {
-    // If schema fetch fails, fail closed to avoid claiming a delete that never persisted.
-    backendSupportsJobDelete = false;
+    // Some environments disable /schema/; treat as unknown and attempt real DELETE.
+    return null;
   }
 
   return backendSupportsJobDelete;
 }
 
-async function findJobInList(rnOrId: string): Promise<BackendJobListItem | null> {
+async function findJobInList(
+  rnOrId: string,
+  options?: { forceRefresh?: boolean }
+): Promise<BackendJobListItem | null> {
   const query = rnOrId.trim();
   if (!query) return null;
 
-  const items = await getJobListLookupSnapshot();
-  return items.find((item) => matchesJobIdentifier(item, query)) ?? null;
+  const items = await getJobListLookupSnapshot(options);
+  const cachedMatch = items.find((item) => matchesJobIdentifier(item, query));
+  if (cachedMatch) {
+    return cachedMatch;
+  }
+
+  const targetedItems = await fetchJobLookupCandidates(query);
+  if (targetedItems.length === 0) {
+    return null;
+  }
+
+  const mergedItems = mergeJobLookupItems(items, targetedItems);
+  hydrateJobListLookupCache(mergedItems);
+
+  return mergedItems.find((item) => matchesJobIdentifier(item, query)) ?? null;
 }
 
 async function resolveBackendJobPathKey(rnOrId: string): Promise<string> {
@@ -1164,13 +1257,35 @@ function getJobPathCandidates(lookupKey: string): string[] {
   const key = lookupKey.trim();
   if (!key) return [key];
 
-  const candidates = [key];
-  if (key.includes("/")) {
-    // Double-encode slash as a fallback for backends that decode path segments early.
-    candidates.push(key.replace(/\//g, "%2F"));
+  // Return only the raw key - encodeURIComponent() in requestJobEndpoint will handle all encoding
+  // Do NOT pre-encode here, it causes double-encoding when combined with encodeURIComponent()
+  return [key];
+}
+
+async function getResolvedJobPathCandidates(lookupKey: string): Promise<string[]> {
+  const key = lookupKey.trim();
+  const baseCandidates = getJobPathCandidates(key);
+  if (!key || isNumericJobId(key) || !/[\s/]/.test(key)) {
+    return baseCandidates;
   }
 
-  return Array.from(new Set(candidates));
+  const listMatch = await findJobInList(key).catch(() => null);
+  if (!listMatch) {
+    return baseCandidates;
+  }
+
+  return Array.from(
+    new Set(
+      [
+        listMatch.rn?.trim() ?? "",
+        listMatch.regional_number?.trim() ?? "",
+        ...baseCandidates,
+        String(listMatch.id),
+      ]
+        .map((value) => value.trim())
+        .filter(Boolean)
+    )
+  );
 }
 
 async function requestJobEndpoint<T>(
@@ -1178,14 +1293,22 @@ async function requestJobEndpoint<T>(
   suffix: string,
   options?: RequestInit
 ): Promise<T> {
-  const candidates = getJobPathCandidates(lookupKey);
+  const candidates = await getResolvedJobPathCandidates(lookupKey);
   let lastError: unknown;
 
   for (let i = 0; i < candidates.length; i += 1) {
     const candidate = candidates[i];
     try {
+      // Encode the candidate with encodeURIComponent() - converts SGGA C5467/2026 → SGGA%20C5467%2F2026
+      let encodedCandidate = encodeURIComponent(candidate);
+      
+      // Double-encode slashes as fallback: if next.config rewrite decodes, %2F → %252F stays encoded
+      if (candidate.includes("/")) {
+        encodedCandidate = encodedCandidate.replace(/%2F/g, "%252F");
+      }
+      
       return await backendRequest<T>(
-        `/jobs/${encodeURIComponent(candidate)}${suffix}`,
+        `/jobs/${encodedCandidate}${suffix}`,
         options
       );
     } catch (err) {
@@ -1240,7 +1363,7 @@ async function transitionJobStatus(
   payload: { status: BackendStatus; notes?: string; query_reason?: string }
 ): Promise<void> {
   const lookupKey = await resolveBackendJobRnForWrite(rnOrId);
-  const candidates = getJobPathCandidates(lookupKey);
+  const candidates = await getResolvedJobPathCandidates(lookupKey);
   let lastError: unknown;
 
   for (let i = 0; i < candidates.length; i += 1) {
@@ -1341,15 +1464,11 @@ export const jobsApi = {
 
     const qs = queryParams.toString();
     const payload = await backendRequest<
-      BackendJobListItem[] | { count?: number; results?: BackendJobListItem[] }
+      BackendJobListPayload
     >(`/jobs/${qs ? `?${qs}` : ""}`, {
       signal: requestOptions?.signal,
     });
-    const items = Array.isArray(payload)
-      ? payload
-      : Array.isArray(payload.results)
-        ? payload.results
-        : [];
+    const items = extractBackendJobListItems(payload);
 
     if (!qs) {
       hydrateJobListLookupCache(items);
@@ -1574,7 +1693,7 @@ export const jobsApi = {
     };
 
     const backendCanDeleteJobs = await detectBackendJobDeleteSupport();
-    if (!backendCanDeleteJobs) {
+    if (backendCanDeleteJobs === false) {
       throw new Error(
         "Backend API does not currently support deleting jobs. This job was not removed from the database."
       );
@@ -1583,10 +1702,10 @@ export const jobsApi = {
     const candidateDeleteKeys = Array.from(
       new Set(
         [
+          matchedJob ? String(matchedJob.id) : "",
           matchedJob?.rn?.trim() ?? "",
           resolvedLookupKey,
           query,
-          matchedJob ? String(matchedJob.id) : "",
         ].map((value) => value.trim()).filter(Boolean)
       )
     );
@@ -1599,6 +1718,8 @@ export const jobsApi = {
         await requestJobEndpoint<Record<string, unknown>>(candidateKey, "/", {
           method: "DELETE",
         });
+        backendSupportsJobDelete = true;
+        invalidateJobListLookupCache();
         deleteSucceeded = true;
         break;
       } catch (error) {
@@ -1625,14 +1746,6 @@ export const jobsApi = {
 
       throw new Error(
         "Job could not be deleted from backend. The record was not found on the backend delete endpoint."
-      );
-    }
-
-    const verifyLookup = matchedJob?.rn?.trim() || resolvedLookupKey || query;
-    const stillExists = await findJobInList(verifyLookup).catch(() => null);
-    if (stillExists) {
-      throw new Error(
-        "Delete request completed but the job still exists on the backend. No database deletion was confirmed."
       );
     }
 

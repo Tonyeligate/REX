@@ -435,7 +435,7 @@ export default function ClientDashboardPage() {
           Track Your <span className="client-gradient-text">Job Status</span>
         </h1>
         <p className="m-0 text-[#475569] dark:text-slate-300 text-[14px] sm:text-[16px] max-w-[640px] mx-auto mb-6">
-          Enter your RNR or regional number to view the latest workflow progress.
+          Enter your tracking number or regional number to view the latest workflow progress.
         </p>
 
         {/* Search bar */}
@@ -449,7 +449,7 @@ export default function ClientDashboardPage() {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="e.g. RN-GAR-2026-001 or ARN/Regional Number"
+                placeholder="e.g. SGGA C3824/2026"
                 className="border-none outline-none w-full text-[15px] bg-transparent text-[#0f172a] dark:text-slate-100 placeholder:text-[#b0b8c4] dark:placeholder:text-slate-500"
               />
             </div>
@@ -519,7 +519,7 @@ export default function ClientDashboardPage() {
             </div>
             <h2 className="m-0 mb-2 text-[18px] font-[800] text-[#0f172a] dark:text-slate-100">Search for Your Job</h2>
             <p className="m-0 text-[#64748b] dark:text-slate-300 text-[14px] max-w-[380px] mx-auto">
-              Enter your RNR or actual regional number above and click <b>Search</b> to view the full certification workflow progress on one page.
+              Enter your regional number above and click <b>Search</b> to view the full certification workflow progress on one page.
             </p>
           </motion.div>
         )}

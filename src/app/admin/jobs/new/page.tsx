@@ -153,12 +153,12 @@ export default function NewJobPage() {
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            {/* Regional Number (RN) */}
+            {/* Regional Number */}
             <div>
-              <label className="block text-[13px] font-semibold text-foreground/85 mb-1.5">Regional Number (RN) *</label>
+              <label className="block text-[13px] font-semibold text-foreground/85 mb-1.5">Regional Number *</label>
               <input
                 {...register("rn", { required: "Regional Number is required" })}
-                placeholder="e.g. RN-GAR-2025-001"
+                placeholder="e.g. SGGA C3824/2026"
                 className="w-full h-[40px] px-4 border border-border bg-card rounded-lg text-[13px] text-foreground focus:outline-none focus:ring-2 focus:ring-[#F07000]/20"
               />
               {errors.rn && <p className="text-red-500 text-[11px] mt-1">{errors.rn.message}</p>}

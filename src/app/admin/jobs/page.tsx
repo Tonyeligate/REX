@@ -251,7 +251,7 @@ const IMPORT_STAGE_COLUMNS: Record<RegisterStageKey, string[]> = {
 
 const IMPORT_DETECTED_FIELD_TARGETS: ImportFieldTarget[] = [
   { key: "clientName", label: "Client Name", candidates: IMPORT_CLIENT_NAME_COLUMNS },
-  { key: "rnr", label: "RNR", candidates: IMPORT_JOB_ID_COLUMNS },
+  { key: "rnr", label: "Tracking Number", candidates: IMPORT_JOB_ID_COLUMNS },
   { key: "regionalNumber", label: "Regional Number", candidates: IMPORT_REGIONAL_NUMBER_COLUMNS },
   {
     key: "jobProductionLsCertification",
@@ -875,7 +875,7 @@ function buildImportPreviewRows(
         hasRegionalNumber: false,
         hasChanges: false,
         canCreate: false,
-        issue: "Missing RNR/RN column value",
+        issue: "Missing tracking number column value",
         apply: false,
       };
     }
@@ -1847,7 +1847,7 @@ export default function JobsRegisterPage() {
     const rows = importOutcome.failures.map((failure, index) => ({
       "#": index + 1,
       Row: failure.rowNumber,
-      RNR: failure.rn,
+      "Tracking Number": failure.rn,
       Reason: failure.reason,
     }));
 
@@ -1864,7 +1864,7 @@ export default function JobsRegisterPage() {
         return value;
       };
 
-      const headers = ["#", "Row", "RNR", "Reason"];
+      const headers = ["#", "Row", "Tracking Number", "Reason"];
       const csvLines = [
         headers.join(","),
         ...rows.map((row) =>
@@ -1980,13 +1980,10 @@ export default function JobsRegisterPage() {
   const recentImportHistory = importHistory.slice(0, 5);
   const ImportStatusIcon = importStatusMeta?.icon ?? CheckCircle;
 
-  const handleExport = async () => {
-    const XLSX = await import("xlsx");
-
+  const handleExport = async (format: "xlsx" | "csv" = "xlsx") => {
     const headers = [
       "#",
       "Client Name",
-      "RNR",
       "Regional Number",
       "Job Production / L/S Certification",
       "CSAU",
@@ -2005,8 +2002,7 @@ export default function JobsRegisterPage() {
       const row: Record<string, string | number> = {
         "#": currentPageStartIndex + index,
         "Client Name": getRegisterName(job),
-        RNR: job.jobId ?? "",
-        "Regional Number": getActualRegionalNumber(job, record),
+        "Regional Number": getActualRegionalNumber(job, record) || job.jobId || "",
       };
 
       row["Job Production / L/S Certification"] = getRegisterStageDisplay(resolvedStages.jobProductionLsCertification.entry);
@@ -2029,11 +2025,44 @@ export default function JobsRegisterPage() {
       return row;
     });
 
+    if (format === "csv") {
+      const escapeCsv = (value: string) => {
+        if (value.includes(",") || value.includes("\"") || value.includes("\n")) {
+          return `"${value.replace(/\"/g, '""')}"`;
+        }
+        return value;
+      };
+
+      const csvLines = [
+        headers.join(","),
+        ...rows.map((row) =>
+          headers
+            .map((header) => escapeCsv(String(row[header] ?? "")))
+            .join(",")
+        ),
+      ];
+
+      const blob = new Blob([csvLines.join("\n")], {
+        type: "text/csv;charset=utf-8",
+      });
+      const href = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = href;
+      anchor.download = `Jobs-Register-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(href);
+      return;
+    }
+
+    const XLSX = await import("xlsx");
+
     const ws = XLSX.utils.json_to_sheet(rows, { header: headers });
     ws["!cols"] = headers.map((header) =>
       header === "Client Name" || header === "Workflow Status / Notes"
         ? { wch: 30 }
-        : header === "RNR" || header === "Regional Number"
+        : header === "Regional Number"
           ? { wch: 18 }
           : { wch: 14 }
     );
@@ -2455,10 +2484,20 @@ export default function JobsRegisterPage() {
               <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Refresh
             </button>
             <button
-              onClick={handleExport}
+              onClick={() => {
+                void handleExport("xlsx");
+              }}
               className="flex items-center gap-2 h-[38px] px-4 bg-green-600 text-white rounded-lg text-[13px] font-semibold hover:bg-green-700 transition-colors shadow-[0_8px_18px_rgba(22,163,74,0.26)]"
             >
-              <Download size={14} /> Export Excel
+              <Download size={14} /> Export XLSX
+            </button>
+            <button
+              onClick={() => {
+                void handleExport("csv");
+              }}
+              className="flex items-center gap-2 h-[38px] px-4 bg-emerald-600 text-white rounded-lg text-[13px] font-semibold hover:bg-emerald-700 transition-colors shadow-[0_8px_18px_rgba(5,150,105,0.26)]"
+            >
+              <Download size={14} /> Export CSV (Google Sheets)
             </button>
             <button
               onClick={() => importInputRef.current?.click()}
@@ -2466,7 +2505,7 @@ export default function JobsRegisterPage() {
               className="flex items-center gap-2 h-[38px] px-4 bg-[#1d4ed8] text-white rounded-lg text-[13px] font-semibold hover:bg-[#1e40af] disabled:opacity-60 transition-colors shadow-[0_8px_18px_rgba(29,78,216,0.26)]"
             >
               {importing ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-              {importing ? "Importing..." : "Import Excel"}
+              {importing ? "Importing..." : "Import Spreadsheet"}
             </button>
             <button
               type="button"
@@ -2547,7 +2586,7 @@ export default function JobsRegisterPage() {
       <input
         ref={importInputRef}
         type="file"
-        accept=".xlsx,.xls"
+        accept=".xlsx,.xls,.csv"
         onChange={handleImportExcel}
         className="hidden"
       />
@@ -2616,7 +2655,7 @@ export default function JobsRegisterPage() {
                 <thead>
                   <tr className="border-b border-current/20">
                     <th className="text-left px-2 py-2 font-semibold">Row</th>
-                    <th className="text-left px-2 py-2 font-semibold">RNR</th>
+                    <th className="text-left px-2 py-2 font-semibold">Tracking Number</th>
                     <th className="text-left px-2 py-2 font-semibold">Reason</th>
                   </tr>
                 </thead>
@@ -2779,7 +2818,7 @@ export default function JobsRegisterPage() {
                 <thead className="bg-[#1f2937] text-white sticky top-0">
                   <tr>
                     <th className="border border-[#374151] px-2 py-2 text-left">Row</th>
-                    <th className="border border-[#374151] px-2 py-2 text-left">Input RNR</th>
+                    <th className="border border-[#374151] px-2 py-2 text-left">Input Tracking Number</th>
                     <th className="border border-[#374151] px-2 py-2 text-left">Matched Job</th>
                     <th className="border border-[#374151] px-2 py-2 text-left">Regional Number</th>
                     <th className="border border-[#374151] px-2 py-2 text-left">Stage Updates</th>
@@ -2875,7 +2914,7 @@ export default function JobsRegisterPage() {
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search by RN, client, title, status, or comment..."
+                placeholder="Search by regional number, client, title, status, or comment..."
                 className="w-full h-[40px] pl-10 pr-4 border border-border bg-card rounded-lg text-[13px] text-foreground focus:outline-none focus:ring-2 focus:ring-[#F07000]/20"
               />
             </div>
@@ -2952,7 +2991,7 @@ export default function JobsRegisterPage() {
 
       <div className="admin-surface-elevated rounded-xl border border-border overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
-          <table className="jobs-register-table w-full text-[12px] border-collapse table-fixed min-w-[1180px] xl:min-w-0">
+          <table className="jobs-register-table w-full text-[12px] border-collapse table-fixed min-w-[1080px] xl:min-w-0">
             <thead>
               <tr className="bg-[#1f2937] text-white">
                 <th rowSpan={2} className="border border-[#374151] px-2 py-2 text-center font-bold w-[40px]">
@@ -2972,7 +3011,6 @@ export default function JobsRegisterPage() {
                 </th>
                 <th rowSpan={2} className="border border-[#374151] px-3 py-2 text-center font-bold w-8">#</th>
                 <th rowSpan={2} className="border border-[#374151] px-3 py-2 text-left font-bold w-[200px]">Client Name</th>
-                <th rowSpan={2} className="border border-[#374151] px-3 py-2 text-left font-bold w-[135px]">RNR</th>
                 <th rowSpan={2} className="border border-[#374151] px-3 py-2 text-left font-bold w-[150px]">Regional Number</th>
                 <th rowSpan={2} className="border border-[#374151] px-3 py-2 text-center font-bold bg-[#374151] w-[96px]">
                   Job Production /<br />L/S Certification
@@ -2996,14 +3034,14 @@ export default function JobsRegisterPage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={12} className="text-center py-12 text-[#9ca3af]">
+                  <td colSpan={11} className="text-center py-12 text-[#9ca3af]">
                     <Loader2 size={20} className="animate-spin mx-auto mb-2" />
                     Loading jobs...
                   </td>
                 </tr>
               ) : visibleJobs.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="text-center py-12 text-[#9ca3af]">
+                  <td colSpan={11} className="text-center py-12 text-[#9ca3af]">
                     No jobs match the current filters. <Link href="/admin/jobs/new" className="text-[#F07000] hover:underline font-semibold">Create a new job →</Link>
                   </td>
                 </tr>
@@ -3095,13 +3133,12 @@ export default function JobsRegisterPage() {
                           <div className="text-[11px] text-amber-700 dark:text-amber-300 mt-1 line-clamp-2">{job.queryReason}</div>
                         )}
                       </td>
-                      <td className="border border-[#e5e7eb] px-2 py-2 font-mono text-[#F07000] font-semibold align-top">{job.jobId}</td>
                       <td
                         className="border border-[#e5e7eb] px-2 py-2 font-mono text-[#4b5563] align-top cursor-pointer hover:bg-orange-50"
                         onClick={() => openRegisterModal(job)}
                         title="Click to open the register entry"
                       >
-                        {getActualRegionalNumber(job, record) || <span className="text-[#9ca3af] font-sans text-[11px]">Not assigned</span>}
+                        {getActualRegionalNumber(job, record) || job.jobId || <span className="text-[#9ca3af] font-sans text-[11px]">Not assigned</span>}
                       </td>
                       {REGISTER_STAGE_COLS.map((col) => {
                         const key = col.key as RegisterStageKey;
