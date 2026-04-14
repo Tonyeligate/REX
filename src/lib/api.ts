@@ -1134,6 +1134,32 @@ async function resolveBackendJobPathKey(rnOrId: string): Promise<string> {
   return listMatch?.rn?.trim() || query;
 }
 
+async function resolveBackendJobRnForWrite(rnOrId: string): Promise<string> {
+  const query = rnOrId.trim();
+  if (!query) {
+    throw new Error("Regional number (rn) is required for job updates.");
+  }
+
+  const matched = await findJobInList(query).catch(() => null);
+  const matchedRn = matched?.rn?.trim();
+  if (matchedRn) {
+    return matchedRn;
+  }
+
+  const resolvedLookupKey = await resolveBackendJobPathKey(query);
+  if (isNumericJobId(resolvedLookupKey)) {
+    if (typeof window !== "undefined" && process.env.NODE_ENV !== "production") {
+      console.warn("[jobsApi] write RN resolution failed", {
+        input: query,
+        resolvedLookupKey,
+      });
+    }
+    throw new Error("Job rn could not be resolved from id. Use rn from the list payload.");
+  }
+
+  return resolvedLookupKey;
+}
+
 function getJobPathCandidates(lookupKey: string): string[] {
   const key = lookupKey.trim();
   if (!key) return [key];
@@ -1213,7 +1239,7 @@ async function transitionJobStatus(
   rnOrId: string,
   payload: { status: BackendStatus; notes?: string; query_reason?: string }
 ): Promise<void> {
-  const lookupKey = await resolveBackendJobPathKey(rnOrId);
+  const lookupKey = await resolveBackendJobRnForWrite(rnOrId);
   const candidates = getJobPathCandidates(lookupKey);
   let lastError: unknown;
 
@@ -1264,7 +1290,7 @@ const PATCH_STATUS_FLOW: BackendStatus[] = [
 ];
 
 async function setJobStatusViaPatch(rnOrId: string, status: BackendStatus): Promise<void> {
-  const lookupKey = await resolveBackendJobPathKey(rnOrId);
+  const lookupKey = await resolveBackendJobRnForWrite(rnOrId);
   await requestJobEndpoint<BackendJobDetail>(
     lookupKey,
     "/",
@@ -1508,7 +1534,7 @@ export const jobsApi = {
   },
 
   update: async (rnOrId: string, payload: Record<string, unknown>) => {
-    const lookupKey = await resolveBackendJobPathKey(rnOrId);
+    const lookupKey = await resolveBackendJobRnForWrite(rnOrId);
     const updated = await requestJobEndpoint<BackendJobDetail>(
       lookupKey,
       "/",
@@ -1787,7 +1813,7 @@ export const registerFieldsApi = {
                   job.description,
                   migratedRecord
                 );
-                await jobsApi.update(jobId, { description: nextDescription });
+                await jobsApi.update(job.jobId, { description: nextDescription });
                 records[jobId] = migratedRecord;
                 localRecords[jobId] = migratedRecord;
                 return;
@@ -1877,7 +1903,7 @@ export const registerFieldsApi = {
       ? buildDescriptionWithRegisterRecord(job.description, record)
       : stripRegisterMetaFromDescription(job.description);
 
-    await jobsApi.update(jobId, { description: nextDescription });
+    await jobsApi.update(job.jobId, { description: nextDescription });
 
     records[jobId] = record;
     writeRegisterFieldsMap(records);
