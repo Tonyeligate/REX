@@ -1692,7 +1692,11 @@ export const jobsApi = {
           ? body.error
           : `Public job lookup failed: ${res.status}`;
 
-      if (errorMessage.toLowerCase().includes("service credentials are not configured")) {
+      const normalizedError = errorMessage.toLowerCase();
+      if (
+        normalizedError.includes("service credentials are not configured") ||
+        normalizedError.includes("no active account found with the given credentials")
+      ) {
         throw new Error("Public job tracking is temporarily unavailable. Please try again shortly.");
       }
 

@@ -4,12 +4,6 @@ const BACKEND_ORIGIN =
   process.env.NEXT_PUBLIC_BACKEND_URL ??
   "https://ls-portal-development-backend.up.railway.app";
 
-const SERVICE_USERNAME = process.env.BACKEND_SERVICE_USERNAME;
-const SERVICE_PASSWORD = process.env.BACKEND_SERVICE_PASSWORD;
-
-let cachedToken: string | null = null;
-let cachedAt = 0;
-
 type SearchableBackendJob = {
   rn?: string;
   regional_number?: string | null;
@@ -17,10 +11,6 @@ type SearchableBackendJob = {
     name?: string;
   };
 };
-
-function normalizeTrackingKey(value?: string | null): string {
-  return (value ?? "").trim().toLowerCase().replace(/\s+/g, "");
-}
 
 function looksLikeTrackingQuery(query: string): boolean {
   const compact = query.trim().replace(/\s+/g, "");
@@ -39,37 +29,38 @@ function looksLikeTrackingQuery(query: string): boolean {
   return hasLetter && hasDigit;
 }
 
-function matchesJobQuery(job: SearchableBackendJob, query: string): boolean {
-  const normalizedQuery = normalizeTrackingKey(query);
-  if (!normalizedQuery) return false;
-
-  const trackingKeys = [
-    normalizeTrackingKey(job.rn),
-    normalizeTrackingKey(job.regional_number),
-  ].filter(Boolean);
-
-  return trackingKeys.some((key) => key === normalizedQuery);
-}
-
 async function lookupJob(query: string, authorization?: string) {
   const headers = authorization ? { Authorization: authorization } : undefined;
-
-  const tracking = await fetch(
-    `${BACKEND_ORIGIN}/api/jobs/tracking/${encodeURIComponent(query)}/`,
-    {
-      headers,
-      cache: "no-store",
-    }
-  );
-
-  if (tracking.ok) {
-    return {
-      status: 200,
-      job: (await tracking.json()) as SearchableBackendJob,
-    };
+  const raw = query.trim();
+  const candidates = [raw];
+  if (raw.includes("/")) {
+    // Django path converters decode once; `%252F` preserves slash as literal in rn.
+    candidates.push(raw.replace(/\//g, "%2F"));
   }
 
-  if (tracking.status !== 404) {
+  for (let i = 0; i < candidates.length; i += 1) {
+    const candidate = candidates[i];
+    const tracking = await fetch(
+      `${BACKEND_ORIGIN}/api/jobs/tracking/${encodeURIComponent(candidate)}/`,
+      {
+        headers,
+        cache: "no-store",
+      }
+    );
+
+    if (tracking.ok) {
+      return {
+        status: 200,
+        job: (await tracking.json()) as SearchableBackendJob,
+      };
+    }
+
+    if (tracking.status === 404) {
+      // Try next candidate if available (e.g. slash double-encoding fallback).
+      if (i < candidates.length - 1) continue;
+      return { status: 404, job: null };
+    }
+
     const body = await tracking.json().catch(() => ({}));
     const detail =
       typeof body === "object"
@@ -84,123 +75,7 @@ async function lookupJob(query: string, authorization?: string) {
     };
   }
 
-  const direct = await fetch(
-    `${BACKEND_ORIGIN}/api/jobs/${encodeURIComponent(query)}/`,
-    {
-      headers,
-      cache: "no-store",
-    }
-  );
-
-  if (direct.ok) {
-    return {
-      status: 200,
-      job: (await direct.json()) as SearchableBackendJob,
-    };
-  }
-
-  if (direct.status !== 404) {
-    const body = await direct.json().catch(() => ({}));
-    const detail =
-      typeof body === "object"
-        ? (body as Record<string, unknown>).detail
-        : undefined;
-
-    return {
-      status: direct.status,
-      error:
-        (typeof detail === "string" && detail) ||
-        `Backend lookup failed (${direct.status})`,
-    };
-  }
-
-  const listRes = await fetch(`${BACKEND_ORIGIN}/api/jobs/`, {
-    headers,
-    cache: "no-store",
-  });
-
-  if (!listRes.ok) {
-    const body = await listRes.json().catch(() => ({}));
-    const detail =
-      typeof body === "object"
-        ? (body as Record<string, unknown>).detail
-        : undefined;
-
-    return {
-      status: listRes.status,
-      error:
-        (typeof detail === "string" && detail) ||
-        `Backend list lookup failed (${listRes.status})`,
-    };
-  }
-
-  const jobs = (await listRes.json().catch(() => [])) as SearchableBackendJob[];
-  const match = jobs.find((job) => matchesJobQuery(job, query)) ?? null;
-  if (!match) {
-    return { status: 404, job: null };
-  }
-
-  // If we found a match via list-search, re-fetch by canonical RN so clients
-  // receive the freshest detail payload (including latest workflow decisions).
-  const matchedRn = (match.rn ?? "").trim();
-  if (matchedRn) {
-    const detailRes = await fetch(
-      `${BACKEND_ORIGIN}/api/jobs/${encodeURIComponent(matchedRn)}/`,
-      {
-        headers,
-        cache: "no-store",
-      }
-    );
-
-    if (detailRes.ok) {
-      return {
-        status: 200,
-        job: (await detailRes.json()) as SearchableBackendJob,
-      };
-    }
-  }
-
-  return { status: 200, job: match };
-}
-
-async function getServiceToken(forceRefresh = false): Promise<string> {
-  const tokenTtlMs = 4 * 60 * 1000;
-  if (!forceRefresh && cachedToken && Date.now() - cachedAt < tokenTtlMs) {
-    return cachedToken;
-  }
-
-  if (!SERVICE_USERNAME || !SERVICE_PASSWORD) {
-    throw new Error(
-      "Service credentials are not configured. Set BACKEND_SERVICE_USERNAME and BACKEND_SERVICE_PASSWORD."
-    );
-  }
-
-  const tokenRes = await fetch(`${BACKEND_ORIGIN}/api/auth/token/`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      username: SERVICE_USERNAME,
-      password: SERVICE_PASSWORD,
-    }),
-    cache: "no-store",
-  });
-
-  if (!tokenRes.ok) {
-    const body = await tokenRes.json().catch(() => ({}));
-    const detail =
-      typeof body === "object"
-        ? (body as Record<string, unknown>).detail
-        : undefined;
-    throw new Error(
-      (typeof detail === "string" && detail) ||
-        `Failed to obtain service token (${tokenRes.status}).`
-    );
-  }
-
-  const data = (await tokenRes.json()) as { access: string };
-  cachedToken = data.access;
-  cachedAt = Date.now();
-  return data.access;
+  return { status: 404, job: null };
 }
 
 interface Ctx {
@@ -241,28 +116,13 @@ export async function GET(_req: Request, ctx: Ctx) {
       return NextResponse.json({ job: null }, { status: 404 });
     }
 
-    let token = await getServiceToken();
-    let serviceLookup = await lookupJob(normalizedQuery, `Bearer ${token}`);
-
-    if (serviceLookup.status === 401) {
-      token = await getServiceToken(true);
-      serviceLookup = await lookupJob(normalizedQuery, `Bearer ${token}`);
-    }
-
-    if (serviceLookup.status === 404) {
-      return NextResponse.json({ job: null }, { status: 404 });
-    }
-
-    if (serviceLookup.status !== 200) {
-      return NextResponse.json(
-        {
-          error: serviceLookup.error ?? `Backend lookup failed (${serviceLookup.status})`,
-        },
-        { status: serviceLookup.status }
-      );
-    }
-
-    return NextResponse.json({ job: serviceLookup.job });
+    return NextResponse.json(
+      {
+        error:
+          publicLookup.error ?? `Backend lookup failed (${publicLookup.status})`,
+      },
+      { status: publicLookup.status }
+    );
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Public job lookup failed";
     return NextResponse.json({ error: message }, { status: 503 });
