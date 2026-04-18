@@ -2633,14 +2633,6 @@ export default function JobsRegisterPage() {
               <Download size={14} /> Export XLSX
             </button>
             <button
-              onClick={() => {
-                void handleExport("csv");
-              }}
-              className="flex items-center gap-2 h-[38px] px-4 bg-emerald-600 text-white rounded-lg text-[13px] font-semibold hover:bg-emerald-700 transition-colors shadow-[0_8px_18px_rgba(5,150,105,0.26)]"
-            >
-              <Download size={14} /> Export CSV (Google Sheets)
-            </button>
-            <button
               onClick={() => importInputRef.current?.click()}
               disabled={importing}
               className="flex items-center gap-2 h-[38px] px-4 bg-[#1d4ed8] text-white rounded-lg text-[13px] font-semibold hover:bg-[#1e40af] disabled:opacity-60 transition-colors shadow-[0_8px_18px_rgba(29,78,216,0.26)]"
