@@ -2411,11 +2411,12 @@ export default function JobsRegisterPage() {
     void registerFieldsApi
       .get(job.jobId)
       .then((response) => {
-        if (!response.record) return;
+        const record = response.record;
+        if (!record) return;
 
         setRegisterRecords((current) => ({
           ...current,
-          [job.jobId]: response.record,
+          [job.jobId]: record,
         }));
       })
       .catch((error) => {
