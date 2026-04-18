@@ -2411,11 +2411,12 @@ export default function JobsRegisterPage() {
     void registerFieldsApi
       .get(job.jobId)
       .then((response) => {
-        if (!response.record) return;
+        const record = response.record;
+        if (!record) return;
 
         setRegisterRecords((current) => ({
           ...current,
-          [job.jobId]: response.record,
+          [job.jobId]: record,
         }));
       })
       .catch((error) => {
@@ -2631,14 +2632,6 @@ export default function JobsRegisterPage() {
               className="flex items-center gap-2 h-[38px] px-4 bg-green-600 text-white rounded-lg text-[13px] font-semibold hover:bg-green-700 transition-colors shadow-[0_8px_18px_rgba(22,163,74,0.26)]"
             >
               <Download size={14} /> Export XLSX
-            </button>
-            <button
-              onClick={() => {
-                void handleExport("csv");
-              }}
-              className="flex items-center gap-2 h-[38px] px-4 bg-emerald-600 text-white rounded-lg text-[13px] font-semibold hover:bg-emerald-700 transition-colors shadow-[0_8px_18px_rgba(5,150,105,0.26)]"
-            >
-              <Download size={14} /> Export CSV (Google Sheets)
             </button>
             <button
               onClick={() => importInputRef.current?.click()}

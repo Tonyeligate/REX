@@ -11,9 +11,18 @@ let cachedToken: string | null = null;
 let cachedAt = 0;
 
 type SearchableBackendJob = {
+  id?: number | string;
   rn?: string;
+  title?: string;
+  status?: string;
+  status_display?: string;
   regional_number?: string | null;
+  parcel_acreage?: string | null;
+  payment_amount?: string | null;
+  created_at?: string;
+  updated_at?: string;
   client?: {
+    id?: number | string;
     name?: string;
   };
 };
@@ -23,6 +32,26 @@ type LookupResult = {
   job: SearchableBackendJob | null;
   error?: string;
 };
+
+function sanitizePublicJob(job: SearchableBackendJob | null): SearchableBackendJob | null {
+  if (!job) return null;
+  return {
+    id: job.id,
+    rn: job.rn,
+    title: job.title,
+    status: job.status,
+    status_display: job.status_display,
+    regional_number: job.regional_number ?? null,
+    parcel_acreage: job.parcel_acreage ?? null,
+    payment_amount: job.payment_amount ?? null,
+    created_at: job.created_at,
+    updated_at: job.updated_at,
+    client: {
+      id: job.client?.id,
+      name: job.client?.name,
+    },
+  };
+}
 
 function isBackendNotFoundDetail(detail: unknown): boolean {
   if (typeof detail !== "string") return false;
@@ -287,7 +316,7 @@ export async function GET(_req: Request, ctx: Ctx) {
     if (incomingAuth) {
       const userLookup = await lookupJob(normalizedQuery, incomingAuth);
       if (userLookup.status === 200) {
-        return NextResponse.json({ job: userLookup.job });
+        return NextResponse.json({ job: sanitizePublicJob(userLookup.job) });
       }
       if (userLookup.status === 404) {
         return NextResponse.json({ job: null }, { status: 404 });
@@ -297,7 +326,7 @@ export async function GET(_req: Request, ctx: Ctx) {
     // Primary path for public tracking: anonymous backend lookup first.
     const publicLookup = await lookupJob(normalizedQuery);
     if (publicLookup.status === 200) {
-      return NextResponse.json({ job: publicLookup.job });
+      return NextResponse.json({ job: sanitizePublicJob(publicLookup.job) });
     }
     if (publicLookup.status === 404) {
       return NextResponse.json({ job: null }, { status: 404 });
@@ -329,7 +358,7 @@ export async function GET(_req: Request, ctx: Ctx) {
       );
     }
 
-    return NextResponse.json({ job: serviceLookup.job });
+    return NextResponse.json({ job: sanitizePublicJob(serviceLookup.job) });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Public job lookup failed";
     if (/service credentials are not configured|failed to obtain service token/i.test(message)) {
