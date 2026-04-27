@@ -13,7 +13,6 @@ import {
   Bars3Icon,
 } from "@heroicons/react/24/outline";
 import { useAuthStore, getUserDisplayName } from "@/lib/auth-store";
-import ThemeToggleButton from "@/components/theme/theme-toggle-button";
 
 export default function AppHeader({
   showMenuButton = false,
@@ -137,9 +136,6 @@ export default function AppHeader({
               </div>
             )}
           </div>
-
-          {/* Theme Toggle */}
-          <ThemeToggleButton />
 
           {/* Profile Dropdown */}
           <div ref={profileRef} className="relative ml-2">

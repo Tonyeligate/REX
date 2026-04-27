@@ -2264,8 +2264,19 @@ export const usersApi = {
 
 export const membersApi = {
   list: async (params?: Record<string, string>) => {
-    const clients = await backendRequest<BackendClient[]>("/clients/");
-    let members = clients.map(mapBackendClientToMember);
+    const [clients, jobsPayload] = await Promise.all([
+      backendRequest<BackendClient[]>("/clients/"),
+      backendRequest<BackendJobListPayload>("/jobs/"),
+    ]);
+    const jobs = extractBackendJobListItems(jobsPayload);
+    const clientRegionById = buildClientRegionByIdFromJobs(jobs);
+
+    let members = clients.map((client) => {
+      const mapped = mapBackendClientToMember(client);
+      const inferredRegion = clientRegionById.get(client.id);
+      if (!inferredRegion) return mapped;
+      return { ...mapped, region: inferredRegion };
+    });
 
     if (params?.region) {
       members = members.filter((member) => member.region === params.region);
@@ -2513,6 +2524,21 @@ function mapLocalityToGhanaRegion(locality?: string | null): string | null {
   return null;
 }
 
+function buildClientRegionByIdFromJobs(
+  jobs: BackendJobListItem[]
+): Map<number, string> {
+  const clientRegionById = new Map<number, string>();
+  for (const job of jobs) {
+    const clientId = job.client?.id;
+    if (!clientId || clientRegionById.has(clientId)) continue;
+    const region = mapLocalityToGhanaRegion(job.locality);
+    if (region) {
+      clientRegionById.set(clientId, region);
+    }
+  }
+  return clientRegionById;
+}
+
 export const reportsApi = {
   jobStats: async () => {
     const payload = await backendRequest<BackendJobListPayload>("/jobs/");
@@ -2590,15 +2616,7 @@ export const reportsApi = {
 
     // Backend client schema currently has no dedicated region field.
     // Infer region from job locality and project into the 16 official Ghana regions.
-    const clientRegionById = new Map<number, string>();
-    for (const job of jobs) {
-      const clientId = job.client?.id;
-      if (!clientId || clientRegionById.has(clientId)) continue;
-      const region = mapLocalityToGhanaRegion(job.locality);
-      if (region) {
-        clientRegionById.set(clientId, region);
-      }
-    }
+    const clientRegionById = buildClientRegionByIdFromJobs(jobs);
 
     const byRegion: Record<string, number> = Object.fromEntries(
       GHANA_REGIONS_16.map((region) => [region, 0])
