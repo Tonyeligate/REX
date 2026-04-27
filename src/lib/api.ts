@@ -2174,10 +2174,28 @@ interface BackendEmployeeListPayload {
 
 export const usersApi = {
   list: async (params?: Record<string, string>) => {
-    const qs = params ? "?" + new URLSearchParams(params).toString() : "";
-    const payload = await backendRequest<BackendEmployeeListPayload>(
-      `/auth/admin/employees/${qs}`
-    );
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(params ?? {})) {
+      const normalized = String(value ?? "").trim();
+      if (!normalized) continue;
+      query.set(key, normalized);
+    }
+    const qs = query.toString();
+
+    let payload: BackendEmployeeListPayload;
+    try {
+      payload = await backendRequest<BackendEmployeeListPayload>(
+        `/auth/admin/employees/${qs ? `?${qs}` : ""}`
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (/405|method\s*not\s*allowed/i.test(message)) {
+        throw new Error(
+          "Users list endpoint is not enabled on the current backend deployment yet (GET /auth/admin/employees/ returns 405). Deploy the backend update, then refresh."
+        );
+      }
+      throw error;
+    }
 
     const users: UserRow[] = (payload.users ?? []).map((entry) => ({
       id: String(entry.id),
