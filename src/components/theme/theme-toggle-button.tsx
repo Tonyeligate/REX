@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Moon, Sun } from "lucide-react";
+import { MoonIcon, SunIcon } from "@heroicons/react/24/outline";
 import {
   applyThemePreference,
   getResolvedThemeFromEnvironment,
@@ -81,7 +81,7 @@ export default function ThemeToggleButton({
         .join(" ")
         .trim()}
     >
-      {isDark ? <Sun size={18} /> : <Moon size={18} />}
+      {isDark ? <SunIcon className="h-[18px] w-[18px]" /> : <MoonIcon className="h-[18px] w-[18px]" />}
     </button>
   );
 }

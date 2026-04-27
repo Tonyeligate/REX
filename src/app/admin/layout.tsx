@@ -52,7 +52,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }
 
   return (
-    <div className="flex min-h-screen bg-background text-foreground">
+    <div className="flex min-h-screen app-shell-bg text-foreground">
       {!isWideRegisterPage && <AppSidebar />}
 
       {isWideRegisterPage && sidebarOpen && (
@@ -67,12 +67,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </>
       )}
 
-      <div className={`flex-1 flex flex-col min-h-screen ${isWideRegisterPage ? "ml-0" : "ml-[280px]"}`}>
+      <div className={`flex-1 flex flex-col min-h-screen app-main-panel ${isWideRegisterPage ? "ml-0" : "ml-[280px]"}`}>
         <AppHeader
           showMenuButton={isWideRegisterPage}
           onMenuClick={() => setSidebarOpen((open) => !open)}
         />
-        <main className={`flex-1 py-6 ${isWideRegisterPage ? "px-2 md:px-3 lg:px-4 xl:px-5" : "px-4 md:px-6 lg:px-8"}`}>
+        <main className={`flex-1 py-6 app-content-wrap ${isWideRegisterPage ? "px-2 md:px-3 lg:px-4 xl:px-5" : "px-4 md:px-6 lg:px-8"}`}>
           {children}
         </main>
         <AppFooter />

@@ -41,11 +41,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <div className="flex min-h-screen bg-background text-foreground">
+    <div className="flex min-h-screen app-shell-bg text-foreground">
       <AppSidebar />
-      <div className="flex-1 ml-[280px] flex flex-col min-h-screen">
+      <div className="flex-1 ml-[280px] flex flex-col min-h-screen app-main-panel">
         <AppHeader />
-        <main className="flex-1 px-4 md:px-6 lg:px-8 py-6">
+        <main className="flex-1 px-4 md:px-6 lg:px-8 py-6 app-content-wrap">
           {children}
         </main>
         <AppFooter />

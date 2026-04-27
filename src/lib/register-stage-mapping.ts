@@ -10,8 +10,8 @@ export const REGISTER_STAGE_COLS: Array<{
   { key: "examinationChecking", label: "Examination", subLabel: "Checking" },
   { key: "examinationCertified", label: "Examination", subLabel: "Cert." },
   { key: "regionChecked", label: "Region", subLabel: "Checked" },
-  { key: "regionApproved", label: "Region", subLabel: "Approved" },
-  { key: "regionBatched", label: "Region", subLabel: "Barcoded" },
+  { key: "regionApproved", label: "CSAU", subLabel: "Sign Out" },
+  { key: "regionBatched", label: "Client", subLabel: "Delivered" },
 ];
 
 export const REGISTER_STAGE_LABELS: Record<RegisterStageKey, string> = {
@@ -20,8 +20,8 @@ export const REGISTER_STAGE_LABELS: Record<RegisterStageKey, string> = {
   examinationChecking: "Examination Checking",
   examinationCertified: "Examination Certification",
   regionChecked: "Region Checked",
-  regionApproved: "Region Approved",
-  regionBatched: "Region Barcoded",
+  regionApproved: "Signed Out (CSAU)",
+  regionBatched: "Delivered to Client",
 };
 
 export const BACKEND_REGISTER_STEP_CODE_MAP: Record<RegisterStageKey, string> = {
@@ -30,8 +30,8 @@ export const BACKEND_REGISTER_STEP_CODE_MAP: Record<RegisterStageKey, string> = 
   examinationChecking: "6_1_checking",
   examinationCertified: "6_2_certified",
   regionChecked: "7_1_checked",
-  regionApproved: "7_2_approved",
-  regionBatched: "7_3_barcoded",
+  regionApproved: "8_signed_out_csau",
+  regionBatched: "9_delivered_to_client",
 };
 
 export const REGISTER_STAGE_KEYS = REGISTER_STAGE_COLS.map((col) => col.key) as RegisterStageKey[];
@@ -56,6 +56,6 @@ export const CLIENT_STAGE_MATCH_META: Record<
   10: { adminSurface: "Admin Register", adminLabel: "Examination Certification", backendCodes: ["6_2_certified"] },
   11: { adminSurface: "Admin Workflow", adminLabel: "Batched for Region", backendCodes: ["batched_for_region"] },
   12: { adminSurface: "Admin Register", adminLabel: "Region Checked", backendCodes: ["7_1_checked", "7_region"] },
-  13: { adminSurface: "Admin Register", adminLabel: "Region Approved", backendCodes: ["7_2_approved"] },
-  14: { adminSurface: "Admin Register", adminLabel: "Region Barcoded", backendCodes: ["7_3_barcoded"] },
+  13: { adminSurface: "Admin Workflow", adminLabel: "Signed Out (CSAU)", backendCodes: ["8_signed_out_csau", "signed_out_csau"] },
+  14: { adminSurface: "Admin Workflow", adminLabel: "Delivered to Client", backendCodes: ["9_delivered_to_client", "delivered_to_client"] },
 };
