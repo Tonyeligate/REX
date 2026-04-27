@@ -2145,10 +2145,56 @@ const FRONTEND_TO_BACKEND_ROLE: Record<string, string> = {
   ADMIN: "admin",
 };
 
+function mapBackendUserRoleToFrontend(role?: string): string {
+  const normalized = String(role ?? "").trim().toLowerCase();
+  if (normalized === "system_admin") return "SUPER_ADMIN";
+  if (normalized === "admin") return "ADMIN";
+  if (normalized === "employees") return "CSAU_OFFICER";
+  if (normalized === "clients") return "CLIENT";
+  return (role ?? "CLIENT").toUpperCase();
+}
+
+interface BackendEmployeeListUser {
+  id: string | number;
+  name?: string;
+  email: string;
+  role?: string;
+  isActive?: boolean;
+  is_active?: boolean;
+  lastLogin?: string;
+  last_login?: string;
+  createdAt?: string;
+  created_at?: string;
+}
+
+interface BackendEmployeeListPayload {
+  users: BackendEmployeeListUser[];
+  total?: number;
+}
+
 export const usersApi = {
   list: async (params?: Record<string, string>) => {
     const qs = params ? "?" + new URLSearchParams(params).toString() : "";
-    return localRequest<{ users: UserRow[]; total: number }>(`/users${qs}`);
+    const payload = await backendRequest<BackendEmployeeListPayload>(
+      `/auth/admin/employees/${qs}`
+    );
+
+    const users: UserRow[] = (payload.users ?? []).map((entry) => ({
+      id: String(entry.id),
+      name: entry.name?.trim() || entry.email || "Unknown User",
+      email: entry.email,
+      role: mapBackendUserRoleToFrontend(entry.role),
+      isActive: Boolean(
+        typeof entry.isActive === "boolean" ? entry.isActive : entry.is_active
+      ),
+      lastLogin: entry.lastLogin ?? entry.last_login ?? "—",
+      createdAt: entry.createdAt ?? entry.created_at ?? new Date().toISOString(),
+    }));
+
+    return {
+      users,
+      total: typeof payload.total === "number" ? payload.total : users.length,
+    };
   },
 
   invite: async (payload: {
@@ -2163,7 +2209,11 @@ export const usersApi = {
         "Selected role is not supported by the backend employee invite endpoint."
       );
     }
-    const created = await backendRequest<BackendUser>(
+    const created = await backendRequest<{
+      message?: string;
+      user: BackendUser;
+      invite_expires_at?: string;
+    }>(
       "/auth/admin/employees/",
       {
         method: "POST",
@@ -2177,13 +2227,13 @@ export const usersApi = {
     );
     return {
       user: {
-        id: String(created.id),
-        name: `${created.first_name} ${created.last_name}`.trim(),
-        email: created.email,
+        id: String(created.user.id),
+        name: `${created.user.first_name} ${created.user.last_name}`.trim(),
+        email: created.user.email,
         role: payload.role,
         isActive: true,
         lastLogin: "—",
-        createdAt: created.profile?.created_at ?? new Date().toISOString(),
+        createdAt: created.user.profile?.created_at ?? new Date().toISOString(),
       } as UserRow,
     };
   },

@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { UserPlus, Mail, Loader2, Search, MoreHorizontal, Users, ShieldCheck } from "lucide-react";
+import { UserPlus, Mail, Loader2, Search, MoreHorizontal } from "lucide-react";
+import { ShieldCheckIcon, UsersIcon } from "@heroicons/react/24/outline";
 import { usersApi } from "@/lib/api";
 import type { UserRow } from "@/lib/api";
 
@@ -90,41 +91,53 @@ export default function UsersPage() {
   return (
     <div className="admin-future-bg space-y-6">
       {/* Hero Section */}
-      <div className="admin-surface-glass rounded-[28px] border border-border p-6 sm:p-8">
-        <div className="flex items-start justify-between gap-4 mb-4">
+      <div className="relative rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-white px-6 py-6 dark:border-slate-700 dark:from-slate-900 dark:via-slate-900 dark:to-slate-800 sm:px-8">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(37,99,235,0.12),transparent_35%),radial-gradient(circle_at_bottom_left,rgba(240,112,0,0.12),transparent_35%)] dark:bg-[radial-gradient(circle_at_top_right,rgba(59,130,246,0.18),transparent_35%),radial-gradient(circle_at_bottom_left,rgba(249,115,22,0.15),transparent_35%)]" />
+        <div className="relative mb-4 flex items-start justify-between gap-4">
           <div>
             <div className="inline-flex items-center gap-2 rounded-full border border-[#F07000]/25 bg-[#fff7ed] px-3 py-1 text-[11px] font-[800] text-[#b45309] dark:bg-[#3b230d]/60 dark:text-[#ffd9b5] dark:border-[#ff8a1f]/30">
-              <Users size={13} />
+              <UsersIcon className="h-[13px] w-[13px]" />
               Team Management
             </div>
             <h1 className="mt-3 text-[28px] sm:text-[32px] font-bold text-foreground">Users & Access Control</h1>
             <p className="mt-1 text-[14px] text-muted-foreground max-w-lg">Manage system users, assign roles, and control access permissions across the platform</p>
           </div>
-          <div className="hidden sm:flex h-12 w-12 items-center justify-center rounded-[16px] bg-gradient-to-br from-[#F07000]/20 to-[#f59e0b]/10">
-            <ShieldCheck size={24} className="text-[#F07000]" />
+          <div className="hidden sm:flex h-12 w-12 items-center justify-center rounded-2xl bg-[#fff2e6] text-[#F07000] dark:bg-[#3d2510]/70 dark:text-[#ffb27a]">
+            <ShieldCheckIcon className="h-6 w-6" />
+          </div>
+        </div>
+
+        {/* Header Controls */}
+        <div className="relative mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="relative w-full max-w-sm">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9ca3af]" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search users by name, email, or role..."
+              className="w-full h-[40px] pl-10 pr-4 border border-slate-300 bg-slate-50 rounded-full text-[13px] text-foreground focus:outline-none focus:ring-2 focus:ring-[#F07000]/20 dark:border-slate-600 dark:bg-slate-800/80"
+            />
+          </div>
+          <div className="flex items-center justify-end">
+            <button
+              onClick={() => setShowInvite(true)}
+              disabled={usersUnavailable}
+              className="inline-flex items-center gap-2 h-10 px-4 rounded-full bg-primary text-primary-foreground text-[12px] font-semibold transition-colors hover:brightness-95 disabled:opacity-60"
+            >
+              <UserPlus size={14} /> Invite User
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Header Controls */}
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <button
-          onClick={() => setShowInvite(true)}
-          disabled={usersUnavailable}
-          className="flex items-center gap-2 h-[38px] px-4 bg-[#F07000] text-white rounded-lg text-[12px] font-semibold hover:bg-[#D06000] disabled:opacity-60 disabled:hover:bg-[#F07000] shadow-[0_8px_18px_rgba(240,112,0,0.28)]"
-        >
-          <UserPlus size={14} /> Invite User
-        </button>
-      </div>
-
       {usersUnavailable && (
-        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800">
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
           Users module is temporarily unavailable because the backend endpoint is not enabled yet.
         </div>
       )}
 
       {!usersUnavailable && loadError && (
-        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700">
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200">
           {loadError}
         </div>
       )}
@@ -157,28 +170,17 @@ export default function UsersPage() {
         </div>
       )}
 
-      {/* Search */}
-      <div className="relative max-w-sm mb-4">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9ca3af]" />
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search users..."
-          className="w-full h-[40px] pl-10 pr-4 border border-border bg-card rounded-lg text-[13px] text-foreground focus:outline-none focus:ring-2 focus:ring-[#F07000]/20"
-        />
-      </div>
-
       {/* Table */}
-      <div className="admin-surface-elevated rounded-[18px] border border-border overflow-hidden shadow-[0_4px_12px_rgba(0,0,0,0.08)] dark:shadow-[0_4px_12px_rgba(0,0,0,0.24)]">
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900/85">
         <table className="w-full text-[13px]">
           <thead>
-            <tr className="bg-muted border-b border-border">
-              <th className="text-left px-4 py-3 font-semibold text-foreground/80">Name</th>
-              <th className="text-left px-4 py-3 font-semibold text-foreground/80">Email</th>
-              <th className="text-left px-4 py-3 font-semibold text-foreground/80">Role</th>
-              <th className="text-left px-4 py-3 font-semibold text-foreground/80">Status</th>
-              <th className="text-left px-4 py-3 font-semibold text-foreground/80">Last Login</th>
-              <th className="text-right px-4 py-3 font-semibold text-foreground/80">Actions</th>
+            <tr className="border-b border-slate-200 bg-slate-50/80 dark:border-slate-700 dark:bg-slate-800/70">
+              <th className="px-4 py-3 text-left font-semibold text-foreground/80">Name</th>
+              <th className="px-4 py-3 text-left font-semibold text-foreground/80">Email</th>
+              <th className="px-4 py-3 text-left font-semibold text-foreground/80">Role</th>
+              <th className="px-4 py-3 text-left font-semibold text-foreground/80">Status</th>
+              <th className="px-4 py-3 text-left font-semibold text-foreground/80">Last Login</th>
+              <th className="px-4 py-3 text-right font-semibold text-foreground/80">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -189,12 +191,12 @@ export default function UsersPage() {
             ) : users.length === 0 ? (
               <tr><td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">No users found</td></tr>
             ) : users.map((u) => (
-              <tr key={u.id} className="border-b border-border hover:bg-muted/60">
+              <tr key={u.id} className="border-b border-slate-200 transition-colors hover:bg-slate-50/70 dark:border-slate-700 dark:hover:bg-slate-800/70">
                 <td className="px-4 py-3 font-semibold text-foreground">{u.name}</td>
                 <td className="px-4 py-3 text-foreground/80">{u.email}</td>
-                <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-[11px] font-bold ${roleColors[u.role] ?? "bg-gray-100 text-gray-600"}`}>{u.role.replace(/_/g, " ")}</span></td>
+                <td className="px-4 py-3"><span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${roleColors[u.role] ?? "bg-gray-100 text-gray-600"}`}>{u.role.replace(/_/g, " ")}</span></td>
                 <td className="px-4 py-3">
-                  <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${u.isActive ? "bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-300" : "bg-gray-100 text-gray-500 dark:bg-slate-600/30 dark:text-slate-300"}`}>{u.isActive ? "active" : "inactive"}</span>
+                  <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${u.isActive ? "bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-300" : "bg-gray-100 text-gray-500 dark:bg-slate-600/30 dark:text-slate-300"}`}>{u.isActive ? "active" : "inactive"}</span>
                 </td>
                 <td className="px-4 py-3 text-foreground/80">{formatLastLogin(u.lastLogin)}</td>
                 <td className="px-4 py-3 text-right">
