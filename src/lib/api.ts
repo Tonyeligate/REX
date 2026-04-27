@@ -525,6 +525,8 @@ export type BackendStatus =
   | "4_ls_cert"
   | "5_csau_payment"
   | "6_examination"
+  | "8_signed_out_csau"
+  | "9_delivered_to_client"
   | "6_1_checking"
   | "6_2_certified"
   | "7_region"
@@ -620,8 +622,8 @@ export const WORKFLOW_STATUSES: BackendStatus[] = [
   "certified_smd",
   "batched_for_region",
   "at_region",
-  "signed_out_csau",
-  "delivered_to_client",
+  "8_signed_out_csau",
+  "9_delivered_to_client",
 ];
 
 /** Map each status to its 1-based step number. */
@@ -639,6 +641,11 @@ STATUS_STEP_MAP["4_ls_cert"] = 6;
 STATUS_STEP_MAP["5_csau_payment"] = 7;
 STATUS_STEP_MAP["6_examination"] = 9;
 STATUS_STEP_MAP["7_region"] = 12;
+STATUS_STEP_MAP["8_signed_out_csau"] = 13;
+STATUS_STEP_MAP["9_delivered_to_client"] = 14;
+// Backward compatibility with legacy status slugs.
+STATUS_STEP_MAP["signed_out_csau"] = 13;
+STATUS_STEP_MAP["delivered_to_client"] = 14;
 // Granular backend step codes collapsed into the existing 14-stage client timeline.
 STATUS_STEP_MAP["6_1_checking"] = 9;
 STATUS_STEP_MAP["6_2_certified"] = 10;
@@ -691,8 +698,8 @@ export const WORKFLOW_STEP_DEFS: Array<{
   { status: "certified_smd", title: "Certified (SMD)", note: "Chief Examiner reviews and certifies the job.", department: "Chief Examiner" },
   { status: "batched_for_region", title: "Batched for Region", note: "Certified jobs batched and forwarded to regional office.", department: "Chief Examiner" },
   { status: "at_region", title: "At Region", note: "Regional office receives the batched jobs.", department: "SMD Region" },
-  { status: "signed_out_csau", title: "Signed Out (CSAU)", note: "CSAU signs out the cleared and approved job.", department: "CSAU" },
-  { status: "delivered_to_client", title: "Delivered to Client", note: "Approved documents delivered to the client.", department: "Client" },
+  { status: "8_signed_out_csau", title: "Signed Out (CSAU)", note: "CSAU signs out the cleared and approved job.", department: "CSAU" },
+  { status: "9_delivered_to_client", title: "Delivered to Client", note: "Approved documents delivered to the client.", department: "Client" },
 ];
 
 /* ═══════════════════════════════════════════════════════════
@@ -875,7 +882,7 @@ export function mapBackendJob(
     }));
 
   const jobStatus: JobStatus =
-    bj.status === "delivered_to_client"
+    bj.status === "9_delivered_to_client" || bj.status === "delivered_to_client"
       ? "COMPLETED"
       : isQueried
         ? "QUERIED"
@@ -936,31 +943,14 @@ function mapHistoryToTimeline(
   });
 }
 
-/** Compute the next linear status after the current one. */
+/**
+ * Compute the next backend status in the canonical 9-stage workflow.
+ * Legacy slugs are first normalized by step, then mapped into PATCH_STATUS_FLOW.
+ */
 export function getNextStatus(
   current: BackendStatus
 ): BackendStatus | null {
-  const currentSchemaFlow: BackendStatus[] = [
-    "1_rnr",
-    "2_regional_number",
-    "3_job_production",
-    "4_ls_cert",
-    "5_csau_payment",
-    "6_examination",
-    "7_region",
-  ];
-  const currentIdx = currentSchemaFlow.indexOf(current);
-  if (currentIdx >= 0) {
-    return currentIdx >= currentSchemaFlow.length - 1
-      ? null
-      : currentSchemaFlow[currentIdx + 1];
-  }
-
-  if (current === "queried_ls461") return "certified_ls461";
-  if (current === "queried_smd") return "certified_smd";
-  const idx = WORKFLOW_STATUSES.indexOf(current);
-  if (idx < 0 || idx >= WORKFLOW_STATUSES.length - 1) return null;
-  return WORKFLOW_STATUSES[idx + 1];
+  return getNextPatchStatusForWorkflow(current);
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -1433,6 +1423,8 @@ const PATCHABLE_WORKFLOW_STATUSES = new Set<BackendStatus>([
   "5_csau_payment",
   "6_examination",
   "7_region",
+  "8_signed_out_csau",
+  "9_delivered_to_client",
 ]);
 
 const PATCH_STATUS_FLOW: BackendStatus[] = [
@@ -1443,6 +1435,8 @@ const PATCH_STATUS_FLOW: BackendStatus[] = [
   "5_csau_payment",
   "6_examination",
   "7_region",
+  "8_signed_out_csau",
+  "9_delivered_to_client",
 ];
 
 async function setJobStatusViaPatch(rnOrId: string, status: BackendStatus): Promise<void> {
@@ -1464,7 +1458,9 @@ function mapStepToPatchStatus(step: number): BackendStatus {
   if (step <= 6) return "4_ls_cert";
   if (step <= 7) return "5_csau_payment";
   if (step <= 9) return "6_examination";
-  return "7_region";
+  if (step <= 12) return "7_region";
+  if (step <= 13) return "8_signed_out_csau";
+  return "9_delivered_to_client";
 }
 
 function getNextPatchStatusForWorkflow(current: BackendStatus): BackendStatus | null {
@@ -2412,9 +2408,20 @@ export const reportsApi = {
       let completed = 0;
       let queried = 0;
       const byStep: Record<number, number> = {};
+      const byStatus: Record<string, number> = {
+        "1_rnr": 0,
+        "2_regional_number": 0,
+        "3_job_production": 0,
+        "4_ls_cert": 0,
+        "5_csau_payment": 0,
+        "6_examination": 0,
+        "7_region": 0,
+        "8_signed_out_csau": 0,
+        "9_delivered_to_client": 0,
+      };
 
       for (const j of items) {
-        if (j.status === "delivered_to_client") {
+        if (j.status === "9_delivered_to_client" || j.status === "delivered_to_client") {
           completed++;
         } else if (
           j.status === "queried_ls461" ||
@@ -2426,9 +2433,21 @@ export const reportsApi = {
         }
         const step = STATUS_STEP_MAP[j.status] ?? 1;
         byStep[step] = (byStep[step] ?? 0) + 1;
+
+        // Canonical funnel buckets (coalesce legacy slugs to current schema)
+        const normalizedStatus =
+          j.status === "signed_out_csau"
+            ? "8_signed_out_csau"
+            : j.status === "delivered_to_client"
+              ? "9_delivered_to_client"
+              : j.status;
+
+        if (normalizedStatus in byStatus) {
+          byStatus[normalizedStatus] = (byStatus[normalizedStatus] ?? 0) + 1;
+        }
       }
 
-      return { total, inProgress, completed, queried, byStep };
+      return { total, inProgress, completed, queried, byStep, byStatus };
     } catch {
       return {
         total: 0,
@@ -2436,6 +2455,7 @@ export const reportsApi = {
         completed: 0,
         queried: 0,
         byStep: {},
+        byStatus: {},
       };
     }
   },

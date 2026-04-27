@@ -1,11 +1,10 @@
-@import url('https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,200..1000;1,200..1000&display=swap');
 @import "tailwindcss";
 @import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-  --font-sans: "Nunito", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
 
   --color-background: #f4f7f6;
   --color-foreground: #1f2937;
@@ -314,6 +313,56 @@
     background: linear-gradient(180deg, #121d31 0%, #0f1a2c 100%);
     border-color: #243753;
     box-shadow: 0 15px 36px rgba(2, 8, 22, 0.42), inset 0 1px 0 rgba(148, 163, 184, 0.07);
+  }
+
+  .app-shell-bg {
+    background:
+      radial-gradient(circle at 5% 4%, rgba(240, 112, 0, 0.1), transparent 34%),
+      radial-gradient(circle at 97% 8%, rgba(37, 99, 235, 0.09), transparent 35%),
+      linear-gradient(180deg, #f7fafc 0%, #f2f6fb 52%, #eef3f9 100%);
+  }
+
+  .dark .app-shell-bg {
+    background:
+      radial-gradient(circle at 5% 4%, rgba(255, 138, 31, 0.16), transparent 36%),
+      radial-gradient(circle at 97% 8%, rgba(56, 189, 248, 0.14), transparent 35%),
+      linear-gradient(180deg, #08101d 0%, #0d1728 52%, #101d31 100%);
+  }
+
+  .app-main-panel {
+    position: relative;
+  }
+
+  .app-main-panel::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0));
+    opacity: 0.8;
+  }
+
+  .dark .app-main-panel::before {
+    background: linear-gradient(180deg, rgba(148, 163, 184, 0.08), rgba(15, 23, 42, 0));
+    opacity: 1;
+  }
+
+  .app-content-wrap {
+    position: relative;
+    z-index: 1;
+  }
+
+  .app-topbar-shell {
+    border: 1px solid rgba(255, 255, 255, 0.56);
+    background: linear-gradient(140deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.64));
+    box-shadow: var(--shadow-elev-1);
+    backdrop-filter: blur(12px);
+  }
+
+  .dark .app-topbar-shell {
+    border-color: rgba(53, 80, 122, 0.62);
+    background: linear-gradient(160deg, rgba(16, 26, 43, 0.88), rgba(12, 20, 33, 0.78));
+    box-shadow: 0 16px 34px rgba(2, 8, 22, 0.44);
   }
 
   .jobs-register-page .jobs-register-table {

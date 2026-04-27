@@ -3,17 +3,24 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  ArrowUpRight,
-  AlertTriangle,
-  Briefcase,
-  CheckCircle2,
-  Clock,
-  ClipboardList,
-  Gauge,
-  Search,
-  Sparkles,
-} from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+  ArrowTrendingUpIcon,
+  ArrowTrendingDownIcon,
+  ChartBarSquareIcon,
+  CheckBadgeIcon,
+  ClockIcon,
+  BriefcaseIcon,
+  ClipboardDocumentListIcon,
+  ExclamationTriangleIcon,
+  FunnelIcon,
+  InformationCircleIcon,
+  MagnifyingGlassIcon,
+  SparklesIcon,
+  Squares2X2Icon,
+} from "@heroicons/react/24/outline";
+import {
+  CheckCircleIcon,
+  ArrowTopRightOnSquareIcon,
+} from "@heroicons/react/24/solid";
 import { reportsApi } from "@/lib/api";
 import { useAuthStore, getUserDisplayName } from "@/lib/auth-store";
 
@@ -23,6 +30,7 @@ interface JobStats {
   completed: number;
   queried: number;
   byStep: Record<number, number>;
+  byStatus: Record<string, number>;
 }
 
 export default function DashboardHome() {
@@ -32,152 +40,252 @@ export default function DashboardHome() {
   useEffect(() => {
     reportsApi.jobStats().then(setJobStats).catch(console.error);
   }, []);
-  const pendingSteps = jobStats
-    ? Object.values(jobStats.byStep).reduce((total, value) => total + value, 0)
-    : null;
-  const metrics = [
+
+  const totalJobs = jobStats?.total ?? 0;
+  const inProgress = jobStats?.inProgress ?? 0;
+  const completed = jobStats?.completed ?? 0;
+  const queried = jobStats?.queried ?? 0;
+  const pendingSteps = Object.values(jobStats?.byStatus ?? {}).reduce(
+    (total, value) => total + value,
+    0
+  );
+
+  const completionRate =
+    totalJobs > 0 ? Math.round((completed / totalJobs) * 100) : 0;
+  const queryRate = totalJobs > 0 ? Math.round((queried / totalJobs) * 100) : 0;
+  const activeRate =
+    totalJobs > 0 ? Math.round((inProgress / totalJobs) * 100) : 0;
+
+  const funnelOrder = [
+    { key: "1_rnr", label: "1. RNR" },
+    { key: "2_regional_number", label: "2. Regional Number" },
+    { key: "3_job_production", label: "3. Job Production" },
+    { key: "4_ls_cert", label: "4. LS Certification" },
+    { key: "5_csau_payment", label: "5. CSAU Payment" },
+    { key: "6_examination", label: "6. Examination" },
+    { key: "7_region", label: "7. Region" },
+    { key: "8_signed_out_csau", label: "8. Signed Out" },
+    { key: "9_delivered_to_client", label: "9. Delivered" },
+  ] as const;
+
+  const stageEntries = funnelOrder.map((stage) => ({
+    ...stage,
+    count: jobStats?.byStatus?.[stage.key] ?? 0,
+  }));
+  const maxStageCount = stageEntries.reduce(
+    (max, item) => (item.count > max ? item.count : max),
+    1
+  );
+
+  const kpis = [
     {
-      label: "Active Jobs",
-  value: jobStats?.inProgress ?? "-",
-  sub: jobStats ? `${jobStats.total} total jobs` : "Loading statistics",
-  href: "/admin/jobs",
-      icon: Briefcase,
-      tone: "bg-orange-100 text-orange-600 dark:bg-orange-500/15 dark:text-orange-300",
+      title: "Active Jobs",
+      value: inProgress,
+      helper: `${activeRate}% of all workflows`,
+      trend: "up" as const,
+      icon: BriefcaseIcon,
+      color:
+        "bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300",
+      href: "/admin/jobs",
     },
     {
-      label: "Completed",
-      value: jobStats?.completed ?? "-",
-  sub: "Fully delivered workflows",
-  href: "/admin/jobs?status=COMPLETED",
-  icon: CheckCircle2,
-      tone: "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-300",
+      title: "Completed",
+      value: completed,
+      helper: `${completionRate}% completion rate`,
+      trend: "up" as const,
+      icon: CheckCircleIcon,
+      color:
+        "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300",
+      href: "/admin/jobs?status=COMPLETED",
     },
     {
-  label: "Queried",
-  value: jobStats?.queried ?? "-",
-  sub: "Needs attention",
-  href: "/admin/jobs?status=QUERIED",
-  icon: AlertTriangle,
-  tone: "bg-amber-100 text-amber-600 dark:bg-amber-500/15 dark:text-amber-300",
+      title: "Queried",
+      value: queried,
+      helper: `${queryRate}% needing intervention`,
+      trend: queried > 0 ? ("down" as const) : ("up" as const),
+      icon: ExclamationTriangleIcon,
+      color:
+        "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300",
+      href: "/admin/jobs?status=QUERIED",
     },
     {
-      label: "Pending Steps",
-  value: pendingSteps ?? "-",
-  sub: "Across all active jobs",
-  href: "/admin/jobs",
-      icon: Clock,
-      tone: "bg-sky-100 text-sky-600 dark:bg-sky-500/15 dark:text-sky-300",
+      title: "Pending Steps",
+      value: pendingSteps,
+      helper: "Across open operational stages",
+      trend: "up" as const,
+      icon: ClockIcon,
+      color: "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300",
+      href: "/admin/jobs",
     },
   ] as const;
 
   return (
-    <div className="admin-future-bg space-y-6">
-      <section className="admin-surface-glass rounded-[28px] p-5 sm:p-6 lg:p-8">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+    <div className="space-y-5">
+      <section className="rounded-3xl border border-border/70 bg-card px-5 py-5 shadow-[0_14px_34px_rgba(15,23,42,0.08)] dark:shadow-[0_18px_36px_rgba(2,8,22,0.5)] sm:px-6 sm:py-6">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
           <div className="max-w-2xl">
-            <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card/80 px-3 py-1.5 text-[12px] font-[800] text-primary shadow-sm dark:bg-slate-950/35">
-              <Sparkles size={14} />
-              Live Operations Console
+            <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-3 py-1.5 text-[11px] font-extrabold uppercase tracking-[0.08em] text-primary">
+              <Squares2X2Icon className="h-4 w-4" />
+              Executive Overview
             </div>
-            <h3 className="mt-3 text-[30px] font-[900] tracking-tight text-foreground sm:text-[36px]">
+            <h2 className="mt-3 text-[30px] font-[900] leading-tight text-foreground sm:text-[36px]">
               Welcome back, <span className="text-primary">{getUserDisplayName(user)}</span>
-            </h3>
-            <p className="mt-2 max-w-xl text-[14px] text-muted-foreground sm:text-[15px]">
-              Here&apos;s an overview of your Recs Geomatics Consult operations with the latest live job statistics.
+            </h2>
+            <p className="mt-2 text-[14px] text-muted-foreground sm:text-[15px]">
+              Real-time operational intelligence across active jobs, completion throughput, and exception queues.
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:w-[560px]">
-            {metrics.map((metric) => {
-              const Icon = metric.icon;
+          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[12px] font-bold text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
+            <CheckBadgeIcon className="h-4 w-4" />
+            Analytics feed is live
+          </div>
+        </div>
+      </section>
 
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {kpis.map((kpi) => {
+          const Icon = kpi.icon;
+          const TrendIcon =
+            kpi.trend === "down" ? ArrowTrendingDownIcon : ArrowTrendingUpIcon;
+          return (
+            <Link
+              key={kpi.title}
+              href={kpi.href}
+              className="group rounded-2xl border border-border/70 bg-card p-4 shadow-[0_10px_24px_rgba(15,23,42,0.06)] transition-all hover:-translate-y-0.5 hover:shadow-[0_16px_30px_rgba(15,23,42,0.1)] dark:shadow-[0_16px_28px_rgba(2,8,22,0.4)]"
+            >
+              <div className="flex items-start justify-between">
+                <span className={`inline-flex h-10 w-10 items-center justify-center rounded-xl ${kpi.color}`}>
+                  <Icon className="h-5 w-5" />
+                </span>
+                <ArrowTopRightOnSquareIcon className="h-4 w-4 text-muted-foreground transition-colors group-hover:text-primary" />
+              </div>
+              <div className="mt-4 text-[30px] font-[900] leading-none text-foreground">
+                {kpi.value}
+              </div>
+              <div className="mt-1 text-[13px] font-bold text-foreground/90">{kpi.title}</div>
+              <div className="mt-2 flex items-center gap-1 text-[11px] text-muted-foreground">
+                <TrendIcon className="h-3.5 w-3.5" />
+                {kpi.helper}
+              </div>
+            </Link>
+          );
+        })}
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-[1.25fr_0.75fr]">
+        <div className="rounded-2xl border border-border/70 bg-card p-5 shadow-[0_12px_26px_rgba(15,23,42,0.06)] dark:shadow-[0_16px_30px_rgba(2,8,22,0.4)]">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-[17px] font-[900] text-foreground">Operational Funnel</h3>
+              <p className="text-[12px] text-muted-foreground">
+                Distribution of records across workflow stages.
+              </p>
+            </div>
+            <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <FunnelIcon className="h-5 w-5" />
+            </span>
+          </div>
+
+          <div className="mt-4 space-y-3">
+            {stageEntries.map((entry) => {
+              const width = Math.max(
+                6,
+                Math.round((entry.count / Math.max(maxStageCount, 1)) * 100)
+              );
               return (
-                <MetricCard
-                  key={metric.label}
-                  label={metric.label}
-                  value={metric.value}
-                  sub={metric.sub}
-                  href={metric.href}
-                  icon={Icon}
-                  tone={metric.tone}
-                />
+                <div key={entry.key}>
+                  <div className="mb-1 flex items-center justify-between text-[12px]">
+                    <span className="font-semibold text-foreground/85">{entry.label}</span>
+                    <span className="font-bold text-foreground">{entry.count}</span>
+                  </div>
+                  <div className="h-2.5 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-primary to-orange-400"
+                      style={{ width: `${width}%` }}
+                    />
+                  </div>
+                </div>
               );
             })}
           </div>
         </div>
-      </section>
 
-      <section className="space-y-4">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h4 className="text-[16px] font-[900] text-foreground sm:text-[18px]">Quick Actions</h4>
-            <p className="text-[13px] text-muted-foreground">High-frequency entry points for the admin workflow.</p>
+        <div className="rounded-2xl border border-border/70 bg-card p-5 shadow-[0_12px_26px_rgba(15,23,42,0.06)] dark:shadow-[0_16px_30px_rgba(2,8,22,0.4)]">
+          <h3 className="text-[17px] font-[900] text-foreground">Performance Quality</h3>
+          <p className="text-[12px] text-muted-foreground">
+            Workflow health indicators for current operations.
+          </p>
+
+          <div className="mt-4 space-y-3">
+            <RateRow
+              label="Completion rate"
+              value={`${completionRate}%`}
+              barClass="bg-gradient-to-r from-emerald-500 to-teal-400"
+              width={completionRate}
+            />
+            <RateRow
+              label="Active throughput"
+              value={`${activeRate}%`}
+              barClass="bg-gradient-to-r from-primary to-amber-400"
+              width={activeRate}
+            />
+            <RateRow
+              label="Exception rate"
+              value={`${queryRate}%`}
+              barClass="bg-gradient-to-r from-amber-500 to-yellow-400"
+              width={queryRate}
+            />
           </div>
-          <div className="hidden items-center gap-2 rounded-full border border-border bg-card/80 px-3 py-1.5 text-[12px] font-[800] text-muted-foreground shadow-sm dark:bg-slate-950/35 sm:inline-flex">
-            <Gauge size={14} className="text-primary" />
-            Dashboard ready
+
+          <div className="mt-4 rounded-xl border border-border/70 bg-muted/50 p-3 text-[12px] text-muted-foreground">
+            <div className="flex items-start gap-2">
+              <InformationCircleIcon className="mt-0.5 h-4 w-4 text-primary" />
+              <span>
+                Completion quality improves when queried jobs are cleared within same-day cycles.
+              </span>
+            </div>
           </div>
         </div>
+      </section>
 
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <section className="rounded-2xl border border-border/70 bg-card p-3.5 shadow-[0_8px_20px_rgba(15,23,42,0.06)] dark:shadow-[0_12px_22px_rgba(2,8,22,0.35)]">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h4 className="text-[15px] font-[900] text-foreground">Command Center</h4>
+            <p className="text-[12px] text-muted-foreground">Operational shortcuts.</p>
+          </div>
+          <span className="hidden items-center gap-2 rounded-full border border-border bg-muted px-3 py-1.5 text-[12px] font-bold text-muted-foreground sm:inline-flex">
+            <SparklesIcon className="h-4 w-4 text-primary" />
+            Recommended actions
+          </span>
+        </div>
+
+        <div className="mt-3 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
           <ActionCard
             title="Create New Job"
-            desc="Start a new job certification workflow with premium speed."
+            desc="Start and assign a new workflow record."
             href="/admin/jobs/new"
-            icon={Briefcase}
-            accent="from-[#F07000] to-[#f59e0b]"
+            icon={BriefcaseIcon}
+            tone="primary"
           />
           <ActionCard
             title="Search Job Status"
-            desc="Look up a job by ID or regional number in seconds."
+            desc="Find any job by RN, regional number, or client."
             href="/client/tracking"
-            icon={Search}
-            accent="from-emerald-600 to-teal-500"
+            icon={MagnifyingGlassIcon}
+            tone="success"
           />
           <ActionCard
             title="Open Job Register"
-            desc="Review workflow rows, stages, and operational notes."
+            desc="Review stage decisions and register rows."
             href="/admin/jobs"
-            icon={ClipboardList}
-            accent="from-slate-800 to-slate-600"
+            icon={ClipboardDocumentListIcon}
+            tone="neutral"
           />
         </div>
       </section>
     </div>
-  );
-}
-
-function MetricCard({
-  icon: Icon,
-  label,
-  value,
-  sub,
-  href,
-  tone,
-}: {
-  icon: LucideIcon;
-  label: string;
-  value: string | number;
-  sub: string;
-  href: string;
-  tone: string;
-}) {
-  return (
-    <Link
-      href={href}
-      className="admin-surface-elevated client-surface-interactive group rounded-[22px] p-4 sm:p-5"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className={`flex h-10 w-10 items-center justify-center rounded-2xl ${tone}`}>
-          <Icon size={18} />
-        </div>
-        <ArrowUpRight size={16} className="text-muted-foreground transition-colors group-hover:text-primary" />
-      </div>
-
-      <div className="mt-4 text-[24px] font-[900] leading-tight text-foreground">{value}</div>
-      <div className="text-[12px] font-[800] text-foreground/80">{label}</div>
-      <div className="mt-1 text-[11px] text-muted-foreground">{sub}</div>
-    </Link>
   );
 }
 
@@ -186,31 +294,80 @@ function ActionCard({
   desc,
   href,
   icon: Icon,
-  accent,
+  tone,
 }: {
   title: string;
   desc: string;
   href: string;
-  icon: LucideIcon;
-  accent: string;
+  icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+  tone: "primary" | "success" | "neutral";
 }) {
+  const toneStyles = {
+    primary: {
+      shell:
+        "border-primary/20 bg-gradient-to-br from-primary/[0.10] via-white to-orange-50 dark:from-primary/20 dark:via-slate-900 dark:to-slate-900",
+      icon:
+        "bg-primary text-white shadow-[0_8px_20px_rgba(240,112,0,0.35)]",
+      ring: "group-hover:border-primary/40",
+    },
+    success: {
+      shell:
+        "border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-teal-50 dark:border-emerald-500/25 dark:from-emerald-500/15 dark:via-slate-900 dark:to-slate-900",
+      icon:
+        "bg-emerald-600 text-white shadow-[0_8px_20px_rgba(5,150,105,0.35)]",
+      ring: "group-hover:border-emerald-300 dark:group-hover:border-emerald-400/35",
+    },
+    neutral: {
+      shell:
+        "border-slate-200 bg-gradient-to-br from-slate-100/80 via-white to-slate-50 dark:border-slate-500/25 dark:from-slate-700/25 dark:via-slate-900 dark:to-slate-900",
+      icon:
+        "bg-slate-700 text-white shadow-[0_8px_20px_rgba(51,65,85,0.35)]",
+      ring: "group-hover:border-slate-300 dark:group-hover:border-slate-400/35",
+    },
+  } as const;
+  const currentTone = toneStyles[tone];
+
   return (
     <Link
       href={href}
-      className={`group relative overflow-hidden rounded-[24px] p-5 text-white shadow-[0_18px_42px_rgba(15,23,42,0.18)] transition-all hover:-translate-y-1 ${accent}`}
+      className={`group relative overflow-hidden rounded-xl border p-3.5 text-foreground shadow-[0_8px_18px_rgba(15,23,42,0.08)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_12px_22px_rgba(15,23,42,0.12)] ${currentTone.shell} ${currentTone.ring}`}
     >
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.26),transparent_35%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.32),transparent_40%)]" />
       <div className="relative flex items-start justify-between gap-3">
-        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/15 text-white shadow-lg backdrop-blur-sm">
-          <Icon size={18} />
+        <div className={`flex h-9 w-9 items-center justify-center rounded-xl ${currentTone.icon}`}>
+          <Icon className="h-4 w-4" />
         </div>
-        <ArrowUpRight
-          size={16}
-          className="text-white/80 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
+        <ArrowTopRightOnSquareIcon className="h-4 w-4 text-muted-foreground transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-foreground" />
+      </div>
+      <h5 className="relative mt-3 text-[14px] font-[900]">{title}</h5>
+      <p className="relative mt-1 text-[12px] leading-relaxed text-muted-foreground">{desc}</p>
+    </Link>
+  );
+}
+
+function RateRow({
+  label,
+  value,
+  width,
+  barClass,
+}: {
+  label: string;
+  value: string;
+  width: number;
+  barClass: string;
+}) {
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between text-[12px]">
+        <span className="font-semibold text-foreground/85">{label}</span>
+        <span className="font-bold text-foreground">{value}</span>
+      </div>
+      <div className="h-2.5 overflow-hidden rounded-full bg-muted">
+        <div
+          className={`h-full rounded-full ${barClass}`}
+          style={{ width: `${Math.max(3, width)}%` }}
         />
       </div>
-      <h5 className="relative mt-5 text-[16px] font-[900]">{title}</h5>
-      <p className="relative mt-1 text-[13px] leading-relaxed text-white/82">{desc}</p>
-    </Link>
+    </div>
   );
 }

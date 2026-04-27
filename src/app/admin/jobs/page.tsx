@@ -238,12 +238,25 @@ const IMPORT_STAGE_COLUMNS: Record<RegisterStageKey, string[]> = {
     "Step 6.2",
   ],
   regionChecked: ["Region Checked", "Region Check", "7_1_checked", "Stage 7.1", "Step 7.1"],
-  regionApproved: ["Region Approved", "Region Approve", "7_2_approved", "Stage 7.2", "Step 7.2"],
+  regionApproved: [
+    "Region Approved",
+    "Region Approve",
+    "Signed Out",
+    "Signed Out CSAU",
+    "Signed Out (CSAU)",
+    "8_signed_out_csau",
+    "7_2_approved",
+    "Stage 7.2",
+    "Step 7.2",
+  ],
   regionBatched: [
     "Region Barcoded",
     "Region Barcode",
     "Region Batched",
     "Region Batch",
+    "Delivered",
+    "Delivered to Client",
+    "9_delivered_to_client",
     "7_3_barcoded",
     "Stage 7.3",
     "Step 7.3",
@@ -281,12 +294,12 @@ const IMPORT_DETECTED_FIELD_TARGETS: ImportFieldTarget[] = [
   },
   {
     key: "regionApproved",
-    label: "Region Approved",
+    label: "Signed Out (CSAU)",
     candidates: IMPORT_STAGE_COLUMNS.regionApproved,
   },
   {
     key: "regionBatched",
-    label: "Region Barcoded",
+    label: "Delivered to Client",
     candidates: IMPORT_STAGE_COLUMNS.regionBatched,
   },
 ];
@@ -1008,7 +1021,7 @@ function resolveRegisterStages(
 ): Record<RegisterStageKey, ResolvedRegisterStage> {
   const latestByStep = getLatestBackendDecisionByStep(job);
   const clearedStageKeySet = new Set(record?.clearedStageKeys ?? []);
-  const currentStepNumber = STATUS_STEP_MAP[job.backendStatus ?? "request_received"] ?? 0;
+  const currentStepNumber = STATUS_STEP_MAP[job.backendStatus ?? "1_rnr"] ?? 0;
   const isQueriedCurrentStatus =
     job.backendStatus === "queried_ls461" || job.backendStatus === "queried_smd";
 
@@ -1099,10 +1112,6 @@ function getStepIndex(status: string): number {
   return idx === -1 ? 0 : idx;
 }
 
-function getQueryStatusForStage(stepIndex: number): BackendStatus {
-  return stepIndex <= 5 ? "queried_ls461" : "queried_smd";
-}
-
 function getRegisterName(job: Job): string {
   const clientName = (job.clientName ?? "").trim();
   if (clientName && clientName !== "—") {
@@ -1128,7 +1137,7 @@ function getActualRegionalNumber(job: Job, record?: JobRegisterRecord): string {
   return job.regionalNumber?.trim() || record?.actualRegionalNumber?.trim() || "";
 }
 
-const REGISTER_BACKEND_SYNC_MAX_STEP = STATUS_STEP_MAP["7_1_checked"] ?? 12;
+const REGISTER_BACKEND_SYNC_MAX_STEP = STATUS_STEP_MAP["9_delivered_to_client"] ?? 14;
 
 function getBackendStatusForStep(step: number): BackendStatus {
   const boundedStep = Math.min(
@@ -1243,7 +1252,8 @@ interface ModalProps {
 }
 
 function StageModal({ job, colLabel, stepIndex, currentState, onClose, onDone }: ModalProps) {
-  const [outcome, setOutcome] = useState<"advance" | "query" | "reject">("advance");
+  void stepIndex;
+  const [outcome, setOutcome] = useState<"advance">("advance");
   const [comment, setComment] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -1252,22 +1262,14 @@ function StageModal({ job, colLabel, stepIndex, currentState, onClose, onDone }:
     setSaving(true);
     setError("");
     try {
-      if (outcome === "advance") {
-        const currentBackendStatus =
-          (job.backendStatus as BackendStatus | undefined) ??
-          getBackendStatusForStep(job.currentStep || 1);
-        await jobsApi.advanceStep(
-          job.jobId,
-          { comment },
-          { currentBackendStatus }
-        );
-      } else {
-        await jobsApi.transitionTo(job.jobId, {
-          status: getQueryStatusForStage(stepIndex),
-          notes: `${outcome === "query" ? "QUERIED" : "REJECTED"}: ${comment}`,
-          queryReason: comment,
-        });
-      }
+      const currentBackendStatus =
+        (job.backendStatus as BackendStatus | undefined) ??
+        getBackendStatusForStep(job.currentStep || 1);
+      await jobsApi.advanceStep(
+        job.jobId,
+        { comment },
+        { currentBackendStatus }
+      );
       onDone();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update");
@@ -1301,42 +1303,25 @@ function StageModal({ job, colLabel, stepIndex, currentState, onClose, onDone }:
             <>
               <div>
                 <p className="text-[12px] font-semibold text-[#374151] mb-2 uppercase tracking-wide">Mark this stage as:</p>
-                <div className="grid grid-cols-3 gap-2">
-                  {(["advance", "query", "reject"] as const).map((option) => (
-                    <button
-                      key={option}
-                      onClick={() => setOutcome(option)}
-                      className={`py-2 rounded-lg text-[12px] font-bold border-2 transition-all ${
-                        outcome === option
-                          ? option === "advance"
-                            ? "border-green-500 bg-green-50 text-green-700"
-                            : option === "query"
-                              ? "border-amber-500 bg-amber-50 text-amber-700"
-                              : "border-red-500 bg-red-50 text-red-700"
-                          : "border-[#e5e7eb] bg-white text-[#6b7280] hover:border-[#d1d5db]"
-                      }`}
-                    >
-                      {option === "advance" ? "✓ Accept" : option === "query" ? "⚠ Query" : "✕ Reject"}
-                    </button>
-                  ))}
+                <div className="grid grid-cols-1 gap-2">
+                  <button
+                    onClick={() => setOutcome("advance")}
+                    className="py-2 rounded-lg text-[12px] font-bold border-2 transition-all border-green-500 bg-green-50 text-green-700"
+                  >
+                    ✓ Accept & Progress
+                  </button>
                 </div>
               </div>
 
               <div>
                 <label className="block text-[12px] font-semibold text-[#374151] mb-1.5">
-                  Comment {outcome !== "advance" ? "(required)" : "(optional)"}
+                  Comment (optional)
                 </label>
                 <textarea
                   value={comment}
                   onChange={(e) => setComment(e.target.value)}
                   rows={3}
-                  placeholder={
-                    outcome === "advance"
-                      ? "Add a note about this stage completion..."
-                      : outcome === "query"
-                        ? "Describe what needs to be corrected..."
-                        : "Provide the reason for rejection..."
-                  }
+                  placeholder="Add a note about this stage completion..."
                   className="w-full px-3 py-2 border border-[#e5e7eb] rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-[#F07000]/20 resize-none"
                 />
               </div>
@@ -1349,17 +1334,11 @@ function StageModal({ job, colLabel, stepIndex, currentState, onClose, onDone }:
                 </button>
                 <button
                   onClick={handleSave}
-                  disabled={saving || (outcome !== "advance" && !comment.trim())}
-                  className={`flex-1 h-[38px] rounded-lg text-[13px] font-semibold text-white flex items-center justify-center gap-2 disabled:opacity-50 transition-colors ${
-                    outcome === "advance"
-                      ? "bg-green-600 hover:bg-green-700"
-                      : outcome === "query"
-                        ? "bg-amber-500 hover:bg-amber-600"
-                        : "bg-red-600 hover:bg-red-700"
-                  }`}
+                  disabled={saving}
+                  className="flex-1 h-[38px] rounded-lg text-[13px] font-semibold text-white flex items-center justify-center gap-2 disabled:opacity-50 transition-colors bg-green-600 hover:bg-green-700"
                 >
                   {saving && <Loader2 size={14} className="animate-spin" />}
-                  {outcome === "advance" ? "Mark Accepted" : outcome === "query" ? "Mark Queried" : "Mark Rejected"}
+                  Mark Accepted
                 </button>
               </div>
             </>
@@ -1535,14 +1514,13 @@ function RegisterRowModal({
             (STATUS_STEP_MAP[b.backendStatus] ?? 0)
         );
 
-      let currentStep = STATUS_STEP_MAP[job.backendStatus ?? "request_received"] ?? 1;
+      let currentStep = STATUS_STEP_MAP[job.backendStatus ?? "1_rnr"] ?? 1;
 
       for (const item of acceptedStages) {
         const targetStep = STATUS_STEP_MAP[item.backendStatus] ?? currentStep;
         if (targetStep <= currentStep) continue;
 
-        // Region Approved / Region Barcoded are register-only stages for this backend.
-        // Keep them as local register values instead of forcing workflow transitions.
+        // Keep late-stage metadata local only when backend step mapping is unavailable.
         if (targetStep > REGISTER_BACKEND_SYNC_MAX_STEP) {
           continue;
         }
@@ -1735,7 +1713,7 @@ function RegisterRowModal({
           </div>
 
           <div className="rounded-xl border border-dashed border-[#f59e0b] bg-[#fffbeb] px-4 py-3 text-[12px] text-[#92400e]">
-            Approved stages sync to backend workflow where supported. Query/pending and late-region stage edits are persisted in backend register metadata on the job record.
+            Approved stages sync to backend workflow where supported, including Sign Out and Delivered. Query/pending edits are persisted in backend register metadata on the job record.
           </div>
 
           {error && <p className="text-red-600 text-[12px]">{error}</p>}
@@ -2028,26 +2006,49 @@ export default function JobsRegisterPage() {
     setCurrentPage(1);
   }, [debouncedSearch, statusFilter]);
 
-  const totalPages = Math.max(1, Math.ceil(totalJobs / pageSize));
+  const normalizedSearch = debouncedSearch.trim().toLowerCase();
+
+  const visibleJobs = useMemo(() => {
+    const query = normalizedSearch;
+
+    return jobs.filter((job) => {
+      if (statusFilter && job.status !== statusFilter) {
+        return false;
+      }
+
+      if (!query) {
+        return true;
+      }
+
+      const searchable = [
+        job.jobId,
+        job.regionalNumber,
+        job.clientName,
+        job.jobType,
+        job.statusDisplay,
+        job.backendStatus,
+      ]
+        .map((value) => String(value ?? "").toLowerCase())
+        .join(" ");
+
+      return searchable.includes(query);
+    });
+  }, [jobs, normalizedSearch, statusFilter]);
+
+  const effectiveTotalJobs =
+    normalizedSearch || statusFilter ? visibleJobs.length : totalJobs;
+
+  const totalPages = Math.max(1, Math.ceil(effectiveTotalJobs / pageSize));
   const safeCurrentPage = Math.min(currentPage, totalPages);
   const currentPageStartIndex =
-    totalJobs === 0 ? 0 : (safeCurrentPage - 1) * pageSize + 1;
-  const currentPageEndIndex = Math.min(safeCurrentPage * pageSize, totalJobs);
+    effectiveTotalJobs === 0 ? 0 : (safeCurrentPage - 1) * pageSize + 1;
+  const currentPageEndIndex = Math.min(safeCurrentPage * pageSize, effectiveTotalJobs);
 
   useEffect(() => {
     if (currentPage !== safeCurrentPage) {
       setCurrentPage(safeCurrentPage);
     }
   }, [currentPage, safeCurrentPage]);
-
-  const visibleJobs = useMemo(() => {
-    if (!statusFilter) {
-      return jobs;
-    }
-
-    // Compatibility fallback if backend ignores high-level status filter params.
-    return jobs.filter((job) => job.status === statusFilter);
-  }, [jobs, statusFilter]);
 
   // Slice to current page (backend may return all results; this ensures pagination on frontend)
   const paginatedJobs = useMemo(() => {
@@ -2121,8 +2122,8 @@ export default function JobsRegisterPage() {
       "Examination Checking",
       "Examination Cert.",
       "Region Checked",
-      "Region Approved",
-      "Region Barcoded",
+      "Signed Out (CSAU)",
+      "Delivered to Client",
       "Workflow Status / Notes",
     ];
 
@@ -2141,8 +2142,8 @@ export default function JobsRegisterPage() {
       row["Examination Checking"] = getRegisterStageDisplay(resolvedStages.examinationChecking.entry);
       row["Examination Cert."] = getRegisterStageDisplay(resolvedStages.examinationCertified.entry);
       row["Region Checked"] = getRegisterStageDisplay(resolvedStages.regionChecked.entry);
-      row["Region Approved"] = getRegisterStageDisplay(resolvedStages.regionApproved.entry);
-      row["Region Barcoded"] = getRegisterStageDisplay(resolvedStages.regionBatched.entry);
+      row["Signed Out (CSAU)"] = getRegisterStageDisplay(resolvedStages.regionApproved.entry);
+      row["Delivered to Client"] = getRegisterStageDisplay(resolvedStages.regionBatched.entry);
       row["Workflow Status / Notes"] = [
         workflowProgress.currentStatusLabel,
         `${workflowProgress.currentStepLabel} (${workflowProgress.progressPercent}%)`,
@@ -2425,7 +2426,7 @@ export default function JobsRegisterPage() {
   }, [registerRecords]);
 
   const openWorkflowModal = (job: Job) => {
-    const stepIndex = getStepIndex(job.backendStatus ?? "request_received");
+    const stepIndex = getStepIndex(job.backendStatus ?? "1_rnr");
     const currentStep = job.steps[Math.max(0, job.currentStep - 1)];
     setWorkflowModal({
       job,
@@ -2603,25 +2604,26 @@ export default function JobsRegisterPage() {
   };
 
   return (
-    <div className="jobs-register-page admin-future-bg">
-      <div className="admin-surface-glass rounded-2xl border border-border px-4 py-5 mb-4 md:px-5">
+    <div className="jobs-register-page admin-future-bg space-y-4">
+      <div className="relative rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-white px-5 py-5 dark:border-slate-700 dark:from-slate-900 dark:via-slate-900 dark:to-slate-800 md:px-6">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(37,99,235,0.14),transparent_35%),radial-gradient(circle_at_bottom_left,rgba(240,112,0,0.14),transparent_35%)] dark:bg-[radial-gradient(circle_at_top_right,rgba(59,130,246,0.2),transparent_35%),radial-gradient(circle_at_bottom_left,rgba(249,115,22,0.2),transparent_35%)]" />
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-          <div>
-            <div className="inline-flex items-center gap-2 rounded-full border border-[#F07000]/25 bg-[#fff7ed] px-3 py-1 text-[11px] font-[800] text-[#b45309] dark:bg-[#3b230d]/60 dark:text-[#ffd9b5] dark:border-[#ff8a1f]/30">
+          <div className="relative">
+            <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-white/80 px-3 py-1 text-[11px] font-[900] uppercase tracking-[0.08em] text-primary dark:bg-primary/15">
               <ClipboardList size={13} />
               HD Register Intelligence
             </div>
-            <h3 className="mt-2 text-[22px] font-bold text-foreground">Job Management Register</h3>
-            <p className="text-[13px] text-muted-foreground">
+            <h3 className="mt-2 text-[28px] font-[900] tracking-tight text-slate-900 dark:text-slate-100">Job Management Register</h3>
+            <p className="max-w-[720px] text-[13px] text-muted-foreground">
               Presented like the physical register. Click any register cell or Edit Register to update register stages, with backend sync where supported.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="relative ml-auto flex shrink-0 flex-nowrap items-center justify-end gap-2.5">
             <button
               onClick={() => {
                 void loadJobs();
               }}
-              className="flex items-center gap-2 h-[38px] px-4 border border-border bg-card rounded-lg text-[13px] font-semibold text-foreground/80 hover:bg-muted transition-colors"
+              className="inline-flex shrink-0 items-center gap-2 h-10 px-4 rounded-full border border-slate-300/90 bg-white text-[12px] font-semibold text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
             >
               <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Refresh
             </button>
@@ -2629,23 +2631,23 @@ export default function JobsRegisterPage() {
               onClick={() => {
                 void handleExport("xlsx");
               }}
-              className="flex items-center gap-2 h-[38px] px-4 bg-green-600 text-white rounded-lg text-[13px] font-semibold hover:bg-green-700 transition-colors shadow-[0_8px_18px_rgba(22,163,74,0.26)]"
+              className="inline-flex shrink-0 items-center gap-2 h-10 px-4 rounded-full border border-emerald-200 bg-emerald-50 text-[12px] font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 dark:border-emerald-900/40 dark:bg-emerald-950/40 dark:text-emerald-200 dark:hover:bg-emerald-900/50"
             >
-              <Download size={14} /> Export XLSX
+              <Upload size={14} /> Export XLSX
             </button>
             <button
               onClick={() => importInputRef.current?.click()}
               disabled={importing}
-              className="flex items-center gap-2 h-[38px] px-4 bg-[#1d4ed8] text-white rounded-lg text-[13px] font-semibold hover:bg-[#1e40af] disabled:opacity-60 transition-colors shadow-[0_8px_18px_rgba(29,78,216,0.26)]"
+              className="inline-flex shrink-0 items-center gap-2 h-10 px-4 rounded-full bg-blue-600 text-[12px] font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-60"
             >
-              {importing ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+              {importing ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
               {importing ? "Importing..." : "Import Spreadsheet"}
             </button>
             <button
               type="button"
               onClick={() => setSelectedJobIds([])}
               disabled={selectedJobIds.length === 0 || bulkDeleting || deletingJobId !== null}
-              className="flex items-center gap-2 h-[38px] px-4 border border-border bg-card rounded-lg text-[13px] font-semibold text-foreground/80 hover:bg-muted disabled:opacity-60 transition-colors"
+              className="inline-flex shrink-0 items-center gap-2 h-10 px-4 rounded-full border border-slate-300/90 bg-slate-50 text-[12px] font-semibold text-slate-600 transition-colors hover:bg-slate-100 disabled:opacity-60 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
             >
               Clear Selection
             </button>
@@ -2657,7 +2659,7 @@ export default function JobsRegisterPage() {
                 bulkDeleting ||
                 deletingJobId !== null
               }
-              className="flex items-center gap-2 h-[38px] px-4 bg-red-600 text-white rounded-lg text-[13px] font-semibold hover:bg-red-700 disabled:opacity-60 transition-colors shadow-[0_8px_18px_rgba(220,38,38,0.26)]"
+              className="inline-flex shrink-0 items-center gap-2 h-10 px-4 rounded-full border border-rose-200 bg-rose-50 text-[12px] font-semibold text-rose-700 transition-colors hover:bg-rose-100 disabled:opacity-60 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-200 dark:hover:bg-rose-900/50"
             >
               {bulkDeleting ? (
                 <Loader2 size={14} className="animate-spin" />
@@ -2670,46 +2672,46 @@ export default function JobsRegisterPage() {
             </button>
             <Link
               href="/admin/jobs/new"
-              className="flex items-center gap-2 h-[38px] px-4 bg-[#F07000] text-white rounded-lg text-[13px] font-semibold hover:bg-[#D06000] transition-colors shadow-[0_8px_18px_rgba(240,112,0,0.28)]"
+              className="inline-flex shrink-0 items-center gap-2 h-10 px-4 rounded-full bg-primary text-primary-foreground text-[12px] font-semibold transition-colors hover:brightness-95"
             >
               <Plus size={14} /> New Job
             </Link>
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-          <div className="admin-surface-elevated rounded-xl p-4 border border-border">
+        <div className="relative mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.08)] dark:border-slate-700 dark:bg-slate-900/80">
             <p className="text-[11px] font-[700] uppercase tracking-wide text-muted-foreground">Total Registers</p>
             <div className="mt-2 flex items-center justify-between">
               <p className="text-[24px] font-[900] leading-none text-foreground">{counts.all}</p>
-              <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-[#fff2e6] text-[#F07000] dark:bg-[#3d2510]/70 dark:text-[#ffb27a]">
+              <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-[#fff2e6] text-[#F07000] dark:bg-[#3d2510]/70 dark:text-[#ffb27a]">
                 <ClipboardList size={17} />
               </span>
             </div>
           </div>
-          <div className="admin-surface-elevated rounded-xl p-4 border border-border">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.08)] dark:border-slate-700 dark:bg-slate-900/80">
             <p className="text-[11px] font-[700] uppercase tracking-wide text-muted-foreground">In Progress</p>
             <div className="mt-2 flex items-center justify-between">
               <p className="text-[24px] font-[900] leading-none text-orange-600">{counts.inProgress}</p>
-              <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-orange-100 text-orange-600 dark:bg-orange-500/20 dark:text-orange-300">
+              <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-orange-100 text-orange-600 dark:bg-orange-500/20 dark:text-orange-300">
                 <Clock size={17} />
               </span>
             </div>
           </div>
-          <div className="admin-surface-elevated rounded-xl p-4 border border-border">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.08)] dark:border-slate-700 dark:bg-slate-900/80">
             <p className="text-[11px] font-[700] uppercase tracking-wide text-muted-foreground">Queried</p>
             <div className="mt-2 flex items-center justify-between">
               <p className="text-[24px] font-[900] leading-none text-amber-600">{counts.queried}</p>
-              <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-300">
+              <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-300">
                 <AlertTriangle size={17} />
               </span>
             </div>
           </div>
-          <div className="admin-surface-elevated rounded-xl p-4 border border-border">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.08)] dark:border-slate-700 dark:bg-slate-900/80">
             <p className="text-[11px] font-[700] uppercase tracking-wide text-muted-foreground">Completed</p>
             <div className="mt-2 flex items-center justify-between">
               <p className="text-[24px] font-[900] leading-none text-green-600">{counts.completed}</p>
-              <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-300">
+              <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-300">
                 <CheckCircle size={17} />
               </span>
             </div>
@@ -3039,7 +3041,7 @@ export default function JobsRegisterPage() {
         </div>
       )}
 
-      <div className="admin-surface-elevated rounded-xl border border-border p-4 mb-4">
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_14px_28px_rgba(15,23,42,0.08)] mb-4 dark:border-slate-700 dark:bg-slate-900/85">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-1 flex-col gap-3 md:flex-row">
             <div className="relative flex-1 min-w-[260px]">
@@ -3049,13 +3051,13 @@ export default function JobsRegisterPage() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search by regional number, client, title, status, or comment..."
-                className="w-full h-[40px] pl-10 pr-4 border border-border bg-card rounded-lg text-[13px] text-foreground focus:outline-none focus:ring-2 focus:ring-[#F07000]/20"
+                className="w-full h-[42px] pl-10 pr-4 border border-slate-300 bg-slate-50 rounded-full text-[13px] text-foreground focus:outline-none focus:ring-2 focus:ring-[#F07000]/20 dark:border-slate-600 dark:bg-slate-800/80"
               />
             </div>
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="h-[40px] min-w-[180px] px-4 border border-border bg-card rounded-lg text-[13px] text-foreground focus:outline-none focus:ring-2 focus:ring-[#F07000]/20"
+              className="h-[42px] min-w-[180px] px-4 border border-slate-300 bg-slate-50 rounded-full text-[13px] text-foreground focus:outline-none focus:ring-2 focus:ring-[#F07000]/20 dark:border-slate-600 dark:bg-slate-800/80"
             >
               <option value="">All Status</option>
               <option value="IN_PROGRESS">In Progress</option>
@@ -3063,20 +3065,17 @@ export default function JobsRegisterPage() {
               <option value="COMPLETED">Completed</option>
             </select>
           </div>
-          <div className="text-[12px] text-muted-foreground flex flex-wrap gap-4">
+          <div className="text-[12px] text-muted-foreground flex flex-wrap gap-3">
             <span className="font-semibold text-foreground">All: {counts.all}</span>
             <span className="font-semibold text-orange-600">Active: {counts.inProgress}</span>
             <span className="font-semibold text-amber-600">Queried: {counts.queried}</span>
             <span className="font-semibold text-green-600">Done: {counts.completed}</span>
             <span className="font-semibold text-red-600">Selected: {selectedJobIds.length}</span>
-            <span className="flex items-center gap-1.5"><span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full border border-[#bfdbfe] bg-[#dbeafe] px-1 text-[10px] font-[800] text-[#1d4ed8]">B</span> Backend decision value</span>
-            <span className="flex items-center gap-1.5"><span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full border border-[#d1d5db] bg-[#f3f4f6] px-1 text-[10px] font-[800] text-[#4b5563]">L</span> Local browser fallback</span>
-            <span className="flex items-center gap-1.5"><AlertTriangle size={13} className="text-amber-500" /> L appears only when backend persistence fails or stale cache exists; use Reset to restore backend value</span>
           </div>
         </div>
       </div>
 
-      <div className="mb-4 rounded-xl border border-border bg-card/70 px-4 py-3">
+      <div className="mb-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-[0_10px_22px_rgba(15,23,42,0.08)] dark:border-slate-700 dark:bg-slate-900/85">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <p className="text-[12px] text-muted-foreground">
             Showing {currentPageStartIndex || 0}-{currentPageEndIndex || 0} of {totalJobs} matching jobs
@@ -3092,7 +3091,7 @@ export default function JobsRegisterPage() {
                 setPageSize(Number(event.target.value));
                 setCurrentPage(1);
               }}
-              className="h-[34px] rounded-md border border-border bg-card px-2 text-[12px] text-foreground"
+              className="h-[34px] rounded-lg border border-border bg-card px-2 text-[12px] text-foreground"
             >
               {JOBS_PAGE_SIZE_OPTIONS.map((option) => (
                 <option key={option} value={option}>
@@ -3104,7 +3103,7 @@ export default function JobsRegisterPage() {
               type="button"
               onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
               disabled={safeCurrentPage <= 1 || loading}
-              className="h-[34px] rounded-md border border-border px-3 text-[12px] font-semibold text-foreground hover:bg-muted disabled:opacity-60"
+              className="h-[34px] rounded-lg border border-border px-3 text-[12px] font-semibold text-foreground hover:bg-muted disabled:opacity-60"
             >
               Previous
             </button>
@@ -3115,7 +3114,7 @@ export default function JobsRegisterPage() {
               type="button"
               onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
               disabled={safeCurrentPage >= totalPages || loading}
-              className="h-[34px] rounded-md border border-border px-3 text-[12px] font-semibold text-foreground hover:bg-muted disabled:opacity-60"
+              className="h-[34px] rounded-lg border border-border px-3 text-[12px] font-semibold text-foreground hover:bg-muted disabled:opacity-60"
             >
               Next
             </button>
@@ -3155,14 +3154,14 @@ export default function JobsRegisterPage() {
                   <span className="block mt-1 text-[10px] font-[600] text-[#cbd5e1]">5_csau_payment</span>
                 </th>
                 <th colSpan={2} className="border border-[#374151] px-3 py-1.5 text-center font-bold bg-[#1e3a5f]">Examination</th>
-                <th colSpan={3} className="border border-[#374151] px-3 py-1.5 text-center font-bold bg-[#374151]">Region</th>
+                <th colSpan={3} className="border border-[#374151] px-3 py-1.5 text-center font-bold bg-[#374151]">Region / Final Handoff</th>
               </tr>
               <tr className="bg-[#374151] text-[#d1d5db] text-[11px]">
                 <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold bg-[#1e3a5f] w-[60px]">Checking<span className="block mt-0.5 text-[10px] font-[500] text-[#9fb4d4]">6_1_checking</span></th>
                 <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold bg-[#1e3a5f] w-[60px]">Cert.<span className="block mt-0.5 text-[10px] font-[500] text-[#9fb4d4]">6_2_certified</span></th>
                 <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold w-[60px]">Checked<span className="block mt-0.5 text-[10px] font-[500] text-[#cbd5e1]">7_1_checked</span></th>
-                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold w-[60px]">Approved<span className="block mt-0.5 text-[10px] font-[500] text-[#cbd5e1]">7_2_approved</span></th>
-                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold w-[60px]">Barcoded<span className="block mt-0.5 text-[10px] font-[500] text-[#cbd5e1]">7_3_barcoded</span></th>
+                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold w-[60px]">Signed Out<span className="block mt-0.5 text-[10px] font-[500] text-[#cbd5e1]">8_signed_out_csau</span></th>
+                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold w-[60px]">Delivered<span className="block mt-0.5 text-[10px] font-[500] text-[#cbd5e1]">9_delivered_to_client</span></th>
               </tr>
             </thead>
             <tbody>

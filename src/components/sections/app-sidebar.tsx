@@ -5,19 +5,19 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
-  ChevronRight,
-  ChevronDown,
-  MoreHorizontal,
-  Home,
-  Briefcase,
-  ClipboardList,
-  Users,
-  UserCircle,
-  BarChart3,
-  Settings,
-  Power,
-  X,
-} from "lucide-react";
+  ChevronRightIcon,
+  ChevronDownIcon,
+  EllipsisHorizontalIcon,
+  HomeIcon,
+  BriefcaseIcon,
+  ClipboardDocumentListIcon,
+  UsersIcon,
+  UserCircleIcon,
+  ChartBarIcon,
+  Cog6ToothIcon,
+  PowerIcon,
+  XMarkIcon,
+} from "@heroicons/react/24/outline";
 import { useAuthStore } from "@/lib/auth-store";
 
 interface NavItem {
@@ -33,32 +33,32 @@ const adminNav: { category: string; desc: string; items: NavItem[] }[] = [
     category: "Main",
     desc: "Overview & job management",
     items: [
-      { icon: <Home size={18} />, label: "Dashboard", href: "/dashboard" },
+      { icon: <HomeIcon className="h-[18px] w-[18px]" />, label: "Dashboard", href: "/dashboard" },
       {
-        icon: <Briefcase size={18} />,
+        icon: <BriefcaseIcon className="h-[18px] w-[18px]" />,
         label: "Job Management",
         children: [
           { label: "All Jobs", href: "/admin/jobs" },
           { label: "Create New Job", href: "/admin/jobs/new" },
         ],
       },
-      { icon: <ClipboardList size={18} />, label: "Job Tracking", href: "/admin/jobs" },
-      { icon: <Users size={18} />, label: "Users & Clients", href: "/admin/users" },
+      { icon: <ClipboardDocumentListIcon className="h-[18px] w-[18px]" />, label: "Job Tracking", href: "/admin/jobs" },
+      { icon: <UsersIcon className="h-[18px] w-[18px]" />, label: "Users & Clients", href: "/admin/users" },
     ],
   },
   {
     category: "Membership",
     desc: "Party membership",
     items: [
-      { icon: <UserCircle size={18} />, label: "Members Database", href: "/membership/members" },
+      { icon: <UserCircleIcon className="h-[18px] w-[18px]" />, label: "Members Database", href: "/membership/members" },
     ],
   },
   {
     category: "System",
     desc: "Reports & configuration",
     items: [
-      { icon: <BarChart3 size={18} />, label: "Reports", href: "/reports" },
-      { icon: <Settings size={18} />, label: "Settings", href: "/admin/settings" },
+      { icon: <ChartBarIcon className="h-[18px] w-[18px]" />, label: "Reports", href: "/reports" },
+      { icon: <Cog6ToothIcon className="h-[18px] w-[18px]" />, label: "Settings", href: "/admin/settings" },
     ],
   },
 ];
@@ -74,10 +74,10 @@ export default function AppSidebar({
   const logout = useAuthStore((s) => s.logout);
 
   return (
-    <aside className={`fixed left-0 top-0 h-screen w-[280px] bg-sidebar border-r border-sidebar-border z-[9] flex flex-col p-2 py-4 ${className}`}>
+    <aside className={`fixed left-0 top-0 h-screen w-[280px] border-r border-sidebar-border/70 z-[9] flex flex-col p-2 py-4 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] dark:bg-[linear-gradient(180deg,#0d1729_0%,#0a1322_100%)] shadow-[0_14px_34px_rgba(15,23,42,0.08)] dark:shadow-[0_20px_42px_rgba(2,8,22,0.48)] ${className}`}>
       <div className="px-3">
         {/* Branding */}
-        <div className="flex items-center justify-between mb-6 mt-1">
+        <div className="flex items-center justify-between mb-6 mt-1 rounded-xl border border-sidebar-border/60 bg-white/80 dark:bg-white/[0.03] px-2 py-2">
           <Link href="/dashboard" className="flex items-center">
             <Image
               src="/recs-logo-wide.jpeg"
@@ -95,7 +95,7 @@ export default function AppSidebar({
             className="w-[25.5px] h-[25.5px] inline-flex items-center justify-center bg-[#F070001a] text-[#F07000] rounded-full hover:bg-[#F07000] hover:text-white transition-colors"
             aria-label={onClose ? "Close sidebar" : "More options"}
           >
-            {onClose ? <X size={16} /> : <MoreHorizontal size={16} />}
+            {onClose ? <XMarkIcon className="h-4 w-4" /> : <EllipsisHorizontalIcon className="h-4 w-4" />}
           </button>
         </div>
       </div>
@@ -105,7 +105,7 @@ export default function AppSidebar({
         {adminNav.map((section) => (
           <div key={section.category} className="mb-4">
             <div className="px-3 py-2 leading-tight">
-              <span className="text-[12px] font-bold text-sidebar-foreground uppercase tracking-wider">
+              <span className="text-[11px] font-extrabold text-sidebar-foreground/90 uppercase tracking-[0.12em]">
                 {section.category}
               </span>
               <div className="text-[11px] text-muted-foreground">{section.desc}</div>
@@ -120,12 +120,12 @@ export default function AppSidebar({
       </div>
 
       {/* Footer */}
-      <div className="mt-auto border-t border-sidebar-border pt-2 px-3">
+      <div className="mt-auto border-t border-sidebar-border/70 pt-2 px-3">
         <button
           onClick={logout}
-          className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-[14px] font-medium text-sidebar-foreground hover:bg-red-500/10 hover:text-red-500 transition-all"
+          className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-[14px] font-semibold text-sidebar-foreground hover:bg-red-500/10 hover:text-red-500 transition-all"
         >
-          <Power size={18} />
+          <PowerIcon className="h-[18px] w-[18px]" />
           <span>Sign Out</span>
         </button>
       </div>
@@ -142,9 +142,9 @@ function SidebarItem({ item, pathname }: { item: NavItem; pathname: string }) {
       <div>
         <button
           onClick={() => setOpen(!open)}
-          className={`group flex items-center w-full px-3 py-2.5 rounded-lg text-[14px] font-medium transition-all duration-200 ${
+          className={`group flex items-center w-full px-3 py-2.5 rounded-lg text-[14px] font-semibold transition-all duration-200 ${
             isActive
-              ? "bg-[#F07000]/10 text-[#F07000]"
+              ? "bg-[#F07000]/12 text-[#F07000] shadow-[inset_0_0_0_1px_rgba(240,112,0,0.18)]"
               : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
           }`}
         >
@@ -153,9 +153,9 @@ function SidebarItem({ item, pathname }: { item: NavItem; pathname: string }) {
           </span>
           <span className="ml-3 truncate">{item.label}</span>
           {open ? (
-            <ChevronDown size={14} className="ml-auto text-muted-foreground" />
+            <ChevronDownIcon className="ml-auto h-[14px] w-[14px] text-muted-foreground" />
           ) : (
-            <ChevronRight size={14} className="ml-auto text-muted-foreground" />
+            <ChevronRightIcon className="ml-auto h-[14px] w-[14px] text-muted-foreground" />
           )}
         </button>
         {open && (
@@ -166,7 +166,7 @@ function SidebarItem({ item, pathname }: { item: NavItem; pathname: string }) {
                 <Link
                   key={child.href}
                   href={child.href}
-                  className={`block px-3 py-2 rounded-lg text-[13px] font-medium transition-all ${
+                  className={`block px-3 py-2 rounded-lg text-[13px] font-semibold transition-all ${
                     childActive
                       ? "bg-[#F07000] text-white"
                       : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
@@ -185,7 +185,7 @@ function SidebarItem({ item, pathname }: { item: NavItem; pathname: string }) {
   return (
     <Link
       href={item.href!}
-      className={`group flex items-center px-3 py-2.5 rounded-lg text-[14px] font-medium transition-all duration-200 ${
+      className={`group flex items-center px-3 py-2.5 rounded-lg text-[14px] font-semibold transition-all duration-200 ${
         isActive
           ? "bg-[#F07000] text-white"
           : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
