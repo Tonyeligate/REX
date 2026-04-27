@@ -13,7 +13,6 @@ import {
   Bars3Icon,
 } from "@heroicons/react/24/outline";
 import { useAuthStore, getUserDisplayName } from "@/lib/auth-store";
-import ThemeToggleButton from "@/components/theme/theme-toggle-button";
 
 export default function AppHeader({
   showMenuButton = false,
@@ -82,7 +81,7 @@ export default function AppHeader({
 
   return (
     <header className="sticky top-0 z-40 w-full px-2 md:px-3 pt-2">
-      <div className="app-topbar-shell rounded-2xl overflow-hidden">
+      <div className="app-topbar-shell rounded-2xl overflow-visible">
         <div className="flex items-center justify-between w-full px-4 py-2">
         {/* Left: Brand */}
         <div className="flex items-center gap-3">
@@ -138,9 +137,6 @@ export default function AppHeader({
             )}
           </div>
 
-          {/* Theme Toggle */}
-          <ThemeToggleButton />
-
           {/* Profile Dropdown */}
           <div ref={profileRef} className="relative ml-2">
             <button
@@ -158,7 +154,7 @@ export default function AppHeader({
             </button>
 
             {showProfile && (
-              <div className="absolute right-0 top-full mt-2 w-48 bg-popover border border-border rounded-xl shadow-lg py-2 z-50">
+              <div className="absolute right-0 top-full mt-2 w-48 bg-popover border border-border rounded-xl shadow-lg py-2 z-[80]">
                 <Link href="/admin/profile" className="flex items-center gap-2 px-4 py-2 text-[13px] text-foreground hover:bg-muted transition-colors" onClick={() => setShowProfile(false)}>
                   <UserIcon className="h-[14px] w-[14px]" /> My Profile
                 </Link>

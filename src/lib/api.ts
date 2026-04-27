@@ -558,6 +558,7 @@ export interface BackendJobListItem {
   status: BackendStatus;
   status_display: string;
   client?: BackendClient;
+  locality?: string | null;
   parcel_acreage: string | null;
   payment_amount: string | null;
   step_decisions?: BackendStepDecision[];
@@ -2263,8 +2264,19 @@ export const usersApi = {
 
 export const membersApi = {
   list: async (params?: Record<string, string>) => {
-    const clients = await backendRequest<BackendClient[]>("/clients/");
-    let members = clients.map(mapBackendClientToMember);
+    const [clients, jobsPayload] = await Promise.all([
+      backendRequest<BackendClient[]>("/clients/"),
+      backendRequest<BackendJobListPayload>("/jobs/"),
+    ]);
+    const jobs = extractBackendJobListItems(jobsPayload);
+    const clientRegionById = buildClientRegionByIdFromJobs(jobs);
+
+    let members = clients.map((client) => {
+      const mapped = mapBackendClientToMember(client);
+      const inferredRegion = clientRegionById.get(client.id);
+      if (!inferredRegion) return mapped;
+      return { ...mapped, region: inferredRegion };
+    });
 
     if (params?.region) {
       members = members.filter((member) => member.region === params.region);
@@ -2464,91 +2476,158 @@ export const duesApi = {
 };
 
 /* ═══════════════════════════════════════════════════════════
-   Reports API  (→ hybrid: derive job stats from backend)
+   Reports API  (→ backend-derived live data)
    ═══════════════════════════════════════════════════════════ */
+
+const GHANA_REGIONS_16 = [
+  "Ahafo",
+  "Ashanti",
+  "Bono",
+  "Bono East",
+  "Central",
+  "Eastern",
+  "Greater Accra",
+  "North East",
+  "Northern",
+  "Oti",
+  "Savannah",
+  "Upper East",
+  "Upper West",
+  "Volta",
+  "Western",
+  "Western North",
+] as const;
+
+function mapLocalityToGhanaRegion(locality?: string | null): string | null {
+  const value = String(locality ?? "").trim().toLowerCase();
+  if (!value) return null;
+
+  const contains = (...terms: string[]) => terms.some((term) => value.includes(term));
+
+  if (contains("greater accra", "accra", "tema", "madina", "adenta", "ga ")) return "Greater Accra";
+  if (contains("ashanti", "kumasi", "obuasi", "ejisu", "bekwai")) return "Ashanti";
+  if (contains("western north", "sefwi", "bibiani", "wiaso")) return "Western North";
+  if (contains("western", "takoradi", "sekondi", "tarkwa", "axim")) return "Western";
+  if (contains("central", "cape coast", "kasoa", "winneba", "elmina")) return "Central";
+  if (contains("eastern", "koforidua", "akyem", "suhum", "nkawkaw")) return "Eastern";
+  if (contains("volta", "ho ", "keta", "hohoe", "aflao")) return "Volta";
+  if (contains("oti", "dambai", "jasikan", "krachi")) return "Oti";
+  if (contains("northern", "tamale", "yendi", "savelugu")) return "Northern";
+  if (contains("north east", "northeast", "nalerigu", "walewale")) return "North East";
+  if (contains("savannah", "damongo", "buipe", "salaga")) return "Savannah";
+  if (contains("upper east", "bolgatanga", "bawku", "navrongo")) return "Upper East";
+  if (contains("upper west", "wa ", "lawra", "jirapa")) return "Upper West";
+  if (contains("bono east", "techiman", "kintampo", "atebubu")) return "Bono East";
+  if (contains("bono", "sunyani", "berekum", "dormaa")) return "Bono";
+  if (contains("ahafo", "goaso", "kenyasi", "hwidiem")) return "Ahafo";
+
+  return null;
+}
+
+function buildClientRegionByIdFromJobs(
+  jobs: BackendJobListItem[]
+): Map<number, string> {
+  const clientRegionById = new Map<number, string>();
+  for (const job of jobs) {
+    const clientId = job.client?.id;
+    if (!clientId || clientRegionById.has(clientId)) continue;
+    const region = mapLocalityToGhanaRegion(job.locality);
+    if (region) {
+      clientRegionById.set(clientId, region);
+    }
+  }
+  return clientRegionById;
+}
 
 export const reportsApi = {
   jobStats: async () => {
-    try {
-      const items = await backendRequest<BackendJobListItem[]>("/jobs/");
-      const total = items.length;
-      let inProgress = 0;
-      let completed = 0;
-      let queried = 0;
-      const byStep: Record<number, number> = {};
-      const byStatus: Record<string, number> = {
-        "1_rnr": 0,
-        "2_regional_number": 0,
-        "3_job_production": 0,
-        "4_ls_cert": 0,
-        "5_csau_payment": 0,
-        "6_examination": 0,
-        "7_region": 0,
-        "8_signed_out_csau": 0,
-        "9_delivered_to_client": 0,
-      };
+    const payload = await backendRequest<BackendJobListPayload>("/jobs/");
+    const items = extractBackendJobListItems(payload);
+    const total = items.length;
+    let inProgress = 0;
+    let completed = 0;
+    let queried = 0;
+    const byStep: Record<number, number> = {};
+    const byStatus: Record<string, number> = {
+      "1_rnr": 0,
+      "2_regional_number": 0,
+      "3_job_production": 0,
+      "4_ls_cert": 0,
+      "5_csau_payment": 0,
+      "6_examination": 0,
+      "7_region": 0,
+      "8_signed_out_csau": 0,
+      "9_delivered_to_client": 0,
+    };
 
-      for (const j of items) {
-        if (j.status === "9_delivered_to_client" || j.status === "delivered_to_client") {
-          completed++;
-        } else if (
-          j.status === "queried_ls461" ||
-          j.status === "queried_smd"
-        ) {
-          queried++;
-        } else {
-          inProgress++;
-        }
-        const step = STATUS_STEP_MAP[j.status] ?? 1;
-        byStep[step] = (byStep[step] ?? 0) + 1;
-
-        // Canonical funnel buckets (coalesce legacy slugs to current schema)
-        const normalizedStatus =
-          j.status === "signed_out_csau"
-            ? "8_signed_out_csau"
-            : j.status === "delivered_to_client"
-              ? "9_delivered_to_client"
-              : j.status;
-
-        if (normalizedStatus in byStatus) {
-          byStatus[normalizedStatus] = (byStatus[normalizedStatus] ?? 0) + 1;
-        }
+    for (const j of items) {
+      if (j.status === "9_delivered_to_client" || j.status === "delivered_to_client") {
+        completed++;
+      } else if (
+        j.status === "queried_ls461" ||
+        j.status === "queried_smd"
+      ) {
+        queried++;
+      } else {
+        inProgress++;
       }
+      const step = STATUS_STEP_MAP[j.status] ?? 1;
+      byStep[step] = (byStep[step] ?? 0) + 1;
 
-      return { total, inProgress, completed, queried, byStep, byStatus };
-    } catch {
-      return {
-        total: 0,
-        inProgress: 0,
-        completed: 0,
-        queried: 0,
-        byStep: {},
-        byStatus: {},
-      };
+      // Canonical funnel buckets (coalesce legacy slugs to current schema)
+      const normalizedStatus =
+        j.status === "signed_out_csau"
+          ? "8_signed_out_csau"
+          : j.status === "delivered_to_client"
+            ? "9_delivered_to_client"
+            : j.status;
+
+      if (normalizedStatus in byStatus) {
+        byStatus[normalizedStatus] = (byStatus[normalizedStatus] ?? 0) + 1;
+      }
     }
+
+    return { total, inProgress, completed, queried, byStep, byStatus };
   },
 
   membershipStats: async () => {
-    const { members } = await membersApi.list();
-    const totalMembers = members.length;
-    const activeMembers = members.filter((m) => m.isActive).length;
+    const clients = await backendRequest<BackendClient[]>("/clients/");
+    const jobsPayload = await backendRequest<BackendJobListPayload>("/jobs/");
+    const jobs = extractBackendJobListItems(jobsPayload);
+
+    const totalMembers = clients.length;
+    const activeMembers = clients.length;
     const now = new Date();
-    const newThisMonth = members.filter((m) => {
-      const created = new Date(m.createdAt);
+    const newThisMonth = clients.filter((client) => {
+      const created = new Date(client.created_at);
       return (
         created.getMonth() === now.getMonth() &&
         created.getFullYear() === now.getFullYear()
       );
     }).length;
-    const duesCollected = members.reduce(
-      (sum, member) => sum + (member.totalDuesPaid ?? 0),
-      0
+
+    const duesCollected = jobs.reduce((sum, job) => {
+      const value =
+        typeof job.payment_amount === "number"
+          ? job.payment_amount
+          : Number.parseFloat(String(job.payment_amount ?? "0"));
+      return sum + (Number.isFinite(value) ? value : 0);
+    }, 0);
+
+    // Backend client schema currently has no dedicated region field.
+    // Infer region from job locality and project into the 16 official Ghana regions.
+    const clientRegionById = buildClientRegionByIdFromJobs(jobs);
+
+    const byRegion: Record<string, number> = Object.fromEntries(
+      GHANA_REGIONS_16.map((region) => [region, 0])
     );
-    const byRegion: Record<string, number> = {};
-    for (const member of members) {
-      const region = member.region || "Unknown";
+
+    for (const client of clients) {
+      const region = clientRegionById.get(client.id);
+      if (!region) continue;
       byRegion[region] = (byRegion[region] ?? 0) + 1;
     }
+
     return { totalMembers, activeMembers, newThisMonth, duesCollected, byRegion };
   },
 };

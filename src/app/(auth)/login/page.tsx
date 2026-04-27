@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
-import { Eye, EyeOff, HelpCircle } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 import { useAuthStore } from "@/lib/auth-store";
 import type { LoginFormData } from "@/lib/validations/auth";
 
@@ -42,88 +42,108 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="w-full max-w-[440px]">
-      <div className="bg-white rounded-2xl shadow-lg p-8 relative">
-        {/* Branding */}
-        <div className="text-center mb-6">
-          <h2 className="text-[26px] font-bold text-[#1f2937] mb-1">
-            <span className="text-[#F07000]">Recs</span> Geomatics Consult
-          </h2>
-          <p className="text-[13px] text-[#9ca3af]">Job Certification &amp; Approval System</p>
-        </div>
-
-        <h3 className="text-[20px] font-bold text-[#1f2937] mb-1">Login to Your Account</h3>
-        <p className="text-[13px] text-[#9ca3af] mb-6">
-          Enter your email and password to access your account.
-        </p>
-
-        {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-[13px]">
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <div>
-            <label className="block text-[13px] font-semibold text-[#4b5563] mb-1.5">Email / Username *</label>
-            <input
-              type="text"
-              className="w-full h-[44px] px-4 bg-white border border-[#e5e7eb] rounded-lg text-[14px] focus:outline-none focus:ring-2 focus:ring-[#F07000]/20 focus:border-[#F07000] transition-all"
-              placeholder="you@example.com or username"
-              {...register("email", { required: "Email or username is required" })}
-            />
-            {errors.email && <p className="text-red-500 text-[12px] mt-1">{errors.email.message}</p>}
-          </div>
-
-          <div>
-            <label className="block text-[13px] font-semibold text-[#4b5563] mb-1.5">Password *</label>
-            <div className="relative">
-              <input
-                type={showPassword ? "text" : "password"}
-                className="w-full h-[44px] px-4 pr-10 bg-white border border-[#e5e7eb] rounded-lg text-[14px] focus:outline-none focus:ring-2 focus:ring-[#F07000]/20 focus:border-[#F07000] transition-all"
-                placeholder="Enter your password"
-                {...register("password", { required: "Password is required" })}
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9ca3af] hover:text-[#F07000]"
-              >
-                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-              </button>
+    <div className="min-h-screen">
+      <div className="grid min-h-screen w-full grid-cols-1 overflow-hidden bg-white lg:grid-cols-2">
+        <section className="relative hidden lg:flex">
+          <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=1800&q=80')] bg-cover bg-center" />
+          <div className="absolute inset-0 bg-gradient-to-br from-[#1f2937]/85 via-[#1f2937]/70 to-[#F07000]/55" />
+          <div className="relative flex h-full w-full flex-col justify-between p-10 text-white">
+            <div>
+              <p className="inline-flex items-center rounded-full border border-white/30 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide">
+                Recs Geomatics Consult
+              </p>
+              <h1 className="mt-5 text-4xl font-[900] leading-tight text-white">
+                Land Survey
+                <br />
+                <span className="text-[#F07000]">&amp; Certification Portal</span>
+              </h1>
+              <p className="mt-4 max-w-md text-[14px] text-white/85">
+                Manage cadastral workflows, parcel documentation, and certification records from one secure operations console.
+              </p>
             </div>
-            {errors.password && <p className="text-red-500 text-[12px] mt-1">{errors.password.message}</p>}
+            <div className="rounded-2xl border border-white/20 bg-white/10 p-5 backdrop-blur-sm">
+              <p className="text-[12px] font-semibold uppercase tracking-wide text-white/80">
+                System Notice
+              </p>
+              <p className="mt-2 text-[14px] text-white/90">
+                Authorized staff only. All actions are audited and role-restricted.
+              </p>
+            </div>
           </div>
+        </section>
 
-          <div className="flex items-center justify-between">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" className="w-4 h-4 rounded border-[#e5e7eb] text-[#F07000] focus:ring-[#F07000]" />
-              <span className="text-[13px] text-[#4b5563]">Remember me</span>
-            </label>
-            <a href="#" className="flex items-center gap-1 text-[13px] text-[#F07000] hover:underline">
-              <HelpCircle size={14} />
-              Forgot Password
-            </a>
+        <section className="flex items-center justify-center bg-white px-6 py-10 sm:px-10">
+          <div className="w-full max-w-[430px]">
+            <div className="mb-7">
+              <h2 className="text-[30px] font-[900] tracking-tight text-[#1f2937]">
+                Welcome Back
+              </h2>
+              <p className="mt-1 text-[14px] text-[#6b7280]">
+                Sign in to continue to the certification operations dashboard.
+              </p>
+            </div>
+
+            {error && (
+              <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-600">
+                {error}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+              <div>
+                <label className="mb-1.5 block text-[13px] font-semibold text-[#374151]">
+                  Email / Username
+                </label>
+                <input
+                  type="text"
+                  className="h-[46px] w-full rounded-xl border border-[#e5e7eb] bg-white px-4 text-[14px] transition-all focus:border-[#F07000] focus:outline-none focus:ring-2 focus:ring-[#F07000]/20"
+                  placeholder="you@example.com or username"
+                  {...register("email", { required: "Email or username is required" })}
+                />
+                {errors.email && (
+                  <p className="mt-1 text-[12px] text-red-500">{errors.email.message}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-[13px] font-semibold text-[#374151]">
+                  Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    className="h-[46px] w-full rounded-xl border border-[#e5e7eb] bg-white px-4 pr-10 text-[14px] transition-all focus:border-[#F07000] focus:outline-none focus:ring-2 focus:ring-[#F07000]/20"
+                    placeholder="Enter your password"
+                    {...register("password", { required: "Password is required" })}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9ca3af] hover:text-[#F07000]"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+                {errors.password && (
+                  <p className="mt-1 text-[12px] text-red-500">{errors.password.message}</p>
+                )}
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="h-[46px] w-full rounded-xl bg-[#F07000] text-[14px] font-semibold text-white transition-colors hover:bg-[#D06000] disabled:opacity-50"
+              >
+                {loading ? "Signing in..." : "Sign In"}
+              </button>
+            </form>
+
+            <p className="mt-5 text-center text-[12px] text-[#9ca3af]">
+              Admin access only. Contact a system administrator for account setup.
+            </p>
           </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full h-[44px] bg-[#F07000] text-white rounded-lg font-semibold text-[14px] hover:bg-[#D06000] transition-colors disabled:opacity-50"
-          >
-            {loading ? "Signing in..." : "Login"}
-          </button>
-        </form>
-
-        <p className="text-center text-[13px] text-[#9ca3af] mt-6">
-          Admin access only. Contact a system administrator to create an account.
-        </p>
-
-        {/* Backend info */}
-        <div className="mt-4 p-3 bg-[#FFF5EB] border border-[#F0E6DA] rounded-lg">
-          <p className="text-[11px] font-bold text-[#C05500] mb-1">Connected to Live Backend</p>
-          <p className="text-[11px] text-[#8B5E3C]">Log in with your registered email/username and password.</p>
-        </div>
+        </section>
       </div>
     </div>
   );
