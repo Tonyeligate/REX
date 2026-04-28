@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { Eye, EyeOff } from "lucide-react";
+import Image from "next/image";
 import { useAuthStore } from "@/lib/auth-store";
 import type { LoginFormData } from "@/lib/validations/auth";
 
@@ -49,9 +50,15 @@ export default function LoginPage() {
           <div className="absolute inset-0 bg-gradient-to-br from-[#1f2937]/85 via-[#1f2937]/70 to-[#F07000]/55" />
           <div className="relative flex h-full w-full flex-col justify-between p-10 text-white">
             <div>
-              <p className="inline-flex items-center rounded-full border border-white/30 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide">
-                Recs Geomatics Consult
-              </p>
+              <div className="mb-6 inline-block rounded-xl bg-white/95 p-3 shadow-sm backdrop-blur-sm">
+                <Image
+                  src="/recs-logo-wide.jpeg"
+                  alt="Recs Geomatics Consult"
+                  width={160}
+                  height={45}
+                  className="object-contain"
+                />
+              </div>
               <h1 className="mt-5 text-4xl font-[900] leading-tight text-white">
                 Land Survey
                 <br />
@@ -61,20 +68,19 @@ export default function LoginPage() {
                 Manage cadastral workflows, parcel documentation, and certification records from one secure operations console.
               </p>
             </div>
-            <div className="rounded-2xl border border-white/20 bg-white/10 p-5 backdrop-blur-sm">
-              <p className="text-[12px] font-semibold uppercase tracking-wide text-white/80">
-                System Notice
-              </p>
-              <p className="mt-2 text-[14px] text-white/90">
-                Authorized staff only. All actions are audited and role-restricted.
-              </p>
-            </div>
           </div>
         </section>
 
         <section className="flex items-center justify-center bg-white px-6 py-10 sm:px-10">
           <div className="w-full max-w-[430px]">
-            <div className="mb-7">
+            <div className="mb-8">
+              <Image
+                src="/recs-logo.jpeg"
+                alt="RECS Logo"
+                width={64}
+                height={64}
+                className="mb-8 rounded-xl"
+              />
               <h2 className="text-[30px] font-[900] tracking-tight text-[#1f2937]">
                 Welcome Back
               </h2>
