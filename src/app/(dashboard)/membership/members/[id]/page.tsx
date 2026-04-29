@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Loader2, Save } from "lucide-react";
 import { membersApi } from "@/lib/api";
+import { showErrorAlert, showSuccessAlert } from "@/lib/sweet-alert";
 import type { Member } from "@/types/member";
 import { GHANA_REGIONS } from "@/types/member";
 
@@ -37,8 +38,9 @@ export default function MemberDetailPage() {
       const updated = await membersApi.update(params.id, form);
       setMember(updated.member);
       setEditing(false);
+      void showSuccessAlert("Member details updated successfully.");
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Save failed");
+      void showErrorAlert(err instanceof Error ? err.message : "Save failed");
     } finally {
       setSaving(false);
     }

@@ -1329,7 +1329,7 @@ function StageModal({ job, colLabel, stepIndex, currentState, onClose, onDone }:
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to update";
       setError(message);
-      void showErrorAlert(message, "Workflow update failed");
+      void showErrorAlert(message);
     } finally {
       setSaving(false);
     }
@@ -1641,7 +1641,7 @@ function RegisterRowModal({
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to save register row";
       setError(message);
-      void showErrorAlert(message, "Save failed");
+      void showErrorAlert(message);
     } finally {
       setSaving(false);
     }
@@ -1980,11 +1980,11 @@ export default function JobsRegisterPage() {
     setImportOutcome(outcome);
     setShowImportFailures(false);
     if (outcome.status === "success") {
-      void showSuccessAlert(outcome.message, "Import completed");
+      void showSuccessAlert(outcome.message);
     } else if (outcome.status === "failed" || outcome.status === "partial") {
-      void showErrorAlert(outcome.message, "Import finished with issues");
+      void showErrorAlert(outcome.message);
     } else {
-      void showInfoAlert(outcome.message, "Import notice");
+      void showInfoAlert(outcome.message);
     }
 
     setImportHistory((current) => {
@@ -2360,8 +2360,7 @@ export default function JobsRegisterPage() {
 
     if (actionableRows.length === 0) {
       void showInfoAlert(
-        "No selected rows to apply. Select rows marked as ready to update or create.",
-        "Import preview"
+        "No selected rows to apply. Select rows marked as ready to update or create."
       );
       return;
     }
@@ -2460,8 +2459,7 @@ export default function JobsRegisterPage() {
       });
     } catch (error) {
       void showErrorAlert(
-        error instanceof Error ? error.message : "Failed to apply import updates.",
-        "Import failed"
+        error instanceof Error ? error.message : "Failed to apply import updates."
       );
     } finally {
       setImporting(false);
@@ -2550,13 +2548,11 @@ export default function JobsRegisterPage() {
       void showSuccessAlert(
         typeof deleteResult.message === "string" && deleteResult.message.trim()
           ? deleteResult.message
-          : `Job ${job.jobId} deleted successfully.`,
-        "Deleted"
+          : `Job ${job.jobId} deleted successfully.`
       );
     } catch (error) {
       void showErrorAlert(
-        error instanceof Error ? error.message : "Failed to delete selected job.",
-        "Delete failed"
+        error instanceof Error ? error.message : "Failed to delete selected job."
       );
     } finally {
       setDeletingJobId(null);
@@ -2613,8 +2609,7 @@ export default function JobsRegisterPage() {
 
       if (failedCount === 0) {
         void showSuccessAlert(
-          `${deletedCount} job${deletedCount === 1 ? "" : "s"} deleted successfully.`,
-          "Deleted"
+          `${deletedCount} job${deletedCount === 1 ? "" : "s"} deleted successfully.`
         );
       } else {
         const summary =
@@ -2622,7 +2617,7 @@ export default function JobsRegisterPage() {
             ? `${deletedCount} deleted, ${failedCount} failed.`
             : `Bulk delete failed for ${failedCount} selected job${failedCount === 1 ? "" : "s"}.`;
         const detail = failedMessages.slice(0, 2).join(" | ");
-        void showErrorAlert(detail ? `${summary} ${detail}` : summary, "Bulk delete issues");
+        void showErrorAlert(detail ? `${summary} ${detail}` : summary);
       }
     } finally {
       setBulkDeleting(false);
