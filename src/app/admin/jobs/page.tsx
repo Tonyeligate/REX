@@ -25,6 +25,7 @@ import {
 import {
   WORKFLOW_STATUSES,
   STATUS_STEP_MAP,
+  getRegisterRecordFromJobDescription,
   jobsApi,
   registerFieldsApi,
   type BackendStatus,
@@ -37,6 +38,11 @@ import {
 } from "@/lib/register-stage-mapping";
 import { getRegisterProgressSummary } from "@/lib/register-progress";
 import { getJobProgressSummary } from "@/lib/job-progress";
+import {
+  showErrorAlert,
+  showInfoAlert,
+  showSuccessAlert,
+} from "@/lib/sweet-alert";
 import type { Job, JobStepDecision } from "@/types/job";
 import type {
   JobRegisterRecord,
@@ -241,6 +247,8 @@ const IMPORT_STAGE_COLUMNS: Record<RegisterStageKey, string[]> = {
   regionApproved: [
     "Region Approved",
     "Region Approve",
+    "Region Verified",
+    "Verified",
     "Signed Out",
     "Signed Out CSAU",
     "Signed Out (CSAU)",
@@ -260,6 +268,22 @@ const IMPORT_STAGE_COLUMNS: Record<RegisterStageKey, string[]> = {
     "7_3_barcoded",
     "Stage 7.3",
     "Step 7.3",
+  ],
+  signedOutCsau: [
+    "Signed Out",
+    "Signed Out CSAU",
+    "Signed Out (CSAU)",
+    "8_signed_out_csau",
+    "Stage 8",
+    "Step 8",
+  ],
+  deliveredToClient: [
+    "Delivered",
+    "Delivered to Client",
+    "Client Delivered",
+    "9_delivered_to_client",
+    "Stage 9",
+    "Step 9",
   ],
 };
 
@@ -294,13 +318,23 @@ const IMPORT_DETECTED_FIELD_TARGETS: ImportFieldTarget[] = [
   },
   {
     key: "regionApproved",
-    label: "Signed Out (CSAU)",
+    label: "Region Approved",
     candidates: IMPORT_STAGE_COLUMNS.regionApproved,
   },
   {
     key: "regionBatched",
-    label: "Delivered to Client",
+    label: "Region Barcoded",
     candidates: IMPORT_STAGE_COLUMNS.regionBatched,
+  },
+  {
+    key: "signedOutCsau",
+    label: "Signed Out (CSAU)",
+    candidates: IMPORT_STAGE_COLUMNS.signedOutCsau,
+  },
+  {
+    key: "deliveredToClient",
+    label: "Delivered to Client",
+    candidates: IMPORT_STAGE_COLUMNS.deliveredToClient,
   },
 ];
 
@@ -1015,12 +1049,32 @@ function areEquivalentRegisterEntries(
   return a.outcome === b.outcome && aComment === bComment;
 }
 
+/** True when any register stage has explicit saved data — disables coarse status fill for empty columns. */
+function hasGranularRegisterData(record?: JobRegisterRecord): boolean {
+  if (!record?.stages) return false;
+  for (const key of REGISTER_STAGE_KEYS) {
+    if (normalizeRegisterStage(record.stages[key])) return true;
+  }
+  return false;
+}
+
+/** Prefer session/local cache; otherwise parse embedded register JSON from job description (list payload). */
+function resolveRegisterRecordForJob(
+  job: Job,
+  cache: Record<string, JobRegisterRecord>
+): JobRegisterRecord | undefined {
+  const cached = cache[job.jobId];
+  if (cached) return cached;
+  return getRegisterRecordFromJobDescription(job.description, job.jobId) ?? undefined;
+}
+
 function resolveRegisterStages(
   job: Job,
   record?: JobRegisterRecord
 ): Record<RegisterStageKey, ResolvedRegisterStage> {
   const latestByStep = getLatestBackendDecisionByStep(job);
   const clearedStageKeySet = new Set(record?.clearedStageKeys ?? []);
+  const skipCoarseStatusFill = hasGranularRegisterData(record);
   const currentStepNumber = STATUS_STEP_MAP[job.backendStatus ?? "1_rnr"] ?? 0;
   const isQueriedCurrentStatus =
     job.backendStatus === "queried_ls461" || job.backendStatus === "queried_smd";
@@ -1042,7 +1096,7 @@ function resolveRegisterStages(
       currentStepNumber >= stageStepNumber &&
       !(isQueriedCurrentStatus && currentStepNumber === stageStepNumber);
 
-    if (!backendEntry && shouldMarkCompletedFromStatus) {
+    if (!backendEntry && shouldMarkCompletedFromStatus && !skipCoarseStatusFill) {
       backendEntry = {
         outcome: "accept",
         comment: "",
@@ -1270,9 +1324,12 @@ function StageModal({ job, colLabel, stepIndex, currentState, onClose, onDone }:
         { comment },
         { currentBackendStatus }
       );
+      void showSuccessAlert("Workflow step updated successfully.");
       onDone();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update");
+      const message = err instanceof Error ? err.message : "Failed to update";
+      setError(message);
+      void showErrorAlert(message, "Workflow update failed");
     } finally {
       setSaving(false);
     }
@@ -1515,7 +1572,6 @@ function RegisterRowModal({
         );
 
       let currentStep = STATUS_STEP_MAP[job.backendStatus ?? "1_rnr"] ?? 1;
-
       for (const item of acceptedStages) {
         const targetStep = STATUS_STEP_MAP[item.backendStatus] ?? currentStep;
         if (targetStep <= currentStep) continue;
@@ -1580,9 +1636,12 @@ function RegisterRowModal({
       const response = await registerFieldsApi.update(job.jobId, {
         stages: stagePayload,
       });
+      void showSuccessAlert("Register entry saved successfully.");
       onDone(response.record);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save register row");
+      const message = err instanceof Error ? err.message : "Failed to save register row";
+      setError(message);
+      void showErrorAlert(message, "Save failed");
     } finally {
       setSaving(false);
     }
@@ -1798,7 +1857,6 @@ export default function JobsRegisterPage() {
   const [pageSize, setPageSize] = useState<number>(DEFAULT_JOBS_PAGE_SIZE);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
-  const [importFeedback, setImportFeedback] = useState("");
   const [importOutcome, setImportOutcome] = useState<ImportOutcome | null>(null);
   const [showImportFailures, setShowImportFailures] = useState(false);
   const [importHistory, setImportHistory] = useState<ImportHistoryEntry[]>([]);
@@ -1813,9 +1871,6 @@ export default function JobsRegisterPage() {
   const [deletingJobId, setDeletingJobId] = useState<string | null>(null);
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [selectedJobIds, setSelectedJobIds] = useState<string[]>([]);
-  const [jobFeedback, setJobFeedback] = useState<
-    { type: "success" | "error"; text: string } | null
-  >(null);
   const [pendingDeleteConfirm, setPendingDeleteConfirm] = useState<
     | { mode: "single"; job: Job }
     | { mode: "bulk"; jobs: Job[] }
@@ -1924,7 +1979,13 @@ export default function JobsRegisterPage() {
   const recordImportOutcome = useCallback((outcome: ImportOutcome) => {
     setImportOutcome(outcome);
     setShowImportFailures(false);
-    setImportFeedback("");
+    if (outcome.status === "success") {
+      void showSuccessAlert(outcome.message, "Import completed");
+    } else if (outcome.status === "failed" || outcome.status === "partial") {
+      void showErrorAlert(outcome.message, "Import finished with issues");
+    } else {
+      void showInfoAlert(outcome.message, "Import notice");
+    }
 
     setImportHistory((current) => {
       const nextEntry: ImportHistoryEntry = {
@@ -2128,7 +2189,7 @@ export default function JobsRegisterPage() {
     ];
 
     const rows = visibleJobs.map((job, index) => {
-      const record = registerRecords[job.jobId];
+      const record = resolveRegisterRecordForJob(job, registerRecords);
       const resolvedStages = resolveRegisterStages(job, record);
       const workflowProgress = getJobProgressSummary(job);
       const row: Record<string, string | number> = {
@@ -2142,8 +2203,10 @@ export default function JobsRegisterPage() {
       row["Examination Checking"] = getRegisterStageDisplay(resolvedStages.examinationChecking.entry);
       row["Examination Cert."] = getRegisterStageDisplay(resolvedStages.examinationCertified.entry);
       row["Region Checked"] = getRegisterStageDisplay(resolvedStages.regionChecked.entry);
-      row["Signed Out (CSAU)"] = getRegisterStageDisplay(resolvedStages.regionApproved.entry);
-      row["Delivered to Client"] = getRegisterStageDisplay(resolvedStages.regionBatched.entry);
+      row["Region Approved"] = getRegisterStageDisplay(resolvedStages.regionApproved.entry);
+      row["Region Barcoded"] = getRegisterStageDisplay(resolvedStages.regionBatched.entry);
+      row["Signed Out (CSAU)"] = getRegisterStageDisplay(resolvedStages.signedOutCsau.entry);
+      row["Delivered to Client"] = getRegisterStageDisplay(resolvedStages.deliveredToClient.entry);
       row["Workflow Status / Notes"] = [
         workflowProgress.currentStatusLabel,
         `${workflowProgress.currentStepLabel} (${workflowProgress.progressPercent}%)`,
@@ -2208,7 +2271,6 @@ export default function JobsRegisterPage() {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    setImportFeedback("");
     setImportDetectedMappings([]);
     setImporting(true);
 
@@ -2297,7 +2359,10 @@ export default function JobsRegisterPage() {
     );
 
     if (actionableRows.length === 0) {
-      setImportFeedback("No selected rows to apply. Select rows marked as ready to update or create.");
+      void showInfoAlert(
+        "No selected rows to apply. Select rows marked as ready to update or create.",
+        "Import preview"
+      );
       return;
     }
 
@@ -2394,8 +2459,9 @@ export default function JobsRegisterPage() {
         failures: failedRows,
       });
     } catch (error) {
-      setImportFeedback(
-        error instanceof Error ? error.message : "Failed to apply import updates."
+      void showErrorAlert(
+        error instanceof Error ? error.message : "Failed to apply import updates.",
+        "Import failed"
       );
     } finally {
       setImporting(false);
@@ -2460,7 +2526,6 @@ export default function JobsRegisterPage() {
 
   const performSingleDelete = async (job: Job) => {
     setDeletingJobId(job.id);
-    setJobFeedback(null);
 
     try {
       const deleteResult = await jobsApi.delete(job.jobId);
@@ -2482,19 +2547,17 @@ export default function JobsRegisterPage() {
         setWorkflowModal(null);
       }
 
-      setJobFeedback({
-        type: "success",
-        text:
-          typeof deleteResult.message === "string" && deleteResult.message.trim()
-            ? deleteResult.message
-            : `Job ${job.jobId} deleted successfully.`,
-      });
+      void showSuccessAlert(
+        typeof deleteResult.message === "string" && deleteResult.message.trim()
+          ? deleteResult.message
+          : `Job ${job.jobId} deleted successfully.`,
+        "Deleted"
+      );
     } catch (error) {
-      setJobFeedback({
-        type: "error",
-        text:
-          error instanceof Error ? error.message : "Failed to delete selected job.",
-      });
+      void showErrorAlert(
+        error instanceof Error ? error.message : "Failed to delete selected job.",
+        "Delete failed"
+      );
     } finally {
       setDeletingJobId(null);
     }
@@ -2502,7 +2565,6 @@ export default function JobsRegisterPage() {
 
   const performBulkDelete = async (selectedJobs: Job[]) => {
     setBulkDeleting(true);
-    setJobFeedback(null);
 
     let deletedCount = 0;
     let failedCount = 0;
@@ -2550,20 +2612,17 @@ export default function JobsRegisterPage() {
       }
 
       if (failedCount === 0) {
-        setJobFeedback({
-          type: "success",
-          text: `${deletedCount} job${deletedCount === 1 ? "" : "s"} deleted successfully.`,
-        });
+        void showSuccessAlert(
+          `${deletedCount} job${deletedCount === 1 ? "" : "s"} deleted successfully.`,
+          "Deleted"
+        );
       } else {
         const summary =
           deletedCount > 0
             ? `${deletedCount} deleted, ${failedCount} failed.`
             : `Bulk delete failed for ${failedCount} selected job${failedCount === 1 ? "" : "s"}.`;
         const detail = failedMessages.slice(0, 2).join(" | ");
-        setJobFeedback({
-          type: "error",
-          text: detail ? `${summary} ${detail}` : summary,
-        });
+        void showErrorAlert(detail ? `${summary} ${detail}` : summary, "Bulk delete issues");
       }
     } finally {
       setBulkDeleting(false);
@@ -2810,12 +2869,6 @@ export default function JobsRegisterPage() {
         </div>
       )}
 
-      {importFeedback && (
-        <div className="mb-4 rounded-lg border border-[#bfdbfe] bg-[#eff6ff] dark:border-[#274574] dark:bg-[#10203a] px-3 py-2 text-[12px] text-[#1e3a8a] dark:text-[#bcd8ff]">
-          {importFeedback}
-        </div>
-      )}
-
       {recentImportHistory.length > 0 && (
         <div className="mb-4 rounded-lg border border-border bg-card px-3 py-2">
           <p className="text-[12px] font-semibold text-foreground">Recent Imports</p>
@@ -2830,18 +2883,6 @@ export default function JobsRegisterPage() {
               );
             })}
           </div>
-        </div>
-      )}
-
-      {jobFeedback && (
-        <div
-          className={`mb-4 rounded-lg border px-3 py-2 text-[12px] ${
-            jobFeedback.type === "success"
-              ? "border-green-200 bg-green-50 text-green-700 dark:border-green-900/60 dark:bg-green-950/30 dark:text-green-300"
-              : "border-red-200 bg-red-50 text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300"
-          }`}
-        >
-          {jobFeedback.text}
         </div>
       )}
 
@@ -3124,7 +3165,7 @@ export default function JobsRegisterPage() {
 
       <div className="admin-surface-elevated rounded-xl border border-border overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
-          <table className="jobs-register-table w-full text-[12px] border-collapse table-fixed min-w-[1080px] xl:min-w-0">
+          <table className="jobs-register-table w-full text-[12px] border-collapse table-fixed min-w-[1280px] xl:min-w-0">
             <thead>
               <tr className="bg-[#1f2937] text-white">
                 <th rowSpan={2} className="border border-[#374151] px-2 py-2 text-center font-bold w-[40px]">
@@ -3154,27 +3195,30 @@ export default function JobsRegisterPage() {
                   <span className="block mt-1 text-[10px] font-[600] text-[#cbd5e1]">5_csau_payment</span>
                 </th>
                 <th colSpan={2} className="border border-[#374151] px-3 py-1.5 text-center font-bold bg-[#1e3a5f]">Examination</th>
-                <th colSpan={3} className="border border-[#374151] px-3 py-1.5 text-center font-bold bg-[#374151]">Region / Final Handoff</th>
+                <th colSpan={3} className="border border-[#374151] px-3 py-1.5 text-center font-bold bg-[#374151]">Region</th>
+                <th colSpan={2} className="border border-[#374151] px-3 py-1.5 text-center font-bold bg-[#111827]">Final Handoff</th>
               </tr>
               <tr className="bg-[#374151] text-[#d1d5db] text-[11px]">
                 <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold bg-[#1e3a5f] w-[60px]">Checking<span className="block mt-0.5 text-[10px] font-[500] text-[#9fb4d4]">6_1_checking</span></th>
                 <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold bg-[#1e3a5f] w-[60px]">Cert.<span className="block mt-0.5 text-[10px] font-[500] text-[#9fb4d4]">6_2_certified</span></th>
                 <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold w-[60px]">Checked<span className="block mt-0.5 text-[10px] font-[500] text-[#cbd5e1]">7_1_checked</span></th>
-                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold w-[60px]">Signed Out<span className="block mt-0.5 text-[10px] font-[500] text-[#cbd5e1]">8_signed_out_csau</span></th>
-                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold w-[60px]">Delivered<span className="block mt-0.5 text-[10px] font-[500] text-[#cbd5e1]">9_delivered_to_client</span></th>
+                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold w-[60px]">Approved<span className="block mt-0.5 text-[10px] font-[500] text-[#cbd5e1]">7_2_approved</span></th>
+                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold w-[60px]">Barcode<span className="block mt-0.5 text-[10px] font-[500] text-[#cbd5e1]">7_3_barcoded</span></th>
+                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold bg-[#1f2937] w-[60px]">Sign Out<span className="block mt-0.5 text-[10px] font-[500] text-[#cbd5e1]">8_signed_out_csau</span></th>
+                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold bg-[#1f2937] w-[60px]">Delivered<span className="block mt-0.5 text-[10px] font-[500] text-[#cbd5e1]">9_delivered_to_client</span></th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={11} className="text-center py-12 text-[#9ca3af]">
+                  <td colSpan={13} className="text-center py-12 text-[#9ca3af]">
                     <Loader2 size={20} className="animate-spin mx-auto mb-2" />
                     Loading jobs...
                   </td>
                 </tr>
               ) : visibleJobs.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="text-center py-12 text-[#9ca3af]">
+                  <td colSpan={13} className="text-center py-12 text-[#9ca3af]">
                     No jobs match the current filters. <Link href="/admin/jobs/new" className="text-[#F07000] hover:underline font-semibold">Create a new job →</Link>
                   </td>
                 </tr>
@@ -3185,7 +3229,7 @@ export default function JobsRegisterPage() {
                   const isSelected = selectedJobIdSet.has(job.id);
                   const registerName = getRegisterName(job);
                   const registerReference = getRegisterReference(job);
-                  const record = registerRecords[job.jobId];
+                  const record = resolveRegisterRecordForJob(job, registerRecords);
                   const resolvedStages = resolveRegisterStages(job, record);
                   const workflowProgress = getJobProgressSummary(job);
                   const registerProgress = getRegisterProgressSummary(buildResolvedRegisterRecord(job, record));
@@ -3303,12 +3347,13 @@ export default function JobsRegisterPage() {
       {registerModalJob && (
         <RegisterRowModal
           job={registerModalJob}
-          record={registerRecords[registerModalJob.jobId]}
+          record={resolveRegisterRecordForJob(registerModalJob, registerRecords)}
           onClose={() => setRegisterModalJob(null)}
           onDone={(record) => {
-            setRegisterRecords((current) => ({ ...current, [record.jobId]: record }));
+            const canonicalJobId = registerModalJob.jobId;
+            setRegisterRecords((current) => ({ ...current, [canonicalJobId]: { ...record, jobId: canonicalJobId } }));
             setRegisterModalJob(null);
-            void refreshJob(record.jobId);
+            void refreshJob(canonicalJobId);
           }}
         />
       )}

@@ -5,7 +5,9 @@ export type RegisterStageKey =
   | "examinationCertified"
   | "regionChecked"
   | "regionApproved"
-  | "regionBatched";
+  | "regionBatched"
+  | "signedOutCsau"
+  | "deliveredToClient";
 
 export type RegisterStageOutcome = "accept" | "query" | "reject";
 
