@@ -3,6 +3,11 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Send, Filter, Loader2, MessageSquare, Clock } from "lucide-react";
 import { smsApi, membersApi } from "@/lib/api";
+import {
+  showConfirmAlert,
+  showErrorAlert,
+  showSuccessAlert,
+} from "@/lib/sweet-alert";
 import type { SmsMessage } from "@/types/member";
 import { GHANA_REGIONS } from "@/types/member";
 
@@ -72,7 +77,11 @@ export default function SmsBroadcastPage() {
     if (smsUnavailable) return;
     if (!content.trim()) return;
     const cost = (memberCount ?? 0) * 1.5;
-    if (!confirm(`Send SMS to ${memberCount ?? "all"} members? Total cost: GH₵ ${cost.toFixed(2)} (GH₵ 1.00/member to party + GH₵ 0.50/member platform fee)`)) return;
+    const shouldProceed = await showConfirmAlert(
+      `Send SMS to ${memberCount ?? "all"} members? Total cost: GH₵ ${cost.toFixed(2)} (GH₵ 1.00/member to party + GH₵ 0.50/member platform fee)`,
+      "Send SMS broadcast?"
+    );
+    if (!shouldProceed) return;
 
     setSending(true);
     try {
@@ -88,8 +97,9 @@ export default function SmsBroadcastPage() {
       setContent("");
       // Refresh history
       await loadHistory();
+      void showSuccessAlert("SMS broadcast sent successfully.");
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Send failed");
+      void showErrorAlert(err instanceof Error ? err.message : "Send failed");
     } finally {
       setSending(false);
     }

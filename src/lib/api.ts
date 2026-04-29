@@ -157,6 +157,14 @@ function stripRegisterMetaFromDescription(description?: string): string {
   return (before || after).trimEnd();
 }
 
+/** Snapshot of register data embedded in job description (REX_REGISTER meta block). */
+export function getRegisterRecordFromJobDescription(
+  description: string | undefined,
+  fallbackJobId: string
+): JobRegisterRecord | null {
+  return parseRegisterRecordFromDescription(description, fallbackJobId);
+}
+
 function parseRegisterRecordFromDescription(
   description: string | undefined,
   fallbackJobId: string
@@ -1966,7 +1974,11 @@ export const registerFieldsApi = {
             jobId
           );
           if (backendRecord) {
-            records[jobId] = backendRecord;
+            records[jobId] = {
+              ...backendRecord,
+              jobId,
+              source: backendRecord.source ?? "backend",
+            };
             return;
           }
 
@@ -2023,7 +2035,15 @@ export const registerFieldsApi = {
         job.description,
         jobId
       );
-      if (backendRecord) return { record: backendRecord };
+      if (backendRecord) {
+        return {
+          record: {
+            ...backendRecord,
+            jobId,
+            source: backendRecord.source ?? "backend",
+          },
+        };
+      }
     } catch {
       // Fall back to local browser cache when backend lookup fails.
     }
@@ -2069,6 +2089,7 @@ export const registerFieldsApi = {
 
     const record: JobRegisterRecord = {
       ...existing,
+      jobId,
       actualRegionalNumber:
         payload.actualRegionalNumber?.trim() ?? existing.actualRegionalNumber,
       stages: mergedStages,

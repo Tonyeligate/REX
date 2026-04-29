@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Plus, Search, Download, Upload, Eye, UserPlus, Loader2 } from "lucide-react";
 import { membersApi } from "@/lib/api";
+import { showErrorAlert, showSuccessAlert } from "@/lib/sweet-alert";
 import type { Member } from "@/types/member";
 import { GHANA_REGIONS } from "@/types/member";
 
@@ -59,8 +60,9 @@ export default function MembersPage() {
       setShowAdd(false);
       setForm({ firstName: "", surname: "", dateOfBirth: "", region: "", constituency: "", pollingStation: "", phone: "", ghanaCard: "", voterIdNumber: "" });
       loadMembers();
+      void showSuccessAlert("Member added successfully.");
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to add member");
+      void showErrorAlert(err instanceof Error ? err.message : "Failed to add member");
     } finally {
       setAdding(false);
     }
@@ -76,7 +78,7 @@ export default function MembersPage() {
       a.click();
       URL.revokeObjectURL(url);
     } catch {
-      alert("Export failed");
+      void showErrorAlert("Export failed");
     }
   };
 
@@ -87,8 +89,9 @@ export default function MembersPage() {
     try {
       await membersApi.import(file);
       loadMembers();
+      void showSuccessAlert("Members imported successfully.");
     } catch {
-      alert("Import failed");
+      void showErrorAlert("Import failed");
     } finally {
       setImporting(false);
     }
