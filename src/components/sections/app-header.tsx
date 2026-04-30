@@ -28,8 +28,39 @@ export default function AppHeader({
   const [searchQuery, setSearchQuery] = useState("");
   const [showProfile, setShowProfile] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [headerHidden, setHeaderHidden] = useState(false);
   const bellRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
+  const lastScrollY = useRef(0);
+
+  // Hide floating top bar on scroll down; show again on scroll up or near page top.
+  useEffect(() => {
+    lastScrollY.current =
+      typeof window !== "undefined" ? window.scrollY || document.documentElement.scrollTop || 0 : 0;
+
+    const onScroll = () => {
+      const y =
+        typeof window !== "undefined"
+          ? window.scrollY || document.documentElement.scrollTop || 0
+          : 0;
+      const delta = y - lastScrollY.current;
+
+      if (y < 56) {
+        setHeaderHidden(false);
+      } else if (delta > 6) {
+        setHeaderHidden(true);
+        setShowNotifications(false);
+        setShowProfile(false);
+      } else if (delta < -6) {
+        setHeaderHidden(false);
+      }
+
+      lastScrollY.current = y;
+    };
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -80,7 +111,16 @@ export default function AppHeader({
   })();
 
   return (
-    <header className="sticky top-0 z-40 w-full px-2 md:px-3 pt-2">
+    <header
+      className={`sticky top-0 z-40 w-full ${headerHidden ? "pointer-events-none" : ""}`}
+    >
+      <div
+        className={`overflow-hidden px-2 transition-[max-height,opacity,margin,padding] duration-300 ease-out md:px-3 ${
+          headerHidden
+            ? "max-h-0 opacity-0 pt-0"
+            : "max-h-[min(28rem,calc(100vh-2rem))] opacity-100 pt-2 pointer-events-auto"
+        }`}
+      >
       <div className="app-topbar-shell rounded-2xl overflow-visible">
         <div className="flex items-center justify-between w-full px-4 py-2">
         {/* Left: Brand */}
@@ -181,6 +221,7 @@ export default function AppHeader({
             </React.Fragment>
           ))}
         </div>
+      </div>
       </div>
     </header>
   );

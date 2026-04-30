@@ -1682,174 +1682,216 @@ function RegisterRowModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 overflow-hidden" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#e5e7eb] bg-[#f8f9fa]">
-          <div>
-            <h3 className="text-[15px] font-bold text-[#1f2937]">Register Entry</h3>
-            <p className="text-[12px] text-[#9ca3af]">
-              {getRegisterName(job)} · <span className="font-semibold text-[#F07000]">{job.jobId}</span>
+    <div
+      className="fixed inset-0 z-[200] flex items-start justify-center bg-slate-900/55 backdrop-blur-[2px] px-2 sm:px-4 pt-14 sm:pt-16 md:pt-[4.5rem] pb-3 sm:pb-5"
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        className="flex max-h-[min(calc(100dvh-5.5rem),calc(100vh-5.5rem))] w-full max-w-[min(100%,56rem)] flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_20px_55px_rgba(15,23,42,0.2)] sm:max-w-3xl md:max-h-[min(calc(100dvh-6rem),calc(100vh-6rem))] md:max-w-4xl lg:max-h-[min(calc(100dvh-7rem),calc(100vh-7rem))] lg:max-w-5xl sm:rounded-xl"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="register-entry-title"
+      >
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-gradient-to-r from-slate-50 to-white px-3 py-3 sm:px-5 sm:py-3.5">
+          <div className="min-w-0">
+            <h3 id="register-entry-title" className="text-[15px] font-bold leading-tight text-slate-800 sm:text-[16px]">
+              Register Entry
+            </h3>
+            <p className="mt-0.5 truncate text-[11px] text-slate-500 sm:text-[12px]">
+              {getRegisterName(job)} ·{" "}
+              <span className="font-semibold text-[#F07000]">{job.jobId}</span>
             </p>
           </div>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100 text-[#9ca3af]">
+          <button
+            type="button"
+            onClick={onClose}
+            className="shrink-0 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+            aria-label="Close register"
+          >
             <X size={16} />
           </button>
         </div>
 
-        <div className="px-6 py-5 space-y-5 max-h-[75vh] overflow-y-auto">
-          <div className="rounded-xl border border-[#e5e7eb] bg-[#f8f9fa] px-4 py-3 space-y-3">
-            <div>
-              <p className="text-[11px] uppercase tracking-wide text-[#9ca3af] mb-1">Regional Number</p>
-              <p className="text-[14px] font-bold text-[#1f2937]">{getActualRegionalNumber(job, record) || "Not assigned"}</p>
-              <p className="text-[11px] text-[#6b7280] mt-1">This number is already captured at job creation and is shown here for reference only.</p>
+        <div className="flex min-h-0 flex-1 flex-col bg-slate-50/40 lg:flex-row">
+          {/* Job details: always visible sidebar on lg+; stacked on small screens */}
+          <aside className="shrink-0 border-b border-slate-200 bg-white p-3 sm:p-4 lg:w-[13.5rem] lg:border-b-0 lg:border-r lg:py-4">
+            <div className="space-y-3 sm:space-y-3.5">
+              <div>
+                <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                  Regional Number
+                </p>
+                <p className="break-all text-[13px] font-bold leading-snug text-slate-800 sm:text-[14px]">
+                  {getActualRegionalNumber(job, record) || "Not assigned"}
+                </p>
+              </div>
+              <div className="border-t border-slate-100 pt-3">
+                <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                  Requested By
+                </p>
+                {canEditRequestedBy ? (
+                  <>
+                    <input
+                      value={requestedByInput}
+                      onChange={(event) => setRequestedByInput(event.target.value)}
+                      placeholder="Name"
+                      className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-[12px] text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#F07000]/20 sm:text-[13px]"
+                    />
+                    <p className="mt-1 text-[10px] leading-relaxed text-slate-500">
+                      Set once on save; then read-only.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="break-words text-[13px] font-semibold text-slate-800 sm:text-[14px]">
+                      {currentRequestedBy || "—"}
+                    </p>
+                    <p className="mt-1 text-[10px] leading-relaxed text-slate-500">Locked after first value.</p>
+                  </>
+                )}
+              </div>
             </div>
-            <div className="pt-2 border-t border-[#e5e7eb]">
-              <p className="text-[11px] uppercase tracking-wide text-[#9ca3af] mb-1">Requested By</p>
-              {canEditRequestedBy ? (
-                <>
-                  <input
-                    value={requestedByInput}
-                    onChange={(event) => setRequestedByInput(event.target.value)}
-                    placeholder="Enter requested by name"
-                    className="w-full h-[38px] px-3 border border-[#d1d5db] bg-white rounded-lg text-[13px] text-[#1f2937] focus:outline-none focus:ring-2 focus:ring-[#F07000]/20"
-                  />
-                  <p className="text-[11px] text-[#6b7280] mt-1">
-                    This field is empty. You can set it once; after save it becomes read-only.
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p className="text-[14px] font-semibold text-[#1f2937]">
-                    {currentRequestedBy}
-                  </p>
-                  <p className="text-[11px] text-[#6b7280] mt-1">
-                    This value already exists and cannot be updated from the register modal.
-                  </p>
-                </>
+          </aside>
+
+          {/* Scrollable stages + notice */}
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-3 py-3 sm:px-4 sm:py-4">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600 sm:text-[12px]">
+                  Book stages
+                </p>
+                <button
+                  type="button"
+                  onClick={undoLastChange}
+                  disabled={!canUndo}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold text-slate-600 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 sm:text-[11px]"
+                >
+                  <RotateCcw size={12} />
+                  Undo last change
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 sm:gap-3 lg:grid-cols-2 xl:grid-cols-3">
+                {REGISTER_STAGE_KEYS.map((key, index) => {
+                  const stage = stages[key];
+                  const source = initialResolvedStages[key].source;
+                  const previousKey = index > 0 ? REGISTER_STAGE_KEYS[index - 1] : null;
+                  const previousStageSaved =
+                    previousKey === null
+                      ? true
+                      : Boolean(initialResolvedStages[previousKey].entry?.outcome);
+                  const stageWasSaved = Boolean(initialResolvedStages[key].entry?.outcome);
+                  const stageLocked = !stageWasSaved && !previousStageSaved;
+                  const stageHasValue = Boolean(stage.outcome || stage.comment.trim());
+                  const stageEdited = isStageEdited(key);
+                  const showClearButton = source === "backend" ? stageEdited : stageHasValue;
+                  const clearLabel = source === "backend" ? "Reset" : "Clear";
+                  return (
+                    <div
+                      key={key}
+                      className={`rounded-lg border px-3 py-3 shadow-sm transition-colors sm:rounded-xl sm:px-3.5 sm:py-3.5 ${
+                        stage.outcome === "accept"
+                          ? "border-emerald-200 bg-emerald-50/60"
+                          : stage.outcome === "query"
+                            ? "border-amber-200 bg-amber-50/60"
+                            : stage.outcome === "reject"
+                              ? "border-rose-200 bg-rose-50/60"
+                              : "border-slate-200 bg-white"
+                      }`}
+                    >
+                      <div className="mb-2 flex items-start justify-between gap-2">
+                        <span className="text-[12px] font-semibold leading-snug text-slate-800 sm:text-[13px]">
+                          {REGISTER_STAGE_LABELS[key]}
+                        </span>
+                        {showClearButton && (
+                          <button
+                            type="button"
+                            onClick={() => clearStage(key)}
+                            disabled={stageLocked}
+                            className="shrink-0 text-[10px] font-semibold text-slate-400 hover:text-slate-600 sm:text-[11px]"
+                          >
+                            {clearLabel}
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="mb-2 grid grid-cols-3 gap-1 sm:gap-1.5">
+                        {(["accept", "query", "reject"] as const).map((option) => (
+                          <button
+                            key={option}
+                            type="button"
+                            onClick={() => setStageOutcome(key, option)}
+                            disabled={stageLocked}
+                            className={`rounded-md py-1.5 text-[10px] font-bold uppercase tracking-wide border transition-all sm:py-2 sm:text-[11px] sm:normal-case sm:tracking-normal ${
+                              stage.outcome === option
+                                ? option === "accept"
+                                  ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                                  : option === "query"
+                                    ? "border-amber-500 bg-amber-50 text-amber-700"
+                                    : "border-rose-500 bg-rose-50 text-rose-700"
+                                : "border-slate-200 bg-white text-slate-500 hover:border-slate-300"
+                            } ${stageLocked ? "cursor-not-allowed opacity-60 hover:border-slate-200" : ""}`}
+                          >
+                            {option === "accept" ? "Approved" : option === "query" ? "Query" : "Pending"}
+                          </button>
+                        ))}
+                      </div>
+
+                      <textarea
+                        value={stage.comment}
+                        onChange={(e) => setStageComment(key, e.target.value)}
+                        disabled={stageLocked}
+                        rows={2}
+                        placeholder={
+                          stage.outcome === "accept"
+                            ? "Comment (optional)…"
+                            : stage.outcome === "query"
+                              ? "Comment (required)…"
+                              : stage.outcome === "reject"
+                                ? "Comment (required)…"
+                                : "Comment…"
+                        }
+                        className="w-full resize-none rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] text-slate-700 placeholder:text-slate-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#F07000]/20 disabled:opacity-60 sm:text-[12px]"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/90 px-3 py-2.5 text-[10px] leading-relaxed text-amber-900 sm:text-[11px]">
+                Approved stages sync to the backend workflow where supported. Query/pending is stored on the job register
+                metadata.
+              </div>
+
+              {error && (
+                <p className="mt-2 rounded-md border border-rose-200 bg-rose-50 px-2.5 py-2 text-[11px] text-rose-700">
+                  {error}
+                </p>
               )}
             </div>
-          </div>
 
-          <div>
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <p className="text-[12px] font-semibold text-[#374151] uppercase tracking-wide">Book Stages</p>
-              <button
-                type="button"
-                onClick={undoLastChange}
-                disabled={!canUndo}
-                className="inline-flex items-center gap-1.5 rounded-md border border-[#e5e7eb] bg-white px-2.5 py-1.5 text-[11px] font-semibold text-[#4b5563] hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <RotateCcw size={12} />
-                Undo last change
-              </button>
+            {/* Sticky footer: always visible */}
+            <div className="shrink-0 border-t border-slate-200 bg-white px-3 py-3 sm:px-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:gap-3">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="order-2 h-9 w-full rounded-lg border border-slate-300 text-[12px] font-semibold text-slate-600 hover:bg-slate-50 sm:order-1 sm:flex-1 sm:h-10 sm:text-[13px]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="order-1 flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-[#F07000] text-[12px] font-semibold text-white shadow-sm hover:bg-[#D06000] disabled:opacity-50 sm:order-2 sm:flex-1 sm:h-10 sm:text-[13px]"
+                >
+                  {saving ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                  Save Register Row
+                </button>
+              </div>
             </div>
-            <div className="grid gap-4 md:grid-cols-2">
-              {REGISTER_STAGE_KEYS.map((key, index) => {
-                const stage = stages[key];
-                const source = initialResolvedStages[key].source;
-                const previousKey = index > 0 ? REGISTER_STAGE_KEYS[index - 1] : null;
-                const previousStageSaved =
-                  previousKey === null
-                    ? true
-                    : Boolean(initialResolvedStages[previousKey].entry?.outcome);
-                const stageWasSaved = Boolean(initialResolvedStages[key].entry?.outcome);
-                const stageLocked =
-                  !stageWasSaved && !previousStageSaved;
-                const stageHasValue = Boolean(stage.outcome || stage.comment.trim());
-                const stageEdited = isStageEdited(key);
-                const showClearButton = source === "backend" ? stageEdited : stageHasValue;
-                const clearLabel = source === "backend" ? "Reset" : "Clear";
-                return (
-                  <div
-                    key={key}
-                    className={`rounded-xl border px-4 py-4 transition-colors ${
-                      stage.outcome === "accept"
-                        ? "border-green-200 bg-green-50"
-                        : stage.outcome === "query"
-                          ? "border-amber-200 bg-amber-50"
-                          : stage.outcome === "reject"
-                            ? "border-red-200 bg-red-50"
-                            : "border-[#e5e7eb] bg-white"
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-3 mb-3">
-                      <span className="text-[13px] font-semibold text-[#1f2937]">{REGISTER_STAGE_LABELS[key]}</span>
-                      {showClearButton && (
-                        <button
-                          type="button"
-                          onClick={() => clearStage(key)}
-                          disabled={stageLocked}
-                          className="text-[11px] font-semibold text-[#9ca3af] hover:text-[#4b5563]"
-                        >
-                          {clearLabel}
-                        </button>
-                      )}
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-2 mb-3">
-                      {(["accept", "query", "reject"] as const).map((option) => (
-                        <button
-                          key={option}
-                          type="button"
-                          onClick={() => setStageOutcome(key, option)}
-                          disabled={stageLocked}
-                          className={`py-2 rounded-lg text-[12px] font-bold border-2 transition-all ${
-                            stage.outcome === option
-                              ? option === "accept"
-                                ? "border-green-500 bg-green-50 text-green-700"
-                                : option === "query"
-                                  ? "border-amber-500 bg-amber-50 text-amber-700"
-                                  : "border-red-500 bg-red-50 text-red-700"
-                              : "border-[#e5e7eb] bg-white text-[#6b7280] hover:border-[#d1d5db]"
-                          } ${
-                            stageLocked ? "cursor-not-allowed opacity-60 hover:border-[#e5e7eb]" : ""
-                          }`}
-                        >
-                          {option === "accept" ? "Approved" : option === "query" ? "Query" : "Pending"}
-                        </button>
-                      ))}
-                    </div>
-
-                    <textarea
-                      value={stage.comment}
-                      onChange={(e) => setStageComment(key, e.target.value)}
-                      disabled={stageLocked}
-                      rows={3}
-                      placeholder={
-                        stage.outcome === "accept"
-                          ? "Comment for approval (optional)..."
-                          : stage.outcome === "query"
-                            ? "Comment for query (required)..."
-                            : stage.outcome === "reject"
-                              ? "Comment for pending (required)..."
-                              : "Add a comment for this stage..."
-                      }
-                      className="w-full px-3 py-2 border border-[#e5e7eb] rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-[#F07000]/20 resize-none"
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-dashed border-[#f59e0b] bg-[#fffbeb] px-4 py-3 text-[12px] text-[#92400e]">
-            Approved stages sync to backend workflow where supported, including Sign Out and Delivered. Query/pending edits are persisted in backend register metadata on the job record.
-          </div>
-
-          {error && <p className="text-red-600 text-[12px]">{error}</p>}
-
-          <div className="flex gap-3 pt-1">
-            <button onClick={onClose} className="flex-1 h-[40px] border border-[#e5e7eb] rounded-lg text-[13px] font-semibold text-[#4b5563] hover:bg-gray-50">
-              Cancel
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="flex-1 h-[40px] rounded-lg text-[13px] font-semibold text-white bg-[#F07000] hover:bg-[#D06000] disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              {saving ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-              Save Register Row
-            </button>
           </div>
         </div>
       </div>
