@@ -32,34 +32,75 @@ export default function AppHeader({
   const bellRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
   const lastScrollY = useRef(0);
+  const headerHiddenRef = useRef(false);
+  const scrollIgnoreUntilRef = useRef(0);
+  const rafScrollRef = useRef<number | null>(null);
 
-  // Hide floating top bar on scroll down; show again on scroll up or near page top.
   useEffect(() => {
-    lastScrollY.current =
-      typeof window !== "undefined" ? window.scrollY || document.documentElement.scrollTop || 0 : 0;
+    headerHiddenRef.current = headerHidden;
+  }, [headerHidden]);
 
-    const onScroll = () => {
-      const y =
-        typeof window !== "undefined"
-          ? window.scrollY || document.documentElement.scrollTop || 0
-          : 0;
-      const delta = y - lastScrollY.current;
+  // Hide top bar while scrolling down; show on scroll-up or near top.
+  // Cooldown avoids layout reflow feedback (sticky height collapse ⇄ scrollY jump) that causes blinking.
+  useEffect(() => {
+    const getY = () =>
+      typeof window !== "undefined"
+        ? window.scrollY || document.documentElement.scrollTop || 0
+        : 0;
 
-      if (y < 56) {
-        setHeaderHidden(false);
-      } else if (delta > 6) {
-        setHeaderHidden(true);
-        setShowNotifications(false);
-        setShowProfile(false);
-      } else if (delta < -6) {
-        setHeaderHidden(false);
+    lastScrollY.current = getY();
+
+    const run = () => {
+      rafScrollRef.current = null;
+      const now = performance.now();
+      const y = getY();
+
+      if (now < scrollIgnoreUntilRef.current) {
+        lastScrollY.current = y;
+        return;
+      }
+
+      const prev = lastScrollY.current;
+      const delta = y - prev;
+      const EDGE_TOP = 32;
+      const REVEAL_DELTA = -10;
+      const HIDE_DELTA = 14;
+
+      let nextHidden = headerHiddenRef.current;
+
+      if (y <= EDGE_TOP) {
+        nextHidden = false;
+      } else if (delta <= REVEAL_DELTA) {
+        nextHidden = false;
+      } else if (delta >= HIDE_DELTA) {
+        nextHidden = true;
+      }
+
+      if (nextHidden !== headerHiddenRef.current) {
+        headerHiddenRef.current = nextHidden;
+        setHeaderHidden(nextHidden);
+        if (nextHidden) {
+          setShowNotifications(false);
+          setShowProfile(false);
+        }
+        scrollIgnoreUntilRef.current = now + 380;
       }
 
       lastScrollY.current = y;
     };
 
+    const onScroll = () => {
+      if (rafScrollRef.current != null) return;
+      rafScrollRef.current = window.requestAnimationFrame(run);
+    };
+
     window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      if (rafScrollRef.current != null) {
+        window.cancelAnimationFrame(rafScrollRef.current);
+      }
+    };
   }, []);
 
   // Close dropdowns on outside click
@@ -115,12 +156,13 @@ export default function AppHeader({
       className={`sticky top-0 z-40 w-full ${headerHidden ? "pointer-events-none" : ""}`}
     >
       <div
-        className={`overflow-hidden px-2 transition-[max-height,opacity,margin,padding] duration-300 ease-out md:px-3 ${
+        className={`grid overflow-hidden px-2 transition-[grid-template-rows,opacity,padding-top] duration-300 ease-out motion-reduce:transition-none md:px-3 ${
           headerHidden
-            ? "max-h-0 opacity-0 pt-0"
-            : "max-h-[min(28rem,calc(100vh-2rem))] opacity-100 pt-2 pointer-events-auto"
+            ? "grid-rows-[0fr] pt-0 opacity-0 pointer-events-none"
+            : "grid-rows-[1fr] pt-2 opacity-100 pointer-events-auto"
         }`}
       >
+      <div className="min-h-0 overflow-hidden">
       <div className="app-topbar-shell rounded-2xl overflow-visible">
         <div className="flex items-center justify-between w-full px-4 py-2">
         {/* Left: Brand */}
@@ -221,6 +263,7 @@ export default function AppHeader({
             </React.Fragment>
           ))}
         </div>
+      </div>
       </div>
       </div>
     </header>

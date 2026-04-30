@@ -20,6 +20,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     () => pathname === "/admin/jobs" || pathname === "/admin/jobs/tracking",
     [pathname]
   );
+  const hideFooterOnPage = useMemo(() => pathname === "/admin/jobs", [pathname]);
 
   useEffect(() => {
     loadUser();
@@ -75,7 +76,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <main className={`flex-1 py-6 app-content-wrap ${isWideRegisterPage ? "px-2 md:px-3 lg:px-4 xl:px-5" : "px-4 md:px-6 lg:px-8"}`}>
           {children}
         </main>
-        <AppFooter />
+        {!hideFooterOnPage && <AppFooter />}
       </div>
     </div>
   );
