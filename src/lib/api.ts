@@ -1521,35 +1521,16 @@ export const jobsApi = {
   },
 
   import: async (file: File) => {
-    // Backend handles field mapping and row interpretation; frontend is only a gateway.
-    const endpoints = ["/import/", "/jobs/import/"];
-    const fileFieldNames = ["file", "upload", "excel", "spreadsheet"];
-    const failures: string[] = [];
+    // LS Portal Django: POST /api/import/ multipart field "file" (see jobs/views_import.py).
+    const formData = new FormData();
+    formData.append("file", file, file.name);
 
-    for (const endpoint of endpoints) {
-      for (const fileFieldName of fileFieldNames) {
-        const formData = new FormData();
-        formData.append(fileFieldName, file, file.name);
+    const response = await backendRequest<Record<string, unknown>>("/import/", {
+      method: "POST",
+      body: formData,
+    });
 
-        try {
-          const response = await backendRequest<Record<string, unknown>>(endpoint, {
-            method: "POST",
-            body: formData,
-          });
-
-          return { endpoint, response };
-        } catch (error) {
-          const message = error instanceof Error ? error.message : "Import failed";
-          failures.push(`${endpoint} (${fileFieldName}) -> ${message}`);
-        }
-      }
-    }
-
-    throw new Error(
-      failures.length > 0
-        ? `Backend import failed on all endpoints. ${failures.join(" | ")}`
-        : "Backend import failed."
-    );
+    return { endpoint: "/import/", response };
   },
 
   get: async (rnOrId: string) => {
