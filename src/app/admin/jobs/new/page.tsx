@@ -62,12 +62,13 @@ export default function NewJobPage() {
         ? `${data.clientName.trim()} – ${data.title.trim()}`
         : data.clientName.trim();
 
+      const requestedByTrim = data.requestedBy.trim();
       const response = await jobsApi.create({
         rn: normalizedRn,
         title: composedTitle,
         description: [
           `Client: ${data.clientName.trim()}`,
-          data.requestedBy.trim() ? `Requested By: ${data.requestedBy.trim()}` : "",
+          requestedByTrim ? `Requested By: ${requestedByTrim}` : "",
           data.description,
           data.contactPhone ? `Phone: ${data.contactPhone}` : "",
           data.contactEmail ? `Email: ${data.contactEmail}` : "",
@@ -76,6 +77,7 @@ export default function NewJobPage() {
         clientName: data.clientName,
         contactPhone: data.contactPhone,
         contactEmail: data.contactEmail,
+        requestedByName: requestedByTrim || undefined,
       });
       router.push(`/admin/jobs/${encodeURIComponent(response.job.jobId)}`);
     } catch (err: unknown) {

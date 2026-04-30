@@ -1197,18 +1197,18 @@ function getRegisterReference(job: Job): string {
 }
 
 function getRequestedBy(job: Job): string {
+  const fromBackend = job.requestedByName?.trim();
+  if (fromBackend) {
+    return fromBackend;
+  }
+
   const description = String(job.description ?? "");
-  const requestedByMatch = description.match(/(?:^|\n)\s*Requested By:\s*(.+)\s*$/im);
+  const requestedByMatch = description.match(/(?:^|\n)\s*Requested By:\s*(.+)$/im);
   if (requestedByMatch?.[1]) {
     return requestedByMatch[1].trim();
   }
 
-  return (
-    [...(job.timeline ?? [])]
-      .reverse()
-      .find((entry) => Boolean(entry.createdBy?.trim()))?.createdBy
-      ?.trim() || ""
-  );
+  return "";
 }
 
 function getActualRegionalNumber(job: Job, record?: JobRegisterRecord): string {
@@ -1687,10 +1687,17 @@ function RegisterRowModal({
         </div>
 
         <div className="px-6 py-5 space-y-5 max-h-[75vh] overflow-y-auto">
-          <div className="rounded-xl border border-[#e5e7eb] bg-[#f8f9fa] px-4 py-3">
-            <p className="text-[11px] uppercase tracking-wide text-[#9ca3af] mb-1">Regional Number</p>
-            <p className="text-[14px] font-bold text-[#1f2937]">{getActualRegionalNumber(job, record) || "Not assigned"}</p>
-            <p className="text-[11px] text-[#6b7280] mt-1">This number is already captured at job creation and is shown here for reference only.</p>
+          <div className="rounded-xl border border-[#e5e7eb] bg-[#f8f9fa] px-4 py-3 space-y-3">
+            <div>
+              <p className="text-[11px] uppercase tracking-wide text-[#9ca3af] mb-1">Regional Number</p>
+              <p className="text-[14px] font-bold text-[#1f2937]">{getActualRegionalNumber(job, record) || "Not assigned"}</p>
+              <p className="text-[11px] text-[#6b7280] mt-1">This number is already captured at job creation and is shown here for reference only.</p>
+            </div>
+            <div className="pt-2 border-t border-[#e5e7eb]">
+              <p className="text-[11px] uppercase tracking-wide text-[#9ca3af] mb-1">Requested By</p>
+              <p className="text-[14px] font-semibold text-[#1f2937]">{getRequestedBy(job) || "—"}</p>
+              <p className="text-[11px] text-[#6b7280] mt-1">From backend job record (requested_by_name), or description if not stored.</p>
+            </div>
           </div>
 
           <div>
@@ -2108,6 +2115,7 @@ export default function JobsRegisterPage() {
       const searchable = [
         job.jobId,
         job.regionalNumber,
+        job.requestedByName,
         job.clientName,
         job.jobType,
         job.statusDisplay,

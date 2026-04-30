@@ -55,6 +55,8 @@ export interface Job {
   /** Human-readable status from backend */
   statusDisplay?: string;
   regionalNumber?: string;
+  /** Matches Django `Job.requested_by_name`. */
+  requestedByName?: string;
   parcelSize?: string;
   /** Payment amount from backend */
   paymentAmount?: string;
