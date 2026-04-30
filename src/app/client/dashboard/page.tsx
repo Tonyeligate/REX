@@ -455,7 +455,9 @@ export default function ClientDashboardPage() {
       approvedCount,
       totalStages,
       progressPercent,
-      currentStatusLabel: activeStage?.title || job.statusDisplay || job.status,
+      currentStatusLabel: activeStage
+        ? `Stage ${activeStage.displayStep}: ${activeStage.title}`
+        : job.statusDisplay || job.status,
       workflowLabel,
     };
   }, [job, clientAlignedStages]);
