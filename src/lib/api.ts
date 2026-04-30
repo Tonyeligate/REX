@@ -567,6 +567,9 @@ export interface BackendJobListItem {
   status_display: string;
   client?: BackendClient;
   locality?: string | null;
+  /** Django `jobs_job.requested_by_name` — who requested the survey (Excel import / clerical field). */
+  requested_by_name?: string | null;
+  received_date?: string | null;
   parcel_acreage: string | null;
   payment_amount: string | null;
   step_decisions?: BackendStepDecision[];
@@ -922,6 +925,7 @@ export function mapBackendJob(
     backendStatus: bj.status,
     statusDisplay: bj.status_display,
     regionalNumber: bj.regional_number || bj.rn,
+    requestedByName: (bj.requested_by_name ?? "").trim() || undefined,
     parcelSize: bj.parcel_acreage || undefined,
     paymentAmount: bj.payment_amount || undefined,
     queryReason: detail.query_reason || undefined,
@@ -1360,6 +1364,22 @@ function getEncodedJobPathVariants(candidate: string): string[] {
 
 async function fetchJobDetailWithHistory(lookupKey: string) {
   const detail = await requestJobEndpoint<BackendJobDetail>(lookupKey, "/");
+
+  // DevTools: inspect last successful GET `/api/jobs/<rn>/` payload (includes `requested_by_name`).
+  if (typeof window !== "undefined") {
+    const holder = window as Window & {
+      __REX_LAST_JOB_API_RESPONSE__?: BackendJobDetail;
+    };
+    holder.__REX_LAST_JOB_API_RESPONSE__ = detail;
+    if (process.env.NODE_ENV === "development") {
+      console.info(
+        "[REX] Job GET raw payload — requested_by_name:",
+        detail.requested_by_name ?? "(empty)",
+        "| full object → window.__REX_LAST_JOB_API_RESPONSE__"
+      );
+    }
+  }
+
   const job = mapBackendJob(detail);
 
   try {
@@ -1521,35 +1541,16 @@ export const jobsApi = {
   },
 
   import: async (file: File) => {
-    // Backend handles field mapping and row interpretation; frontend is only a gateway.
-    const endpoints = ["/import/", "/jobs/import/"];
-    const fileFieldNames = ["file", "upload", "excel", "spreadsheet"];
-    const failures: string[] = [];
+    // LS Portal Django: POST /api/import/ multipart field "file" (see jobs/views_import.py).
+    const formData = new FormData();
+    formData.append("file", file, file.name);
 
-    for (const endpoint of endpoints) {
-      for (const fileFieldName of fileFieldNames) {
-        const formData = new FormData();
-        formData.append(fileFieldName, file, file.name);
+    const response = await backendRequest<Record<string, unknown>>("/import/", {
+      method: "POST",
+      body: formData,
+    });
 
-        try {
-          const response = await backendRequest<Record<string, unknown>>(endpoint, {
-            method: "POST",
-            body: formData,
-          });
-
-          return { endpoint, response };
-        } catch (error) {
-          const message = error instanceof Error ? error.message : "Import failed";
-          failures.push(`${endpoint} (${fileFieldName}) -> ${message}`);
-        }
-      }
-    }
-
-    throw new Error(
-      failures.length > 0
-        ? `Backend import failed on all endpoints. ${failures.join(" | ")}`
-        : "Backend import failed."
-    );
+    return { endpoint: "/import/", response };
   },
 
   get: async (rnOrId: string) => {
@@ -1638,6 +1639,9 @@ export const jobsApi = {
       contactPhone: payload.contactPhone,
     });
 
+    const requestedByName =
+      typeof payload.requestedByName === "string" ? payload.requestedByName.trim() : "";
+
     const body = {
       rn: normalizedRn,
       regional_number: regionalNumber,
@@ -1645,6 +1649,7 @@ export const jobsApi = {
       description: payload.description ?? "",
       parcel_acreage: payload.parcel_acreage ?? payload.parcelSize ?? null,
       client_id,
+      ...(requestedByName ? { requested_by_name: requestedByName } : {}),
     };
 
     const created = await backendRequest<BackendJobDetail>("/jobs/", {

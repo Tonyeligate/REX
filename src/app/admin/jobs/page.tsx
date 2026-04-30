@@ -619,7 +619,16 @@ function extractImportCounts(payload: Record<string, unknown>): ImportOutcomeCou
   const created = readImportCount(sources, ["created", "inserted", "new", "created_count"]);
   const updated = readImportCount(sources, ["updated", "modified", "updated_count"]);
   const imported = readImportCount(sources, ["imported", "processed_success"]);
-  const failed = readImportCount(sources, ["failed", "failed_count", "errors_count"]);
+  let failed = readImportCount(sources, ["failed", "failed_count", "errors_count"]);
+  if (failed === 0) {
+    for (const source of sources) {
+      const errs = source.errors;
+      if (Array.isArray(errs) && errs.length > 0) {
+        failed = errs.length;
+        break;
+      }
+    }
+  }
   const skipped = readImportCount(sources, ["skipped", "duplicate_count", "duplicates", "ignored"]);
   const unmatched = readImportCount(sources, ["unmatched", "not_found", "not_found_count", "unmatched_count"]);
   let total = readImportCount(sources, ["total", "rows_total", "processed", "count"]);
@@ -1188,18 +1197,18 @@ function getRegisterReference(job: Job): string {
 }
 
 function getRequestedBy(job: Job): string {
+  const fromBackend = job.requestedByName?.trim();
+  if (fromBackend) {
+    return fromBackend;
+  }
+
   const description = String(job.description ?? "");
-  const requestedByMatch = description.match(/(?:^|\n)\s*Requested By:\s*(.+)\s*$/im);
+  const requestedByMatch = description.match(/(?:^|\n)\s*Requested By:\s*(.+)$/im);
   if (requestedByMatch?.[1]) {
     return requestedByMatch[1].trim();
   }
 
-  return (
-    [...(job.timeline ?? [])]
-      .reverse()
-      .find((entry) => Boolean(entry.createdBy?.trim()))?.createdBy
-      ?.trim() || ""
-  );
+  return "";
 }
 
 function getActualRegionalNumber(job: Job, record?: JobRegisterRecord): string {
@@ -1678,10 +1687,17 @@ function RegisterRowModal({
         </div>
 
         <div className="px-6 py-5 space-y-5 max-h-[75vh] overflow-y-auto">
-          <div className="rounded-xl border border-[#e5e7eb] bg-[#f8f9fa] px-4 py-3">
-            <p className="text-[11px] uppercase tracking-wide text-[#9ca3af] mb-1">Regional Number</p>
-            <p className="text-[14px] font-bold text-[#1f2937]">{getActualRegionalNumber(job, record) || "Not assigned"}</p>
-            <p className="text-[11px] text-[#6b7280] mt-1">This number is already captured at job creation and is shown here for reference only.</p>
+          <div className="rounded-xl border border-[#e5e7eb] bg-[#f8f9fa] px-4 py-3 space-y-3">
+            <div>
+              <p className="text-[11px] uppercase tracking-wide text-[#9ca3af] mb-1">Regional Number</p>
+              <p className="text-[14px] font-bold text-[#1f2937]">{getActualRegionalNumber(job, record) || "Not assigned"}</p>
+              <p className="text-[11px] text-[#6b7280] mt-1">This number is already captured at job creation and is shown here for reference only.</p>
+            </div>
+            <div className="pt-2 border-t border-[#e5e7eb]">
+              <p className="text-[11px] uppercase tracking-wide text-[#9ca3af] mb-1">Requested By</p>
+              <p className="text-[14px] font-semibold text-[#1f2937]">{getRequestedBy(job) || "—"}</p>
+              <p className="text-[11px] text-[#6b7280] mt-1">From backend job record (requested_by_name), or description if not stored.</p>
+            </div>
           </div>
 
           <div>
@@ -1942,29 +1958,6 @@ export default function JobsRegisterPage() {
     }
   }, [currentPage, debouncedSearch, pageSize, statusFilter]);
 
-  const fetchAllJobsForImport = useCallback(async () => {
-    const allJobs: Job[] = [];
-    let page = 1;
-    const perPage = 200;
-    let expectedTotal = 0;
-
-    while (true) {
-      const response = await jobsApi.list({
-        page,
-        page_size: perPage,
-      });
-      allJobs.push(...response.jobs);
-      expectedTotal = Math.max(expectedTotal, response.total);
-
-      if (response.jobs.length === 0 || allJobs.length >= expectedTotal) {
-        break;
-      }
-      page += 1;
-    }
-
-    return allJobs;
-  }, []);
-
   const refreshJob = useCallback(async (jobId: string) => {
     try {
       const { job } = await jobsApi.get(jobId);
@@ -2122,6 +2115,7 @@ export default function JobsRegisterPage() {
       const searchable = [
         job.jobId,
         job.regionalNumber,
+        job.requestedByName,
         job.clientName,
         job.jobType,
         job.statusDisplay,
@@ -2318,107 +2312,25 @@ export default function JobsRegisterPage() {
     setImporting(true);
 
     try {
-      const XLSX = await import("xlsx");
-      const content = await file.arrayBuffer();
-      const workbook = XLSX.read(content, { type: "array" });
-      const firstSheetName = workbook.SheetNames[0];
-      if (!firstSheetName) {
-        throw new Error("Import file has no worksheet.");
-      }
-      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(
-        workbook.Sheets[firstSheetName],
-        { defval: "" }
+      const backendImport = await jobsApi.import(file);
+      const backendPayload = asRecord(backendImport.response) ?? {};
+      const outcome = buildBackendImportOutcome(
+        backendPayload,
+        file.name,
+        backendImport.endpoint
       );
-      if (rows.length === 0) {
-        throw new Error("Import file has no data rows.");
-      }
-
-      const allJobs = await fetchAllJobsForImport();
-      const detectedMappings = detectImportFieldMappings(rows);
-      const previewRows = buildImportPreviewRows(rows, allJobs);
-      const actionableRows = previewRows.filter((row) => row.hasChanges || row.canCreate);
-
-      let updated = 0;
-      let created = 0;
-      let failed = 0;
-      const failedRows: ImportFailureDetail[] = [];
-
-      for (const row of actionableRows) {
-        try {
-          if (row.matchedJobId && row.hasChanges) {
-            await registerFieldsApi.update(row.matchedJobId, {
-              actualRegionalNumber: row.hasRegionalNumber ? row.regionalNumber : undefined,
-              stages: row.hasStageData ? row.stages : undefined,
-            });
-            updated += 1;
-            continue;
-          }
-
-          if (row.canCreate) {
-            const clientName = row.rowClientName?.trim() || "Client";
-            const description = row.rowClientName?.trim()
-              ? `Client Name: ${row.rowClientName.trim()}`
-              : "";
-
-            const createdJob = await jobsApi.create({
-              rn: row.rowJobId,
-              jobId: row.rowJobId,
-              regionalNumber: row.regionalNumber ?? row.rowJobId,
-              clientName,
-              title: `${clientName} - ${row.rowJobId}`,
-              jobType: "Land Survey",
-              description,
-              skipBootstrapWorkflow: true,
-            });
-
-            const createdJobId = createdJob.job.jobId || row.rowJobId;
-            if (row.hasStageData || row.hasRegionalNumber) {
-              await registerFieldsApi.update(createdJobId, {
-                actualRegionalNumber: row.hasRegionalNumber ? row.regionalNumber : undefined,
-                stages: row.hasStageData ? row.stages : undefined,
-              });
-            }
-            created += 1;
-          }
-        } catch (error) {
-          failed += 1;
-          const message = error instanceof Error ? error.message : "Import row failed";
-          failedRows.push({
-            rowNumber: String(row.rowNumber),
-            rn: row.rowJobId,
-            reason: message,
-          });
-        }
-      }
-
-      const skipped = Math.max(0, rows.length - updated - created - failed);
-      const notFound = previewRows.filter((row) => !row.matchedJobId).length;
-      const counts: ImportOutcomeCounts = {
-        total: rows.length,
-        created,
-        updated,
-        failed,
-        skipped,
-        unmatched: notFound,
-      };
 
       await loadJobs();
       setShowImportPreview(false);
       setImportPreviewRows([]);
-      setImportDetectedMappings(detectedMappings);
-      setAllowCreateUnmatched(true);
+      setImportDetectedMappings([]);
+      setAllowCreateUnmatched(false);
       setImportFileName(file.name);
       recordImportOutcome({
-        status: deriveImportOutcomeStatus(counts),
-        mode: "preview",
-        fileName: file.name,
-        timestamp: new Date().toISOString(),
-        counts,
-        message:
-          failed === 0
-            ? "Import processed with dedupe (updated existing jobs, created missing jobs)."
-            : "Import completed with some row failures. Download failures for details.",
-        failures: failedRows,
+        ...outcome,
+        message: outcome.message
+          ? `Endpoint ${backendImport.endpoint}: ${outcome.message}`
+          : `Endpoint ${backendImport.endpoint}: Import request processed.`,
       });
     } catch (error) {
       setShowImportPreview(false);
@@ -2427,10 +2339,10 @@ export default function JobsRegisterPage() {
       const message =
         error instanceof Error && error.message.trim()
           ? error.message
-          : "Import failed.";
+          : "Backend import failed.";
       recordImportOutcome({
         status: "failed",
-        mode: "preview",
+        mode: "backend",
         fileName: file.name,
         timestamp: new Date().toISOString(),
         counts: {
