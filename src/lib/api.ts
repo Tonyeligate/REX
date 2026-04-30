@@ -315,15 +315,31 @@ async function ensureBackendClientId(payload: {
   const phone = normalizePhone(
     payload.contactPhone?.trim() || extractDescriptionField(payload.description, "Phone")
   );
-  const emailFromPayload = payload.contactEmail?.trim() || extractDescriptionField(payload.description, "Email");
-  const email =
+  const emailFromPayload =
+    payload.contactEmail?.trim() ||
+    extractDescriptionField(payload.description, "Email");
+  const hasExplicitEmail = Boolean(
     emailFromPayload && emailFromPayload.includes("@")
-      ? emailFromPayload
-      : toLocalFallbackEmail(name, phone);
+  );
+  const email = hasExplicitEmail
+    ? (emailFromPayload as string)
+    : toLocalFallbackEmail(name, phone);
 
   const clients = await backendRequest<BackendClient[]>("/clients/");
-  const byEmail = clients.find((c) => c.email.toLowerCase() === email.toLowerCase());
-  if (byEmail) return byEmail.id;
+  if (hasExplicitEmail) {
+    const byEmail = clients.find(
+      (c) => c.email.toLowerCase() === email.toLowerCase()
+    );
+    if (byEmail) {
+      const incomingName = name.trim().toLowerCase();
+      const existingName = (byEmail.name ?? "").trim().toLowerCase();
+      // Avoid attaching a new job to an unrelated existing client
+      // when user-provided name differs from email-owner name.
+      if (!incomingName || !existingName || incomingName === existingName) {
+        return byEmail.id;
+      }
+    }
+  }
 
   const byName = clients.find((c) => c.name.toLowerCase() === name.toLowerCase());
   if (byName) return byName.id;
@@ -900,10 +916,14 @@ export function mapBackendJob(
         ? "QUERIED"
         : "IN_PROGRESS";
 
+  const clientNameFromDescription = extractClientNameFromDescription(
+    detail.description
+  );
+  const clientNameFromTitle = extractClientNameFromTitle(bj.title);
   const clientName =
+    clientNameFromDescription ||
+    clientNameFromTitle ||
     detail.client?.name ||
-    extractClientNameFromDescription(detail.description) ||
-    extractClientNameFromTitle(bj.title) ||
     bj.title ||
     "—";
 
