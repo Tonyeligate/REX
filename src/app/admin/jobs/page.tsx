@@ -1187,6 +1187,21 @@ function getRegisterReference(job: Job): string {
   return parts.length > 1 ? parts.slice(1).join(" – ") : "";
 }
 
+function getRequestedBy(job: Job): string {
+  const description = String(job.description ?? "");
+  const requestedByMatch = description.match(/(?:^|\n)\s*Requested By:\s*(.+)\s*$/im);
+  if (requestedByMatch?.[1]) {
+    return requestedByMatch[1].trim();
+  }
+
+  return (
+    [...(job.timeline ?? [])]
+      .reverse()
+      .find((entry) => Boolean(entry.createdBy?.trim()))?.createdBy
+      ?.trim() || ""
+  );
+}
+
 function getActualRegionalNumber(job: Job, record?: JobRegisterRecord): string {
   return job.regionalNumber?.trim() || record?.actualRegionalNumber?.trim() || "";
 }
@@ -2177,6 +2192,7 @@ export default function JobsRegisterPage() {
     const headers = [
       "#",
       "Client Name",
+      "Requested By",
       "Regional Number",
       "Job Production / L/S Certification",
       "CSAU",
@@ -2192,9 +2208,11 @@ export default function JobsRegisterPage() {
       const record = resolveRegisterRecordForJob(job, registerRecords);
       const resolvedStages = resolveRegisterStages(job, record);
       const workflowProgress = getJobProgressSummary(job);
+      const requestedBy = getRequestedBy(job);
       const row: Record<string, string | number> = {
         "#": currentPageStartIndex + index,
         "Client Name": getRegisterName(job),
+        "Requested By": requestedBy,
         "Regional Number": getActualRegionalNumber(job, record) || job.jobId || "",
       };
 
@@ -2255,7 +2273,9 @@ export default function JobsRegisterPage() {
 
     const ws = XLSX.utils.json_to_sheet(rows, { header: headers });
     ws["!cols"] = headers.map((header) =>
-      header === "Client Name" || header === "Workflow Status / Notes"
+      header === "Client Name" ||
+      header === "Requested By" ||
+      header === "Workflow Status / Notes"
         ? { wch: 30 }
         : header === "Regional Number"
           ? { wch: 18 }
