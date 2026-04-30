@@ -14,7 +14,6 @@ import {
   AlertTriangle,
   XCircle,
   Clock3,
-  CircleDashed,
   ClipboardList,
   BadgeInfo,
   BadgeCheck,
@@ -25,7 +24,6 @@ import {
 } from "lucide-react";
 import type { Job, JobStepDecision, WorkflowStep } from "@/types/job";
 import { jobsApi, STATUS_STEP_MAP } from "@/lib/api";
-import { CLIENT_STAGE_MATCH_META } from "@/lib/register-stage-mapping";
 
 const REGISTER_META_START = "[[REGISTER_META_V1]]";
 const REGISTER_META_END = "[[/REGISTER_META_V1]]";
@@ -65,11 +63,67 @@ const stagger = {
   visible: { transition: { staggerChildren: 0.06, delayChildren: 0.1 } },
 };
 
-const CLIENT_ADMIN_ALIGNED_STAGE_ORDER = [1, 2, 3, 6, 7, 9, 10, 12, 13, 14] as const;
+const CLIENT_TRACKING_NINE_STAGE_FLOW = [
+  {
+    displayStep: 1,
+    mappedWorkflowStep: 1,
+    title: "Job Request Received",
+    backendCodes: ["request_received", "1_rnr"],
+  },
+  {
+    displayStep: 2,
+    mappedWorkflowStep: 2,
+    title: "RN Assigned / Sent to Client",
+    backendCodes: ["rn_assigned", "2_regional_number"],
+  },
+  {
+    displayStep: 3,
+    mappedWorkflowStep: 3,
+    title: "Job Plan / Production",
+    backendCodes: ["in_production", "3_job_production"],
+  },
+  {
+    displayStep: 4,
+    mappedWorkflowStep: 6,
+    title: "L/S Certification",
+    backendCodes: ["4_ls_cert", "submitted_to_ls461", "examination_ls461", "queried_ls461"],
+  },
+  {
+    displayStep: 5,
+    mappedWorkflowStep: 7,
+    title: "CSAU",
+    backendCodes: ["5_csau_payment", "at_csau_payment", "forwarded_to_smd"],
+  },
+  {
+    displayStep: 6,
+    mappedWorkflowStep: 9,
+    title: "Examination",
+    backendCodes: ["6_examination", "6_1_checking", "6_2_certified", "examination_smd", "queried_smd", "certified_smd"],
+  },
+  {
+    displayStep: 7,
+    mappedWorkflowStep: 12,
+    title: "Region",
+    backendCodes: ["7_region", "7_1_checked", "7_2_approved", "7_3_barcoded", "batched_for_region", "at_region"],
+  },
+  {
+    displayStep: 8,
+    mappedWorkflowStep: 13,
+    title: "Signed Out (CSAU)",
+    backendCodes: ["8_signed_out_csau", "signed_out_csau"],
+  },
+  {
+    displayStep: 9,
+    mappedWorkflowStep: 14,
+    title: "Delivered to Client",
+    backendCodes: ["9_delivered_to_client", "delivered_to_client"],
+  },
+] as const;
 
-type ClientAlignedStageStatus = "Approved" | "Queried" | "Rejected" | "In Review" | "Pending";
+type ClientAlignedStageStatus = "Approved" | "Queried" | "Rejected" | "Upcoming";
 
 type ClientAlignedStage = {
+  displayStep: number;
   stepNumber: number;
   title: string;
   statusLabel: ClientAlignedStageStatus;
@@ -176,13 +230,12 @@ function mapRegisterMetaOutcomeToClientStatus(
 }
 
 function getStatusFromWorkflowStep(step?: WorkflowStep): ClientAlignedStageStatus {
-  if (!step) return "Pending";
+  if (!step) return "Upcoming";
   const fallbackOutcome = parseDecisionOutcome(step.decisionDisplay || step.decision);
   if (fallbackOutcome === "reject") return "Rejected";
   if (step.status === "COMPLETED") return "Approved";
   if (step.status === "QUERIED") return "Queried";
-  if (step.status === "ACTIVE") return "In Review";
-  return "Pending";
+  return "Upcoming";
 }
 
 function getStatusFromBackendProgress(job: Job, stepNumber: number): ClientAlignedStageStatus {
@@ -201,39 +254,41 @@ function getStatusFromBackendProgress(job: Job, stepNumber: number): ClientAlign
     return "Approved";
   }
 
-  return "Pending";
+  return "Upcoming";
 }
 
 function getBadgeTone(statusLabel: ClientAlignedStageStatus): string {
   if (statusLabel === "Approved") return "bg-[#dcfce7] text-[#15803d]";
   if (statusLabel === "Rejected") return "bg-[#fee2e2] text-[#b91c1c]";
   if (statusLabel === "Queried") return "bg-[#FEF3C7] text-[#B45309]";
-  if (statusLabel === "In Review") return "bg-[#ffedd5] text-[#c2410c]";
-  return "bg-[#f1f5f9] text-[#94a3b8]";
+  return "bg-[#ffedd5] text-[#c2410c]";
 }
 
 function getStatusIcon(statusLabel: ClientAlignedStageStatus) {
   if (statusLabel === "Approved") return <CheckCircle2 size={14} className="text-[#16a34a]" />;
   if (statusLabel === "Rejected") return <XCircle size={14} className="text-[#dc2626]" />;
   if (statusLabel === "Queried") return <AlertTriangle size={14} className="text-[#d97706]" />;
-  if (statusLabel === "In Review") return <Clock3 size={14} className="text-[#ea580c]" />;
-  return <CircleDashed size={14} className="text-[#94a3b8]" />;
+  return <Clock3 size={14} className="text-[#ea580c]" />;
 }
 
 function buildClientAlignedStages(job: Job): ClientAlignedStage[] {
   const registerMeta = parseRegisterMetaFromDescription(job.description);
 
-  return CLIENT_ADMIN_ALIGNED_STAGE_ORDER.map((stepNumber) => {
-    const meta = CLIENT_STAGE_MATCH_META[stepNumber];
-    const latestDecision = getLatestDecisionByCodes(job.stepDecisions, meta?.backendCodes ?? []);
+  return CLIENT_TRACKING_NINE_STAGE_FLOW.map((stageDef) => {
+    const latestDecision = getLatestDecisionByCodes(job.stepDecisions, stageDef.backendCodes);
     const decisionOutcome = parseDecisionOutcome(
       latestDecision?.decisionDisplay || latestDecision?.decision
     );
-    const registerMetaEntry = getRegisterMetaEntryForStep(registerMeta, stepNumber);
+    const registerMetaEntry = getRegisterMetaEntryForStep(
+      registerMeta,
+      stageDef.mappedWorkflowStep
+    );
     const registerMetaStatus = mapRegisterMetaOutcomeToClientStatus(
       registerMetaEntry?.outcome
     );
-    const fallbackStep = job.steps.find((step) => step.stepNumber === stepNumber);
+    const fallbackStep = job.steps.find(
+      (step) => step.stepNumber === stageDef.mappedWorkflowStep
+    );
 
     let statusLabel: ClientAlignedStageStatus;
     if (registerMetaStatus) {
@@ -247,13 +302,14 @@ function buildClientAlignedStages(job: Job): ClientAlignedStage[] {
     } else {
       statusLabel =
         job.backendStatus
-          ? getStatusFromBackendProgress(job, stepNumber)
+          ? getStatusFromBackendProgress(job, stageDef.mappedWorkflowStep)
           : getStatusFromWorkflowStep(fallbackStep);
     }
 
     return {
-      stepNumber,
-      title: meta?.adminLabel || `Stage ${stepNumber}`,
+      displayStep: stageDef.displayStep,
+      stepNumber: stageDef.mappedWorkflowStep,
+      title: stageDef.title,
       statusLabel,
       comment:
         registerMetaEntry?.comment?.trim() ||
@@ -398,8 +454,11 @@ export default function ClientDashboardPage() {
 
     const activeStage =
       clientAlignedStages.find(
-        (stage) => stage.statusLabel === "In Review" || stage.statusLabel === "Queried" || stage.statusLabel === "Rejected"
-      ) || clientAlignedStages.find((stage) => stage.statusLabel === "Pending") || clientAlignedStages[clientAlignedStages.length - 1];
+        (stage) =>
+          stage.statusLabel === "Upcoming" ||
+          stage.statusLabel === "Queried" ||
+          stage.statusLabel === "Rejected"
+      ) || clientAlignedStages[clientAlignedStages.length - 1];
 
     return {
       approvedCount,
@@ -611,7 +670,7 @@ export default function ClientDashboardPage() {
 
             <motion.div variants={fadeUp} className="client-surface-elevated rounded-[20px] p-5 sm:p-6 overflow-hidden">
               <h3 className="m-0 text-[15px] font-[800] text-[#0f172a] dark:text-slate-100 pb-3 mb-4 border-b border-[#f5f0ea] dark:border-slate-700/70">
-                10-Step Workflow Stages
+                9-Step Workflow Stages
               </h3>
               <div className="overflow-x-auto rounded-[14px] border border-[#efe2d2] dark:border-slate-700/70 bg-white/85 dark:bg-slate-900/70">
                 <table className="min-w-full border-separate border-spacing-0 text-[13px]">
@@ -646,7 +705,10 @@ export default function ClientDashboardPage() {
                         <tr key={`${stage.stepNumber}-${index}`} className="align-top odd:bg-[#fffdfa] dark:odd:bg-slate-900/35 hover:bg-[#fff8f1] dark:hover:bg-orange-500/10 transition-colors">
                           <td className="px-4 py-3 border-b border-l border-[#F4EBDD] dark:border-slate-700/60">
                             <p className="m-0 text-[11px] font-[700] text-[#94a3b8] uppercase tracking-wider">
-                              Stage {index + 1}/{workflowSummary.totalStages}
+                              Workflow Step {stage.displayStep}/9
+                            </p>
+                            <p className="m-0 mt-0.5 text-[10px] font-[600] text-[#94a3b8] uppercase tracking-wide">
+                              Maps to Admin Step {stage.stepNumber}/14
                             </p>
                             <div className="mt-1 inline-flex items-center gap-2">
                               <span className="w-6 h-6 rounded-full bg-white dark:bg-slate-800 border border-[#f0e6da] dark:border-slate-700 flex items-center justify-center shadow-[0_3px_8px_rgba(15,23,42,0.08)]">
@@ -685,6 +747,7 @@ export default function ClientDashboardPage() {
                   { label: "Title", value: job.jobType, icon: <ClipboardList size={14} className="text-[#0f766e]" /> },
                   { label: "Status", value: workflowSummary.currentStatusLabel, icon: <BadgeCheck size={14} className="text-[#16a34a]" /> },
                   { label: "Client", value: job.clientName || "—", icon: <UserRound size={14} className="text-[#0f766e]" /> },
+                  { label: "Requested By", value: job.requestedByName || "—", icon: <UserRound size={14} className="text-[#7c3aed]" /> },
                   { label: "Regional No.", value: job.regionalNumber ?? "—", icon: <MapPinned size={14} className="text-[#9333ea]" /> },
                   { label: "Parcel Size", value: job.parcelSize ?? "—", icon: <Ruler size={14} className="text-[#ea580c]" /> },
                   { label: "Created", value: new Date(job.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }), icon: <CalendarDays size={14} className="text-[#0369a1]" /> },
