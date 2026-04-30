@@ -1942,6 +1942,29 @@ export default function JobsRegisterPage() {
     }
   }, [currentPage, debouncedSearch, pageSize, statusFilter]);
 
+  const fetchAllJobsForImport = useCallback(async () => {
+    const allJobs: Job[] = [];
+    let page = 1;
+    const perPage = 200;
+    let expectedTotal = 0;
+
+    while (true) {
+      const response = await jobsApi.list({
+        page,
+        page_size: perPage,
+      });
+      allJobs.push(...response.jobs);
+      expectedTotal = Math.max(expectedTotal, response.total);
+
+      if (response.jobs.length === 0 || allJobs.length >= expectedTotal) {
+        break;
+      }
+      page += 1;
+    }
+
+    return allJobs;
+  }, []);
+
   const refreshJob = useCallback(async (jobId: string) => {
     try {
       const { job } = await jobsApi.get(jobId);
@@ -2295,25 +2318,107 @@ export default function JobsRegisterPage() {
     setImporting(true);
 
     try {
-      const backendImport = await jobsApi.import(file);
-      const backendPayload = asRecord(backendImport.response) ?? {};
-      const outcome = buildBackendImportOutcome(
-        backendPayload,
-        file.name,
-        backendImport.endpoint
+      const XLSX = await import("xlsx");
+      const content = await file.arrayBuffer();
+      const workbook = XLSX.read(content, { type: "array" });
+      const firstSheetName = workbook.SheetNames[0];
+      if (!firstSheetName) {
+        throw new Error("Import file has no worksheet.");
+      }
+      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(
+        workbook.Sheets[firstSheetName],
+        { defval: "" }
       );
+      if (rows.length === 0) {
+        throw new Error("Import file has no data rows.");
+      }
+
+      const allJobs = await fetchAllJobsForImport();
+      const detectedMappings = detectImportFieldMappings(rows);
+      const previewRows = buildImportPreviewRows(rows, allJobs);
+      const actionableRows = previewRows.filter((row) => row.hasChanges || row.canCreate);
+
+      let updated = 0;
+      let created = 0;
+      let failed = 0;
+      const failedRows: ImportFailureDetail[] = [];
+
+      for (const row of actionableRows) {
+        try {
+          if (row.matchedJobId && row.hasChanges) {
+            await registerFieldsApi.update(row.matchedJobId, {
+              actualRegionalNumber: row.hasRegionalNumber ? row.regionalNumber : undefined,
+              stages: row.hasStageData ? row.stages : undefined,
+            });
+            updated += 1;
+            continue;
+          }
+
+          if (row.canCreate) {
+            const clientName = row.rowClientName?.trim() || "Client";
+            const description = row.rowClientName?.trim()
+              ? `Client Name: ${row.rowClientName.trim()}`
+              : "";
+
+            const createdJob = await jobsApi.create({
+              rn: row.rowJobId,
+              jobId: row.rowJobId,
+              regionalNumber: row.regionalNumber ?? row.rowJobId,
+              clientName,
+              title: `${clientName} - ${row.rowJobId}`,
+              jobType: "Land Survey",
+              description,
+              skipBootstrapWorkflow: true,
+            });
+
+            const createdJobId = createdJob.job.jobId || row.rowJobId;
+            if (row.hasStageData || row.hasRegionalNumber) {
+              await registerFieldsApi.update(createdJobId, {
+                actualRegionalNumber: row.hasRegionalNumber ? row.regionalNumber : undefined,
+                stages: row.hasStageData ? row.stages : undefined,
+              });
+            }
+            created += 1;
+          }
+        } catch (error) {
+          failed += 1;
+          const message = error instanceof Error ? error.message : "Import row failed";
+          failedRows.push({
+            rowNumber: String(row.rowNumber),
+            rn: row.rowJobId,
+            reason: message,
+          });
+        }
+      }
+
+      const skipped = Math.max(0, rows.length - updated - created - failed);
+      const notFound = previewRows.filter((row) => !row.matchedJobId).length;
+      const counts: ImportOutcomeCounts = {
+        total: rows.length,
+        created,
+        updated,
+        failed,
+        skipped,
+        unmatched: notFound,
+      };
 
       await loadJobs();
       setShowImportPreview(false);
       setImportPreviewRows([]);
-      setImportDetectedMappings([]);
-      setAllowCreateUnmatched(false);
+      setImportDetectedMappings(detectedMappings);
+      setAllowCreateUnmatched(true);
       setImportFileName(file.name);
       recordImportOutcome({
-        ...outcome,
-        message: outcome.message
-          ? `Endpoint ${backendImport.endpoint}: ${outcome.message}`
-          : `Endpoint ${backendImport.endpoint}: Import request processed.`,
+        status: deriveImportOutcomeStatus(counts),
+        mode: "preview",
+        fileName: file.name,
+        timestamp: new Date().toISOString(),
+        counts,
+        message:
+          failed === 0
+            ? "Import processed with dedupe (updated existing jobs, created missing jobs)."
+            : "Import completed with some row failures. Download failures for details.",
+        failures: failedRows,
       });
     } catch (error) {
       setShowImportPreview(false);
@@ -2322,10 +2427,10 @@ export default function JobsRegisterPage() {
       const message =
         error instanceof Error && error.message.trim()
           ? error.message
-          : "Backend import failed.";
+          : "Import failed.";
       recordImportOutcome({
         status: "failed",
-        mode: "backend",
+        mode: "preview",
         fileName: file.name,
         timestamp: new Date().toISOString(),
         counts: {
@@ -3180,7 +3285,7 @@ export default function JobsRegisterPage() {
 
       <div className="admin-surface-elevated rounded-xl border border-border overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
-          <table className="jobs-register-table w-full text-[12px] border-collapse table-fixed min-w-[1280px] xl:min-w-0">
+          <table className="jobs-register-table w-full text-[12px] border-collapse table-fixed min-w-[1380px] xl:min-w-0">
             <thead>
               <tr className="bg-[#1f2937] text-white">
                 <th rowSpan={2} className="border border-[#374151] px-2 py-2 text-center font-bold w-[40px]">
@@ -3201,6 +3306,7 @@ export default function JobsRegisterPage() {
                 <th rowSpan={2} className="border border-[#374151] px-3 py-2 text-center font-bold w-8">#</th>
                 <th rowSpan={2} className="border border-[#374151] px-3 py-2 text-left font-bold w-[200px]">Client Name</th>
                 <th rowSpan={2} className="border border-[#374151] px-3 py-2 text-left font-bold w-[150px]">Regional Number</th>
+                <th rowSpan={2} className="border border-[#374151] px-3 py-2 text-left font-bold w-[150px]">Requested By</th>
                 <th rowSpan={2} className="border border-[#374151] px-3 py-2 text-center font-bold bg-[#374151] w-[96px]">
                   Job Production /<br />L/S Certification
                   <span className="block mt-1 text-[10px] font-[600] text-[#cbd5e1]">4_ls_cert</span>
@@ -3226,14 +3332,14 @@ export default function JobsRegisterPage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={13} className="text-center py-12 text-[#9ca3af]">
+                  <td colSpan={14} className="text-center py-12 text-[#9ca3af]">
                     <Loader2 size={20} className="animate-spin mx-auto mb-2" />
                     Loading jobs...
                   </td>
                 </tr>
               ) : visibleJobs.length === 0 ? (
                 <tr>
-                  <td colSpan={13} className="text-center py-12 text-[#9ca3af]">
+                  <td colSpan={14} className="text-center py-12 text-[#9ca3af]">
                     No jobs match the current filters. <Link href="/admin/jobs/new" className="text-[#F07000] hover:underline font-semibold">Create a new job →</Link>
                   </td>
                 </tr>
@@ -3244,6 +3350,7 @@ export default function JobsRegisterPage() {
                   const isSelected = selectedJobIdSet.has(job.id);
                   const registerName = getRegisterName(job);
                   const registerReference = getRegisterReference(job);
+                  const requestedBy = getRequestedBy(job);
                   const record = resolveRegisterRecordForJob(job, registerRecords);
                   const resolvedStages = resolveRegisterStages(job, record);
                   const workflowProgress = getJobProgressSummary(job);
@@ -3331,6 +3438,9 @@ export default function JobsRegisterPage() {
                         title="Click to open the register entry"
                       >
                         {getActualRegionalNumber(job, record) || job.jobId || <span className="text-[#9ca3af] font-sans text-[11px]">Not assigned</span>}
+                      </td>
+                      <td className="border border-[#e5e7eb] px-2 py-2 text-[#4b5563] align-top">
+                        {requestedBy || <span className="text-[#9ca3af]">—</span>}
                       </td>
                       {REGISTER_STAGE_COLS.map((col) => {
                         const key = col.key as RegisterStageKey;
