@@ -1466,6 +1466,9 @@ function RegisterRowModal({
   const [undoStack, setUndoStack] = useState<RegisterModalStages[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const currentRequestedBy = getRequestedBy(job).trim();
+  const canEditRequestedBy = !currentRequestedBy;
+  const [requestedByInput, setRequestedByInput] = useState("");
 
   const updateStagesWithUndo = (updater: (current: RegisterModalStages) => RegisterModalStages) => {
     setStages((current) => {
@@ -1576,6 +1579,13 @@ function RegisterRowModal({
         setError(validationError);
         setSaving(false);
         return;
+      }
+
+      const requestedByNext = requestedByInput.trim();
+      if (canEditRequestedBy && requestedByNext) {
+        await jobsApi.update(job.jobId, {
+          requested_by_name: requestedByNext,
+        });
       }
 
       const acceptedStages = REGISTER_STAGE_KEYS
@@ -1695,8 +1705,28 @@ function RegisterRowModal({
             </div>
             <div className="pt-2 border-t border-[#e5e7eb]">
               <p className="text-[11px] uppercase tracking-wide text-[#9ca3af] mb-1">Requested By</p>
-              <p className="text-[14px] font-semibold text-[#1f2937]">{getRequestedBy(job) || "—"}</p>
-              <p className="text-[11px] text-[#6b7280] mt-1">From backend job record (requested_by_name), or description if not stored.</p>
+              {canEditRequestedBy ? (
+                <>
+                  <input
+                    value={requestedByInput}
+                    onChange={(event) => setRequestedByInput(event.target.value)}
+                    placeholder="Enter requested by name"
+                    className="w-full h-[38px] px-3 border border-[#d1d5db] bg-white rounded-lg text-[13px] text-[#1f2937] focus:outline-none focus:ring-2 focus:ring-[#F07000]/20"
+                  />
+                  <p className="text-[11px] text-[#6b7280] mt-1">
+                    This field is empty. You can set it once; after save it becomes read-only.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-[14px] font-semibold text-[#1f2937]">
+                    {currentRequestedBy}
+                  </p>
+                  <p className="text-[11px] text-[#6b7280] mt-1">
+                    This value already exists and cannot be updated from the register modal.
+                  </p>
+                </>
+              )}
             </div>
           </div>
 
