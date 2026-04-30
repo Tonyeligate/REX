@@ -623,6 +623,47 @@ export interface BackendStepDecision {
   updated_at: string;
 }
 
+export interface BackendTrackingStage {
+  order: number;
+  code: string;
+  label: string;
+}
+
+function parseBackendTrackingStagesFromSchema(schema: unknown): BackendTrackingStage[] {
+  const root = schema as
+    | {
+        components?: {
+          schemas?: {
+            StatusEnum?: {
+              enum?: unknown[];
+              description?: string;
+            };
+          };
+        };
+      }
+    | undefined;
+  const statusEnum = root?.components?.schemas?.StatusEnum;
+  const enumValues = Array.isArray(statusEnum?.enum)
+    ? statusEnum?.enum.filter((value): value is string => typeof value === "string")
+    : [];
+
+  if (enumValues.length === 0) return [];
+
+  const description = typeof statusEnum?.description === "string" ? statusEnum.description : "";
+  const labelMap = new Map<string, string>();
+  for (const line of description.split("\n")) {
+    const match = line.match(/\*\s*`([^`]+)`\s*-\s*(.+)\s*$/);
+    if (!match) continue;
+    labelMap.set(match[1].trim(), match[2].trim());
+  }
+
+  return enumValues.map((code, index) => ({
+    order: index + 1,
+    code,
+    label: labelMap.get(code) ?? code.replace(/_/g, " "),
+  }));
+}
+
 export interface BackendHistoryEntry {
   id: number;
   from_status: string;
@@ -1558,6 +1599,11 @@ export const jobsApi = {
         ? payload.count
         : jobs.length;
     return { jobs, total };
+  },
+
+  trackingStages: async (): Promise<BackendTrackingStage[]> => {
+    const schema = await backendRequest<unknown>("/schema/?format=json");
+    return parseBackendTrackingStagesFromSchema(schema);
   },
 
   import: async (file: File) => {

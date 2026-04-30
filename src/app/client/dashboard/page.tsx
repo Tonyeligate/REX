@@ -23,30 +23,13 @@ import {
   UserRound,
 } from "lucide-react";
 import type { Job, JobStepDecision, WorkflowStep } from "@/types/job";
-import { jobsApi, STATUS_STEP_MAP } from "@/lib/api";
+import { jobsApi, STATUS_STEP_MAP, type BackendTrackingStage } from "@/lib/api";
 
-const REGISTER_META_START = "[[REGISTER_META_V1]]";
-const REGISTER_META_END = "[[/REGISTER_META_V1]]";
-
-type RegisterMetaOutcome = "accept" | "query" | "reject";
-
-type RegisterMetaEntry = {
-  outcome?: RegisterMetaOutcome;
-  comment?: string;
-};
-
-type RegisterMetaPayload = {
-  stages?: Record<string, RegisterMetaEntry>;
-};
-
-const REGISTER_STAGE_KEY_BY_STEP_NUMBER: Partial<Record<number, string>> = {
-  6: "jobProductionLsCertification",
-  7: "examinationReceived",
-  9: "examinationChecking",
-  10: "examinationCertified",
-  12: "regionChecked",
-  13: "regionApproved",
-  14: "regionBatched",
+type NineStageDefinition = {
+  displayStep: number;
+  title: string;
+  backendCode: string;
+  backendLabel: string;
 };
 
 /* ── Quick-Search Chips (loaded from API) ── */
@@ -63,68 +46,68 @@ const stagger = {
   visible: { transition: { staggerChildren: 0.06, delayChildren: 0.1 } },
 };
 
-const CLIENT_TRACKING_NINE_STAGE_FLOW = [
+const CLIENT_TRACKING_NINE_STAGE_FLOW: NineStageDefinition[] = [
   {
     displayStep: 1,
-    mappedWorkflowStep: 1,
     title: "Job Request Received",
-    backendCodes: ["request_received", "1_rnr"],
+    backendCode: "1_rnr",
+    backendLabel: "1. RNR",
   },
   {
     displayStep: 2,
-    mappedWorkflowStep: 2,
     title: "RN Assigned / Sent to Client",
-    backendCodes: ["rn_assigned", "2_regional_number"],
+    backendCode: "2_regional_number",
+    backendLabel: "2. Act. Regional Number",
   },
   {
     displayStep: 3,
-    mappedWorkflowStep: 3,
     title: "Job Plan / Production",
-    backendCodes: ["in_production", "3_job_production"],
+    backendCode: "3_job_production",
+    backendLabel: "3. Job Production / LS Certification",
   },
   {
     displayStep: 4,
-    mappedWorkflowStep: 6,
     title: "L/S Certification",
-    backendCodes: ["4_ls_cert", "submitted_to_ls461", "examination_ls461", "queried_ls461"],
+    backendCode: "4_ls_cert",
+    backendLabel: "4. LS Cert",
   },
   {
     displayStep: 5,
-    mappedWorkflowStep: 7,
     title: "CSAU",
-    backendCodes: ["5_csau_payment", "at_csau_payment", "forwarded_to_smd"],
+    backendCode: "5_csau_payment",
+    backendLabel: "5. CSAU - Payment",
   },
   {
     displayStep: 6,
-    mappedWorkflowStep: 9,
     title: "Examination",
-    backendCodes: ["6_examination", "6_1_checking", "6_2_certified", "examination_smd", "queried_smd", "certified_smd"],
+    backendCode: "6_examination",
+    backendLabel: "6. Examination",
   },
   {
     displayStep: 7,
-    mappedWorkflowStep: 12,
     title: "Region",
-    backendCodes: ["7_region", "7_1_checked", "7_2_approved", "7_3_barcoded", "batched_for_region", "at_region"],
+    backendCode: "7_region",
+    backendLabel: "7. Region",
   },
   {
     displayStep: 8,
-    mappedWorkflowStep: 13,
     title: "Signed Out (CSAU)",
-    backendCodes: ["8_signed_out_csau", "signed_out_csau"],
+    backendCode: "8_signed_out_csau",
+    backendLabel: "8. Signed Out at CSAU",
   },
   {
     displayStep: 9,
-    mappedWorkflowStep: 14,
     title: "Delivered to Client",
-    backendCodes: ["9_delivered_to_client", "delivered_to_client"],
+    backendCode: "9_delivered_to_client",
+    backendLabel: "9. Delivered to Client",
   },
-] as const;
+];
 
 type ClientAlignedStageStatus = "Approved" | "Queried" | "Rejected" | "Upcoming";
 
 type ClientAlignedStage = {
   displayStep: number;
-  stepNumber: number;
+  backendLabel: string;
   title: string;
   statusLabel: ClientAlignedStageStatus;
   comment: string;
@@ -189,46 +172,6 @@ function getLatestDecisionByCodes(
   return latest;
 }
 
-function parseRegisterMetaFromDescription(
-  description?: string
-): RegisterMetaPayload | null {
-  if (!description) return null;
-
-  const startIndex = description.indexOf(REGISTER_META_START);
-  if (startIndex < 0) return null;
-
-  const contentStart = startIndex + REGISTER_META_START.length;
-  const endIndex = description.indexOf(REGISTER_META_END, contentStart);
-  if (endIndex < 0) return null;
-
-  const raw = description.slice(contentStart, endIndex).trim();
-  if (!raw) return null;
-
-  try {
-    return JSON.parse(raw) as RegisterMetaPayload;
-  } catch {
-    return null;
-  }
-}
-
-function getRegisterMetaEntryForStep(
-  meta: RegisterMetaPayload | null,
-  stepNumber: number
-): RegisterMetaEntry | undefined {
-  const key = REGISTER_STAGE_KEY_BY_STEP_NUMBER[stepNumber];
-  if (!key) return undefined;
-  return meta?.stages?.[key];
-}
-
-function mapRegisterMetaOutcomeToClientStatus(
-  outcome?: RegisterMetaOutcome
-): ClientAlignedStageStatus | undefined {
-  if (outcome === "accept") return "Approved";
-  if (outcome === "query") return "Queried";
-  if (outcome === "reject") return "Rejected";
-  return undefined;
-}
-
 function getStatusFromWorkflowStep(step?: WorkflowStep): ClientAlignedStageStatus {
   if (!step) return "Upcoming";
   const fallbackOutcome = parseDecisionOutcome(step.decisionDisplay || step.decision);
@@ -238,19 +181,39 @@ function getStatusFromWorkflowStep(step?: WorkflowStep): ClientAlignedStageStatu
   return "Upcoming";
 }
 
-function getStatusFromBackendProgress(job: Job, stepNumber: number): ClientAlignedStageStatus {
+function getNineStageIndexFromBackendProgress(job: Job): number {
   const backendStatus = (job.backendStatus ?? "").trim().toLowerCase();
   const currentStepNumber =
     STATUS_STEP_MAP[backendStatus] ??
     (Number.isFinite(job.currentStep) ? job.currentStep : 0);
+  if (currentStepNumber <= 1) return 1;
+  if (currentStepNumber <= 2) return 2;
+  if (currentStepNumber <= 3) return 3;
+  if (currentStepNumber <= 6) return 4;
+  if (currentStepNumber <= 7) return 5;
+  if (currentStepNumber <= 9) return 6;
+  if (currentStepNumber <= 12) return 7;
+  if (currentStepNumber <= 13) return 8;
+  return 9;
+}
+
+function getStatusFromBackendProgress(job: Job, displayStep: number): ClientAlignedStageStatus {
+  const backendStatus = (job.backendStatus ?? "").trim().toLowerCase();
+  const currentStageIndex = getNineStageIndexFromBackendProgress(job);
   const isQueriedCurrentStatus =
     backendStatus === "queried_ls461" || backendStatus === "queried_smd";
+  const isDeliveredTerminalStatus =
+    backendStatus === "9_delivered_to_client" || backendStatus === "delivered_to_client";
 
-  if (isQueriedCurrentStatus && stepNumber === currentStepNumber) {
+  if (isQueriedCurrentStatus && displayStep === currentStageIndex) {
     return "Queried";
   }
 
-  if (stepNumber <= currentStepNumber) {
+  if (displayStep < currentStageIndex) {
+    return "Approved";
+  }
+
+  if (isDeliveredTerminalStatus && displayStep === currentStageIndex) {
     return "Approved";
   }
 
@@ -271,50 +234,63 @@ function getStatusIcon(statusLabel: ClientAlignedStageStatus) {
   return <Clock3 size={14} className="text-[#ea580c]" />;
 }
 
-function buildClientAlignedStages(job: Job): ClientAlignedStage[] {
-  const registerMeta = parseRegisterMetaFromDescription(job.description);
+function normalizeBackendStatusForTracking(status?: string): string {
+  const normalized = (status ?? "").trim().toLowerCase();
+  if (normalized === "queried_ls461") return "4_ls_cert";
+  if (normalized === "queried_smd") return "6_examination";
+  if (normalized === "signed_out_csau") return "8_signed_out_csau";
+  if (normalized === "delivered_to_client") return "9_delivered_to_client";
+  return normalized;
+}
 
-  return CLIENT_TRACKING_NINE_STAGE_FLOW.map((stageDef) => {
-    const latestDecision = getLatestDecisionByCodes(job.stepDecisions, stageDef.backendCodes);
+function buildNineStageFlowFromBackend(
+  backendStages: BackendTrackingStage[]
+): NineStageDefinition[] {
+  if (backendStages.length === 9) {
+    return backendStages.map((stage, index) => ({
+      displayStep: index + 1,
+      title: stage.label,
+      backendCode: stage.code,
+      backendLabel: stage.label,
+    }));
+  }
+  return CLIENT_TRACKING_NINE_STAGE_FLOW;
+}
+
+function buildClientAlignedStages(
+  job: Job,
+  stageFlow: NineStageDefinition[]
+): ClientAlignedStage[] {
+  const backendStageIndex = getNineStageIndexFromBackendProgress(job);
+  const normalizedBackendStatus = normalizeBackendStatusForTracking(job.backendStatus);
+
+  return stageFlow.map((stageDef) => {
+    const latestDecision = getLatestDecisionByCodes(job.stepDecisions, [stageDef.backendCode]);
     const decisionOutcome = parseDecisionOutcome(
       latestDecision?.decisionDisplay || latestDecision?.decision
     );
-    const registerMetaEntry = getRegisterMetaEntryForStep(
-      registerMeta,
-      stageDef.mappedWorkflowStep
-    );
-    const registerMetaStatus = mapRegisterMetaOutcomeToClientStatus(
-      registerMetaEntry?.outcome
-    );
-    const fallbackStep = job.steps.find(
-      (step) => step.stepNumber === stageDef.mappedWorkflowStep
-    );
+    const backendStatusLabel = getStatusFromBackendProgress(job, stageDef.displayStep);
 
     let statusLabel: ClientAlignedStageStatus;
-    if (registerMetaStatus) {
-      statusLabel = registerMetaStatus;
-    } else if (decisionOutcome === "approve") {
-      statusLabel = "Approved";
-    } else if (decisionOutcome === "query") {
+    if (normalizedBackendStatus === stageDef.backendCode && decisionOutcome === "query") {
       statusLabel = "Queried";
+    } else if (decisionOutcome === "approve") {
+      statusLabel = stageDef.displayStep <= backendStageIndex ? "Approved" : "Upcoming";
+    } else if (decisionOutcome === "query") {
+      statusLabel = stageDef.displayStep === backendStageIndex ? "Queried" : backendStatusLabel;
     } else if (decisionOutcome === "reject") {
-      statusLabel = "Rejected";
+      statusLabel = stageDef.displayStep === backendStageIndex ? "Rejected" : backendStatusLabel;
     } else {
-      statusLabel =
-        job.backendStatus
-          ? getStatusFromBackendProgress(job, stageDef.mappedWorkflowStep)
-          : getStatusFromWorkflowStep(fallbackStep);
+      statusLabel = backendStatusLabel;
     }
 
     return {
       displayStep: stageDef.displayStep,
-      stepNumber: stageDef.mappedWorkflowStep,
+      backendLabel: stageDef.backendLabel,
       title: stageDef.title,
       statusLabel,
       comment:
-        registerMetaEntry?.comment?.trim() ||
         latestDecision?.comment?.trim() ||
-        fallbackStep?.comment?.trim() ||
         "No comment has been added for this stage yet.",
     };
   });
@@ -335,6 +311,21 @@ export default function ClientDashboardPage() {
     updatedAt: null,
     message: "Not synced yet",
   });
+  const [trackingStageFlow, setTrackingStageFlow] = useState<NineStageDefinition[]>(
+    CLIENT_TRACKING_NINE_STAGE_FLOW
+  );
+
+  useEffect(() => {
+    const loadTrackingStages = async () => {
+      try {
+        const backendStages = await jobsApi.trackingStages();
+        setTrackingStageFlow(buildNineStageFlowFromBackend(backendStages));
+      } catch {
+        setTrackingStageFlow(CLIENT_TRACKING_NINE_STAGE_FLOW);
+      }
+    };
+    void loadTrackingStages();
+  }, []);
 
   const doSearch = useCallback(async (q: string) => {
     const trimmed = q.trim();
@@ -422,8 +413,8 @@ export default function ClientDashboardPage() {
 
   const clientAlignedStages = useMemo(() => {
     if (!job) return [] as ClientAlignedStage[];
-    return buildClientAlignedStages(job);
-  }, [job]);
+    return buildClientAlignedStages(job, trackingStageFlow);
+  }, [job, trackingStageFlow]);
 
   // Computed
   const workflowSummary = useMemo(() => {
@@ -702,13 +693,13 @@ export default function ClientDashboardPage() {
                       const statusIcon = getStatusIcon(stage.statusLabel);
 
                       return (
-                        <tr key={`${stage.stepNumber}-${index}`} className="align-top odd:bg-[#fffdfa] dark:odd:bg-slate-900/35 hover:bg-[#fff8f1] dark:hover:bg-orange-500/10 transition-colors">
+                        <tr key={`${stage.displayStep}-${index}`} className="align-top odd:bg-[#fffdfa] dark:odd:bg-slate-900/35 hover:bg-[#fff8f1] dark:hover:bg-orange-500/10 transition-colors">
                           <td className="px-4 py-3 border-b border-l border-[#F4EBDD] dark:border-slate-700/60">
                             <p className="m-0 text-[11px] font-[700] text-[#94a3b8] uppercase tracking-wider">
                               Workflow Step {stage.displayStep}/9
                             </p>
                             <p className="m-0 mt-0.5 text-[10px] font-[600] text-[#94a3b8] uppercase tracking-wide">
-                              Maps to Admin Step {stage.stepNumber}/14
+                              Stage {stage.displayStep}/9
                             </p>
                             <div className="mt-1 inline-flex items-center gap-2">
                               <span className="w-6 h-6 rounded-full bg-white dark:bg-slate-800 border border-[#f0e6da] dark:border-slate-700 flex items-center justify-center shadow-[0_3px_8px_rgba(15,23,42,0.08)]">
