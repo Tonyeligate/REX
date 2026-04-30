@@ -1,8 +1,16 @@
 import type { NextConfig } from "next";
 
-const BACKEND_ORIGIN =
+const rawBackendOrigin =
   process.env.NEXT_PUBLIC_BACKEND_URL ??
   "https://ls-portal-development-backend.up.railway.app";
+
+// Allow NEXT_PUBLIC_BACKEND_URL to be either:
+// - https://host
+// - https://host/
+// - https://host/api
+const BACKEND_ORIGIN = rawBackendOrigin
+  .replace(/\/+$/, "")
+  .replace(/\/api$/, "");
 
 const nextConfig: NextConfig = {
   // Prevent Next.js from redirecting trailing-slash URLs (breaks API proxy to Django)
