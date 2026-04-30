@@ -28,6 +28,7 @@ import {
   getRegisterRecordFromJobDescription,
   jobsApi,
   registerFieldsApi,
+  type BackendTrackingStage,
   type BackendStatus,
 } from "@/lib/api";
 import {
@@ -1211,6 +1212,49 @@ function getRequestedBy(job: Job): string {
   return "";
 }
 
+function normalizeTrackingStatusCode(status?: string): string {
+  const normalized = String(status ?? "").trim().toLowerCase();
+  if (normalized === "queried_ls461") return "4_ls_cert";
+  if (normalized === "queried_smd") return "6_examination";
+  if (normalized === "signed_out_csau") return "8_signed_out_csau";
+  if (normalized === "delivered_to_client") return "9_delivered_to_client";
+  return normalized;
+}
+
+function toNineStageIndexFromWorkflowStep(step: number): number {
+  if (step <= 1) return 1;
+  if (step <= 2) return 2;
+  if (step <= 3) return 3;
+  if (step <= 6) return 4;
+  if (step <= 7) return 5;
+  if (step <= 9) return 6;
+  if (step <= 12) return 7;
+  if (step <= 13) return 8;
+  return 9;
+}
+
+function getBackendWorkflowStepLabel(
+  job: Job,
+  backendTrackingStages: BackendTrackingStage[]
+): string {
+  const stages = backendTrackingStages.length > 0 ? backendTrackingStages : [];
+  const total = stages.length > 0 ? stages.length : 9;
+  const normalizedStatus = normalizeTrackingStatusCode(job.backendStatus);
+  const backendIndex = stages.findIndex(
+    (stage) => stage.code.trim().toLowerCase() === normalizedStatus
+  );
+
+  if (backendIndex >= 0) {
+    return `${backendIndex + 1}/${total}`;
+  }
+
+  const step = Number.isFinite(job.currentStep)
+    ? Math.max(1, Math.floor(job.currentStep))
+    : 1;
+  const fallbackIndex = Math.min(total, toNineStageIndexFromWorkflowStep(step));
+  return `${fallbackIndex}/${total}`;
+}
+
 function getActualRegionalNumber(job: Job, record?: JobRegisterRecord): string {
   return job.regionalNumber?.trim() || record?.actualRegionalNumber?.trim() || "";
 }
@@ -1956,6 +2000,9 @@ export default function JobsRegisterPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [totalJobs, setTotalJobs] = useState(0);
   const [registerRecords, setRegisterRecords] = useState<Record<string, JobRegisterRecord>>({});
+  const [backendTrackingStages, setBackendTrackingStages] = useState<
+    BackendTrackingStage[]
+  >([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(DEFAULT_JOBS_PAGE_SIZE);
   const [loading, setLoading] = useState(true);
@@ -2061,6 +2108,18 @@ export default function JobsRegisterPage() {
       controller.abort();
     };
   }, [loadJobs]);
+
+  useEffect(() => {
+    const loadTrackingStages = async () => {
+      try {
+        const stages = await jobsApi.trackingStages();
+        setBackendTrackingStages(stages);
+      } catch {
+        setBackendTrackingStages([]);
+      }
+    };
+    void loadTrackingStages();
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -2297,6 +2356,10 @@ export default function JobsRegisterPage() {
       const record = resolveRegisterRecordForJob(job, registerRecords);
       const resolvedStages = resolveRegisterStages(job, record);
       const workflowProgress = getJobProgressSummary(job);
+      const workflowStepLabel = getBackendWorkflowStepLabel(
+        job,
+        backendTrackingStages
+      );
       const requestedBy = getRequestedBy(job);
       const row: Record<string, string | number> = {
         "#": currentPageStartIndex + index,
@@ -2316,7 +2379,7 @@ export default function JobsRegisterPage() {
       row["Delivered to Client"] = getRegisterStageDisplay(resolvedStages.deliveredToClient.entry);
       row["Workflow Status / Notes"] = [
         workflowProgress.currentStatusLabel,
-        `${workflowProgress.currentStepLabel} (${workflowProgress.progressPercent}%)`,
+        `${workflowStepLabel} (${workflowProgress.progressPercent}%)`,
         workflowProgress.workflowLabel,
         getRegisterReference(job),
         job.queryReason,
@@ -3338,6 +3401,10 @@ export default function JobsRegisterPage() {
                   const record = resolveRegisterRecordForJob(job, registerRecords);
                   const resolvedStages = resolveRegisterStages(job, record);
                   const workflowProgress = getJobProgressSummary(job);
+                  const workflowStepLabel = getBackendWorkflowStepLabel(
+                    job,
+                    backendTrackingStages
+                  );
                   const registerProgress = getRegisterProgressSummary(buildResolvedRegisterRecord(job, record));
 
                   return (
@@ -3364,7 +3431,7 @@ export default function JobsRegisterPage() {
                           <div className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">{registerReference}</div>
                         )}
                         <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-[#9ca3af]">
-                          <span>Workflow {workflowProgress.currentStepLabel}</span>
+                          <span>Workflow {workflowStepLabel}</span>
                           <span>•</span>
                           <span>{workflowProgress.currentStatusLabel}</span>
                           <span>•</span>
