@@ -9,6 +9,7 @@ import { jobsApi } from "@/lib/api";
 
 interface NewJobFormData {
   clientName: string;
+  requestedBy: string;
   contactPhone: string;
   contactEmail: string;
   rn: string;
@@ -37,6 +38,7 @@ export default function NewJobPage() {
   } = useForm<NewJobFormData>({
     defaultValues: {
       clientName: "",
+      requestedBy: "",
       contactPhone: "",
       contactEmail: "",
       rn: "",
@@ -65,6 +67,7 @@ export default function NewJobPage() {
         title: composedTitle,
         description: [
           `Client: ${data.clientName.trim()}`,
+          data.requestedBy.trim() ? `Requested By: ${data.requestedBy.trim()}` : "",
           data.description,
           data.contactPhone ? `Phone: ${data.contactPhone}` : "",
           data.contactEmail ? `Email: ${data.contactEmail}` : "",
@@ -126,6 +129,16 @@ export default function NewJobPage() {
               <input
                 {...register("contactPhone")}
                 placeholder="e.g. 0244 123 456"
+                className="w-full h-[40px] px-4 border border-border bg-card rounded-lg text-[13px] text-foreground focus:outline-none focus:ring-2 focus:ring-[#F07000]/20"
+              />
+            </div>
+
+            {/* Requested By */}
+            <div>
+              <label className="block text-[13px] font-semibold text-foreground/85 mb-1.5">Requested By</label>
+              <input
+                {...register("requestedBy")}
+                placeholder="e.g. John Doe"
                 className="w-full h-[40px] px-4 border border-border bg-card rounded-lg text-[13px] text-foreground focus:outline-none focus:ring-2 focus:ring-[#F07000]/20"
               />
             </div>
