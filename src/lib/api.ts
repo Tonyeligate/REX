@@ -25,8 +25,7 @@ const LOCAL_URL = "/api"; // Local Next.js API routes
 /* ── Member metadata helper (extra fields not in backend Clients schema) ── */
 const MEMBER_META_KEY = "_member_meta_by_client_id";
 const REGISTER_FIELDS_KEY = "_register_fields_by_job_id";
-const REGISTER_META_START = "[[REGISTER_META_V1]]";
-const REGISTER_META_END = "[[/REGISTER_META_V1]]";
+const STEP_DECISIONS_KEY = "_job_step_decisions_by_job_id";
 
 interface BackendClient {
   id: number;
@@ -122,116 +121,49 @@ function writeRegisterFieldsMap(data: Record<string, JobRegisterRecord>) {
   localStorage.setItem(REGISTER_FIELDS_KEY, JSON.stringify(data));
 }
 
-function extractRegisterMetaJson(description?: string): string | null {
-  if (!description) return null;
-
-  const startIndex = description.indexOf(REGISTER_META_START);
-  if (startIndex < 0) return null;
-
-  const contentStart = startIndex + REGISTER_META_START.length;
-  const endIndex = description.indexOf(REGISTER_META_END, contentStart);
-  if (endIndex < 0) return null;
-
-  const json = description.slice(contentStart, endIndex).trim();
-  return json || null;
-}
-
-function stripRegisterMetaFromDescription(description?: string): string {
-  if (!description) return "";
-
-  const startIndex = description.indexOf(REGISTER_META_START);
-  if (startIndex < 0) return description.trimEnd();
-
-  const endIndex = description.indexOf(
-    REGISTER_META_END,
-    startIndex + REGISTER_META_START.length
-  );
-  if (endIndex < 0) return description.trimEnd();
-
-  const before = description.slice(0, startIndex).trimEnd();
-  const after = description
-    .slice(endIndex + REGISTER_META_END.length)
-    .trimStart();
-
-  if (before && after) return `${before}\n${after}`.trimEnd();
-  return (before || after).trimEnd();
-}
-
-/** Snapshot of register data embedded in job description (REX_REGISTER meta block). */
-export function getRegisterRecordFromJobDescription(
-  description: string | undefined,
-  fallbackJobId: string
-): JobRegisterRecord | null {
-  return parseRegisterRecordFromDescription(description, fallbackJobId);
-}
-
-function parseRegisterRecordFromDescription(
-  description: string | undefined,
-  fallbackJobId: string
-): JobRegisterRecord | null {
-  const raw = extractRegisterMetaJson(description);
-  if (!raw) return null;
-
+function readLocalStepDecisionMap(): Record<string, JobStepDecision[]> {
+  if (typeof window === "undefined") return {};
   try {
-    const parsed = JSON.parse(raw) as Partial<JobRegisterRecord>;
-    const stages =
-      parsed.stages && typeof parsed.stages === "object"
-        ? (parsed.stages as JobRegisterRecord["stages"])
-        : {};
-
-    const jobId =
-      typeof parsed.jobId === "string" && parsed.jobId.trim()
-        ? parsed.jobId.trim()
-        : fallbackJobId;
-
-    const actualRegionalNumber =
-      typeof parsed.actualRegionalNumber === "string"
-        ? parsed.actualRegionalNumber
-        : undefined;
-    const clearedStageKeys = Array.isArray(parsed.clearedStageKeys)
-      ? parsed.clearedStageKeys.filter(
-          (key): key is RegisterStageKey =>
-            typeof key === "string" && key.trim().length > 0
-        )
-      : undefined;
-
-    const updatedAt =
-      typeof parsed.updatedAt === "string" && parsed.updatedAt.trim()
-        ? parsed.updatedAt
-        : new Date().toISOString();
-
-    return {
-      jobId,
-      actualRegionalNumber,
-      stages,
-      clearedStageKeys,
-      updatedAt,
-      source: "backend",
-    };
+    const raw = localStorage.getItem(STEP_DECISIONS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
   } catch {
-    return null;
+    return {};
   }
 }
 
-function buildDescriptionWithRegisterRecord(
-  description: string | undefined,
-  record: JobRegisterRecord
-): string {
-  const base = stripRegisterMetaFromDescription(description);
-  const payload = {
-    jobId: record.jobId,
-    actualRegionalNumber: record.actualRegionalNumber,
-    stages: record.stages,
-    clearedStageKeys:
-      Array.isArray(record.clearedStageKeys) && record.clearedStageKeys.length > 0
-        ? record.clearedStageKeys
-        : undefined,
-    updatedAt: record.updatedAt,
+function writeLocalStepDecisionMap(data: Record<string, JobStepDecision[]>) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(STEP_DECISIONS_KEY, JSON.stringify(data));
+}
+
+function upsertLocalStepDecision(jobIds: string[], decision: JobStepDecision) {
+  const keys = Array.from(
+    new Set(jobIds.map((value) => value.trim()).filter(Boolean))
+  );
+  if (keys.length === 0) return;
+
+  const records = readLocalStepDecisionMap();
+  const timestamp = new Date().toISOString();
+  const nextDecision = {
+    ...decision,
+    id: decision.id || -Date.now(),
+    createdAt: decision.createdAt || timestamp,
+    updatedAt: timestamp,
   };
 
-  const metaBlock = `${REGISTER_META_START}\n${JSON.stringify(payload)}\n${REGISTER_META_END}`;
+  for (const key of keys) {
+    const existing = records[key] ?? [];
+    records[key] = [
+      ...existing.filter(
+        (item) => item.step.trim().toLowerCase() !== nextDecision.step.trim().toLowerCase()
+      ),
+      nextDecision,
+    ];
+  }
 
-  return base ? `${base}\n\n${metaBlock}` : metaBlock;
+  writeLocalStepDecisionMap(records);
 }
 
 function extractMemberMetaFromPayload(
@@ -870,6 +802,15 @@ export function mapBackendJob(
     createdAt: decision.created_at,
     updatedAt: decision.updated_at,
   }));
+  const localDecisionRecords = readLocalStepDecisionMap();
+  const localDecisionKeys = [String(bj.id), bj.rn, bj.regional_number ?? ""]
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const localStepDecisions = localDecisionKeys.flatMap(
+    (key) => localDecisionRecords[key] ?? []
+  );
+  const allMappedStepDecisions = [...mappedStepDecisions, ...localStepDecisions];
+
   for (const decision of stepDecisions) {
     const decisionStepNumber = STATUS_STEP_MAP[decision.step];
     if (!decisionStepNumber) continue;
@@ -993,7 +934,7 @@ export function mapBackendJob(
     batchName: detail.batch_name || undefined,
     description: detail.description || undefined,
     documents: detail.documents || undefined,
-    stepDecisions: mappedStepDecisions,
+    stepDecisions: allMappedStepDecisions,
     steps,
     timeline,
     createdAt: bj.created_at,
@@ -1473,7 +1414,13 @@ function mapListItemToFallbackJob(item: BackendJobListItem) {
 
 async function transitionJobStatus(
   rnOrId: string,
-  payload: { status: BackendStatus; notes?: string; query_reason?: string }
+  payload: {
+    status: BackendStatus;
+    notes?: string;
+    query_reason?: string;
+    step?: BackendStatus;
+    decision?: "approved" | "rejected" | "pending";
+  }
 ): Promise<void> {
   const lookupKey = await resolveBackendJobRnForWrite(rnOrId);
   const candidates = await getResolvedJobPathCandidates(lookupKey);
@@ -1939,6 +1886,56 @@ export const jobsApi = {
     return jobsApi.get(rnOrId);
   },
 
+  saveStepDecision: async (
+    rnOrId: string,
+    payload: {
+      stage: BackendStatus;
+      decision: "approved" | "rejected" | "pending";
+      notes?: string;
+    }
+  ) => {
+    const notes = payload.notes?.trim() ?? "";
+    const lookupKey = await resolveBackendJobRnForWrite(rnOrId);
+    const updated = await requestJobEndpoint<BackendJobDetail>(
+      lookupKey,
+      "/",
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          status: payload.stage,
+          ...(payload.decision === "approved" ? {} : { query_reason: notes }),
+        }),
+      }
+    );
+
+    upsertLocalStepDecision(
+      [
+        rnOrId,
+        lookupKey,
+        String(updated.id),
+        updated.rn,
+        updated.regional_number ?? "",
+      ],
+      {
+        id: -Date.now(),
+        step: payload.stage,
+        stepDisplay: payload.stage.replace(/_/g, " "),
+        decision: payload.decision,
+        decisionDisplay:
+          payload.decision === "approved"
+            ? "Approved"
+            : payload.decision === "rejected"
+              ? "Rejected"
+              : "Pending",
+        comment: notes || undefined,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }
+    );
+
+    return { job: mapBackendJob(updated) };
+  },
+
   addTimeline: async (
     rnOrId: string,
     payload: { label: string; subtext: string }
@@ -2038,90 +2035,19 @@ export const registerFieldsApi = {
     }
 
     const records: Record<string, JobRegisterRecord> = {};
-
-    await Promise.all(
-      ids.map(async (jobId) => {
-        try {
-          const { job } = await jobsApi.get(jobId);
-          const backendRecord = parseRegisterRecordFromDescription(
-            job.description,
-            jobId
-          );
-          if (backendRecord) {
-            records[jobId] = {
-              ...backendRecord,
-              jobId,
-              source: backendRecord.source ?? "backend",
-            };
-            return;
-          }
-
-          const localRecord = localRecords[jobId];
-          if (localRecord) {
-            const migratedRecord: JobRegisterRecord = {
-              ...localRecord,
-              jobId,
-              updatedAt: localRecord.updatedAt || new Date().toISOString(),
-              source: "backend",
-            };
-
-            const hasPersistedValues =
-              Object.keys(migratedRecord.stages ?? {}).length > 0 ||
-              Boolean(migratedRecord.actualRegionalNumber?.trim());
-
-            if (hasPersistedValues) {
-              try {
-                const nextDescription = buildDescriptionWithRegisterRecord(
-                  job.description,
-                  migratedRecord
-                );
-                await jobsApi.update(job.jobId, { description: nextDescription });
-                records[jobId] = migratedRecord;
-                localRecords[jobId] = migratedRecord;
-                return;
-              } catch {
-                // Keep local fallback if migration write fails for this job.
-              }
-            }
-          }
-        } catch {
-          // Fall back to cached browser data when backend detail lookup fails.
-        }
-
-        if (localRecords[jobId]) {
-          records[jobId] = {
-            ...localRecords[jobId],
-            source: localRecords[jobId].source ?? "local",
-          };
-        }
-      })
-    );
-
-    writeRegisterFieldsMap(localRecords);
+    ids.forEach((jobId) => {
+      if (localRecords[jobId]) {
+        records[jobId] = {
+          ...localRecords[jobId],
+          source: localRecords[jobId].source ?? "local",
+        };
+      }
+    });
 
     return { records };
   },
 
   get: async (jobId: string) => {
-    try {
-      const { job } = await jobsApi.get(jobId);
-      const backendRecord = parseRegisterRecordFromDescription(
-        job.description,
-        jobId
-      );
-      if (backendRecord) {
-        return {
-          record: {
-            ...backendRecord,
-            jobId,
-            source: backendRecord.source ?? "backend",
-          },
-        };
-      }
-    } catch {
-      // Fall back to local browser cache when backend lookup fails.
-    }
-
     const records = readRegisterFieldsMap();
     const record = records[jobId]
       ? { ...records[jobId], source: records[jobId].source ?? "local" }
@@ -2131,22 +2057,13 @@ export const registerFieldsApi = {
 
   update: async (jobId: string, payload: UpdateJobRegisterPayload) => {
     const records = readRegisterFieldsMap();
-    const { job } = await jobsApi.get(jobId);
-
-    const backendExisting = parseRegisterRecordFromDescription(
-      job.description,
-      jobId
-    );
-
-    const existing =
-      backendExisting ??
-      records[jobId] ?? {
-        jobId,
-        actualRegionalNumber: "",
-        stages: {},
-        clearedStageKeys: [],
-        updatedAt: new Date().toISOString(),
-      };
+    const existing = records[jobId] ?? {
+      jobId,
+      stages: {},
+      clearedStageKeys: [],
+      updatedAt: new Date().toISOString(),
+      source: "local" as const,
+    };
 
     const mergedStages = { ...existing.stages };
     const clearedStageKeySet = new Set<RegisterStageKey>(existing.clearedStageKeys ?? []);
@@ -2164,25 +2081,12 @@ export const registerFieldsApi = {
     const record: JobRegisterRecord = {
       ...existing,
       jobId,
-      actualRegionalNumber:
-        payload.actualRegionalNumber?.trim() ?? existing.actualRegionalNumber,
       stages: mergedStages,
       clearedStageKeys:
         clearedStageKeySet.size > 0 ? Array.from(clearedStageKeySet) : undefined,
       updatedAt: new Date().toISOString(),
-      source: "backend",
+      source: "local",
     };
-
-    const hasPersistedValues =
-      Object.keys(mergedStages).length > 0 ||
-      (record.clearedStageKeys?.length ?? 0) > 0 ||
-      Boolean(record.actualRegionalNumber?.trim());
-
-    const nextDescription = hasPersistedValues
-      ? buildDescriptionWithRegisterRecord(job.description, record)
-      : stripRegisterMetaFromDescription(job.description);
-
-    await jobsApi.update(job.jobId, { description: nextDescription });
 
     records[jobId] = record;
     writeRegisterFieldsMap(records);

@@ -74,7 +74,7 @@ export default function AppSidebar({
   const logout = useAuthStore((s) => s.logout);
 
   return (
-    <aside className={`fixed left-0 top-0 h-screen w-[280px] border-r border-sidebar-border/70 z-[9] flex flex-col p-2 py-4 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] dark:bg-[linear-gradient(180deg,#0d1729_0%,#0a1322_100%)] shadow-[0_14px_34px_rgba(15,23,42,0.08)] dark:shadow-[0_20px_42px_rgba(2,8,22,0.48)] ${className}`}>
+    <aside className={`flex h-screen w-[280px] shrink-0 flex-col border-r border-sidebar-border/70 p-2 py-4 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] dark:bg-[linear-gradient(180deg,#0d1729_0%,#0a1322_100%)] shadow-[0_14px_34px_rgba(15,23,42,0.08)] dark:shadow-[0_20px_42px_rgba(2,8,22,0.48)] ${className}`}>
       <div className="px-3">
         {/* Branding */}
         <div className="flex items-center justify-between mb-6 mt-1 rounded-xl border border-sidebar-border/60 bg-white/80 dark:bg-white/[0.03] px-2 py-2">
