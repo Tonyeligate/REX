@@ -27,11 +27,6 @@ import {
   type BackendTrackingStage,
   type BackendStatus,
 } from "@/lib/api";
-import {
-  BACKEND_REGISTER_STEP_CODE_MAP,
-  REGISTER_STAGE_KEYS,
-  REGISTER_STAGE_LABELS,
-} from "@/lib/register-stage-mapping";
 import { getJobProgressSummary } from "@/lib/job-progress";
 import {
   showErrorAlert,
@@ -45,6 +40,42 @@ import type {
   RegisterStageOutcome,
   RegisterStageValue,
 } from "@/types/register";
+
+const REGISTER_STAGE_KEYS: RegisterStageKey[] = [
+  "jobProductionLsCertification",
+  "examinationReceived",
+  "examinationChecking",
+  "examinationCertified",
+  "regionChecked",
+  "regionApproved",
+  "regionBatched",
+  "signedOutCsau",
+  "deliveredToClient",
+];
+
+const REGISTER_STAGE_LABELS: Record<RegisterStageKey, string> = {
+  jobProductionLsCertification: "Job Production / L/S Certification",
+  examinationReceived: "CSAU Received",
+  examinationChecking: "Examination Checking",
+  examinationCertified: "Examination Certification",
+  regionChecked: "Region Checked",
+  regionApproved: "Region Approved",
+  regionBatched: "Region Barcoded",
+  signedOutCsau: "Signed Out (CSAU)",
+  deliveredToClient: "Delivered to Client",
+};
+
+const BACKEND_REGISTER_STEP_CODE_MAP: Record<RegisterStageKey, string> = {
+  jobProductionLsCertification: "4_ls_cert",
+  examinationReceived: "5_csau_payment",
+  examinationChecking: "6_1_checking",
+  examinationCertified: "6_2_certified",
+  regionChecked: "7_1_checked",
+  regionApproved: "7_2_approved",
+  regionBatched: "7_3_barcoded",
+  signedOutCsau: "8_signed_out_csau",
+  deliveredToClient: "9_delivered_to_client",
+};
 
 type RegisterStageSource = "backend" | "local" | "none";
 
@@ -1580,7 +1611,7 @@ function RegisterRowModal({
             <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-3 py-3 sm:px-4 sm:py-4">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600 sm:text-[12px]">
-                  Backend register stages (starts at step 4)
+                  Backend workflow stages (starts at step 1)
                 </p>
                 <button
                   type="button"
