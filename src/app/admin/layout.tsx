@@ -14,7 +14,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const isLoading = useAuthStore((s) => s.isLoading);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const user = useAuthStore((s) => s.user);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const isWideRegisterPage = useMemo(
     () => pathname === "/admin/jobs" || pathname === "/admin/jobs/tracking",
@@ -27,8 +27,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }, [loadUser]);
 
   useEffect(() => {
-    setSidebarOpen(!isWideRegisterPage);
-  }, [isWideRegisterPage]);
+    setSidebarOpen(false);
+  }, [pathname]);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -54,23 +54,28 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   return (
     <div className="flex min-h-screen app-shell-bg text-foreground">
-      {!isWideRegisterPage && <AppSidebar />}
-
-      {isWideRegisterPage && sidebarOpen && (
-        <>
-          <button
-            type="button"
-            aria-label="Close menu backdrop"
-            className="fixed inset-0 z-[18] bg-black/30 backdrop-blur-[1px]"
-            onClick={() => setSidebarOpen(false)}
-          />
-          <AppSidebar className="z-[19] shadow-2xl" onClose={() => setSidebarOpen(false)} />
-        </>
+      {sidebarOpen && (
+        <button
+          type="button"
+          aria-label="Close sidebar"
+          className="fixed inset-0 z-[55] bg-black/30 backdrop-blur-[1px] md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
       )}
-
-      <div className={`flex-1 flex flex-col min-h-screen app-main-panel ${isWideRegisterPage ? "ml-0" : "ml-[280px]"}`}>
+      <div
+        className={`fixed left-0 top-0 z-[60] h-screen w-[280px] transition-transform duration-200 ease-out ${
+          sidebarOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        <AppSidebar onClose={() => setSidebarOpen(false)} />
+      </div>
+      <div
+        className={`flex min-h-screen flex-1 flex-col app-main-panel transition-[margin] duration-200 ease-out ${
+          sidebarOpen ? "md:ml-[280px]" : "ml-0"
+        }`}
+      >
         <AppHeader
-          showMenuButton={isWideRegisterPage}
+          showMenuButton
           onMenuClick={() => setSidebarOpen((open) => !open)}
         />
         <main className={`flex-1 py-6 app-content-wrap ${isWideRegisterPage ? "px-2 md:px-3 lg:px-4 xl:px-5" : "px-4 md:px-6 lg:px-8"}`}>

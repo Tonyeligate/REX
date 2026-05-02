@@ -11,8 +11,6 @@ import {
   Download,
   Eye,
   Loader2,
-  MessageSquare,
-  PencilLine,
   Plus,
   RefreshCw,
   RotateCcw,
@@ -25,7 +23,6 @@ import {
 import {
   WORKFLOW_STATUSES,
   STATUS_STEP_MAP,
-  getRegisterRecordFromJobDescription,
   jobsApi,
   registerFieldsApi,
   type BackendTrackingStage,
@@ -33,11 +30,9 @@ import {
 } from "@/lib/api";
 import {
   BACKEND_REGISTER_STEP_CODE_MAP,
-  REGISTER_STAGE_COLS,
   REGISTER_STAGE_KEYS,
   REGISTER_STAGE_LABELS,
 } from "@/lib/register-stage-mapping";
-import { getRegisterProgressSummary } from "@/lib/register-progress";
 import { getJobProgressSummary } from "@/lib/job-progress";
 import {
   showErrorAlert,
@@ -186,14 +181,9 @@ const IMPORT_JOB_ID_COLUMNS = [
 ];
 const IMPORT_REGIONAL_NUMBER_COLUMNS = [
   "Regional Number",
-  "Actual Regional Number",
-  "Act. Regional Number",
-  "Act Regional Number",
-  "ARN",
   "Regional No",
   "Regional No.",
   "Regional #",
-  "Actual Regional No.",
   "Regional",
 ];
 const IMPORT_CLIENT_NAME_COLUMNS = [
@@ -1068,14 +1058,12 @@ function hasGranularRegisterData(record?: JobRegisterRecord): boolean {
   return false;
 }
 
-/** Prefer session/local cache; otherwise parse embedded register JSON from job description (list payload). */
+/** Prefer session/local cache only; no register metadata is read from backend descriptions. */
 function resolveRegisterRecordForJob(
   job: Job,
   cache: Record<string, JobRegisterRecord>
 ): JobRegisterRecord | undefined {
-  const cached = cache[job.jobId];
-  if (cached) return cached;
-  return getRegisterRecordFromJobDescription(job.description, job.jobId) ?? undefined;
+  return cache[job.jobId];
 }
 
 function resolveRegisterStages(
@@ -1149,33 +1137,6 @@ function resolveRegisterStages(
   }, {} as Record<RegisterStageKey, ResolvedRegisterStage>);
 }
 
-function buildResolvedRegisterRecord(
-  job: Job,
-  record?: JobRegisterRecord
-): JobRegisterRecord {
-  const resolvedStages = resolveRegisterStages(job, record);
-  const stages: Partial<Record<RegisterStageKey, RegisterStageValue>> = {};
-
-  for (const key of REGISTER_STAGE_KEYS) {
-    const resolvedEntry = resolvedStages[key].entry;
-    if (resolvedEntry) {
-      stages[key] = resolvedEntry;
-    }
-  }
-
-  return {
-    jobId: job.jobId,
-    actualRegionalNumber: record?.actualRegionalNumber,
-    stages,
-    updatedAt: record?.updatedAt ?? job.updatedAt,
-  };
-}
-
-function getStepIndex(status: string): number {
-  const idx = WORKFLOW_STATUSES.indexOf(status as BackendStatus);
-  return idx === -1 ? 0 : idx;
-}
-
 function getRegisterName(job: Job): string {
   const clientName = (job.clientName ?? "").trim();
   if (clientName && clientName !== "—") {
@@ -1212,60 +1173,35 @@ function getRequestedBy(job: Job): string {
   return "";
 }
 
-function getBackendWorkflowStepLabel(
+/** Human-facing status line — prefer Django `status_display`, never invent labels. */
+function getBackendStatusPrimaryLine(job: Job): string {
+  const display = String(job.statusDisplay ?? "").trim();
+  if (display) return display;
+  const code = String(job.backendStatus ?? "").trim();
+  return code || "—";
+}
+
+/** Secondary line: raw backend code + OpenAPI enum label when the code matches exactly. */
+function getBackendStatusSecondaryLine(
   job: Job,
   backendTrackingStages: BackendTrackingStage[]
 ): string {
-  if (backendTrackingStages.length === 0) return "—";
-  const backendStatus = String(job.backendStatus ?? "").trim().toLowerCase();
-  const backendIndex = backendTrackingStages.findIndex(
-    (stage) => stage.code.trim().toLowerCase() === backendStatus
+  const code = String(job.backendStatus ?? "").trim();
+  if (!code) return "";
+
+  const match = backendTrackingStages.find(
+    (stage) => stage.code.trim().toLowerCase() === code.toLowerCase()
   );
-  if (backendIndex < 0) return "—";
-  return `${backendIndex + 1}/${backendTrackingStages.length}`;
+
+  if (match) {
+    return `${match.code} — ${match.label}`;
+  }
+
+  return code;
 }
 
-const REGISTER_TABLE_TRACKING_CODES = new Set([
-  "4_ls_cert",
-  "5_csau_payment",
-  "6_examination",
-  "7_region",
-  "8_signed_out_csau",
-  "9_delivered_to_client",
-]);
-
-function stripLeadingStageNumber(label: string): string {
-  return label.replace(/^\s*\d+\s*[\.\-:)]?\s*/u, "").trim();
-}
-
-function getRegisterTableTrackingOrderMap(
-  backendTrackingStages: BackendTrackingStage[]
-): Map<string, number> {
-  const orderedCodes = backendTrackingStages
-    .map((stage) => stage.code.trim().toLowerCase())
-    .filter((code) => REGISTER_TABLE_TRACKING_CODES.has(code));
-
-  return new Map(orderedCodes.map((code, index) => [code, index + 1]));
-}
-
-function getBackendTrackingStageCaption(
-  backendTrackingStages: BackendTrackingStage[],
-  registerTableOrderMap: Map<string, number>,
-  code: string
-): string {
-  const matched = backendTrackingStages.find(
-    (stage) => stage.code.trim().toLowerCase() === code.trim().toLowerCase()
-  );
-  if (!matched) return "—";
-  const normalizedCode = matched.code.trim().toLowerCase();
-  const displayOrder = registerTableOrderMap.get(normalizedCode);
-  const cleanLabel = stripLeadingStageNumber(matched.label);
-  if (!displayOrder) return cleanLabel || "—";
-  return `${displayOrder}. ${cleanLabel}`;
-}
-
-function getActualRegionalNumber(job: Job, record?: JobRegisterRecord): string {
-  return job.regionalNumber?.trim() || record?.actualRegionalNumber?.trim() || "";
+function getActualRegionalNumber(job: Job): string {
+  return job.regionalNumber?.trim() || "";
 }
 
 const REGISTER_BACKEND_SYNC_MAX_STEP = STATUS_STEP_MAP["9_delivered_to_client"] ?? 14;
@@ -1276,101 +1212,6 @@ function getBackendStatusForStep(step: number): BackendStatus {
     WORKFLOW_STATUSES.length
   );
   return WORKFLOW_STATUSES[boundedStep - 1] as BackendStatus;
-}
-
-function RegisterStageCell({
-  stage,
-  source,
-  onClick,
-}: {
-  stage?: RegisterStageEntry;
-  source: RegisterStageSource;
-  onClick: () => void;
-}) {
-  const [showComment, setShowComment] = useState(false);
-  const comment = stage?.comment?.trim();
-  const commentPreview = comment || "No comment for this step yet.";
-
-  const sourceBadge =
-    source === "backend"
-      ? { label: "B", title: "Backend decision", tone: "bg-[#dbeafe] text-[#1d4ed8] border-[#bfdbfe]" }
-      : source === "local"
-        ? { label: "L", title: "Local browser register data", tone: "bg-[#f3f4f6] text-[#4b5563] border-[#d1d5db]" }
-        : null;
-
-  const renderCommentButton = (buttonClassName: string) => (
-    <>
-      <button
-        type="button"
-        onClick={(event) => {
-          event.stopPropagation();
-          setShowComment((current) => !current);
-        }}
-        className={`absolute top-1 right-1 inline-flex h-5 w-5 items-center justify-center rounded-full border text-[10px] shadow-sm ${buttonClassName}`}
-        title={comment ? "Preview comment" : "No comment yet"}
-      >
-        <MessageSquare size={10} />
-      </button>
-      {showComment && (
-        <div className="absolute z-20 bottom-full right-1 mb-1 w-44 rounded-lg bg-[#111827] px-2 py-1.5 text-left text-[10px] leading-4 text-white shadow-lg">
-          {commentPreview}
-        </div>
-      )}
-      {sourceBadge && (
-        <span
-          className={`absolute top-1 left-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full border px-1 text-[9px] font-[800] ${sourceBadge.tone}`}
-          title={sourceBadge.title}
-        >
-          {sourceBadge.label}
-        </span>
-      )}
-    </>
-  );
-
-  if (stage?.outcome === "accept" || stage?.outcome === "query" || stage?.outcome === "reject") {
-    const styles =
-      stage.outcome === "accept"
-        ? {
-            td: "border-[#d1fae5] bg-[#f0fdf4] hover:bg-[#dcfce7]",
-            icon: <CheckCircle size={15} className="text-green-600 mx-auto" />,
-            button: "border-green-200 bg-white text-green-700 hover:bg-green-100",
-            prefix: "Approved",
-          }
-        : stage.outcome === "query"
-          ? {
-              td: "border-[#fde68a] bg-[#fffbeb] hover:bg-[#fef3c7]",
-              icon: <AlertTriangle size={15} className="text-amber-500 mx-auto" />,
-              button: "border-amber-200 bg-white text-amber-700 hover:bg-amber-100",
-              prefix: "Query",
-            }
-          : {
-              td: "border-[#fecaca] bg-[#fef2f2] hover:bg-[#fee2e2]",
-              icon: <X size={15} className="text-red-600 mx-auto" />,
-              button: "border-red-200 bg-white text-red-700 hover:bg-red-100",
-              prefix: "Pending",
-            };
-
-    return (
-      <td
-        className={`relative text-center px-1 py-2 border cursor-pointer transition-colors ${styles.td}`}
-        onClick={onClick}
-        title={comment ? `${styles.prefix}: ${comment}` : `${styles.prefix}. Click to edit register entry.`}
-      >
-        {styles.icon}
-        {renderCommentButton(styles.button)}
-      </td>
-    );
-  }
-
-  return (
-    <td
-      className="relative text-center px-1 py-2 border border-[#e5e7eb] bg-white cursor-pointer hover:bg-orange-50 transition-colors"
-      onClick={onClick}
-      title={source === "backend" ? "Backend decision is currently pending for this stage." : "No backend decision yet. Click to enter local fallback record."}
-    >
-      {renderCommentButton("border-[#d1d5db] bg-white text-[#9ca3af] hover:bg-gray-100")}
-    </td>
-  );
 }
 
 interface ModalProps {
@@ -1384,7 +1225,6 @@ interface ModalProps {
 
 function StageModal({ job, colLabel, stepIndex, currentState, onClose, onDone }: ModalProps) {
   void stepIndex;
-  const [outcome, setOutcome] = useState<"advance">("advance");
   const [comment, setComment] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -1438,12 +1278,9 @@ function StageModal({ job, colLabel, stepIndex, currentState, onClose, onDone }:
               <div>
                 <p className="text-[12px] font-semibold text-[#374151] mb-2 uppercase tracking-wide">Mark this stage as:</p>
                 <div className="grid grid-cols-1 gap-2">
-                  <button
-                    onClick={() => setOutcome("advance")}
-                    className="py-2 rounded-lg text-[12px] font-bold border-2 transition-all border-green-500 bg-green-50 text-green-700"
-                  >
+                  <div className="py-2 rounded-lg text-[12px] font-bold border-2 border-green-500 bg-green-50 text-green-700 text-center">
                     ✓ Accept & Progress
-                  </button>
+                  </div>
                 </div>
               </div>
 
@@ -1776,7 +1613,7 @@ function RegisterRowModal({
                   Regional Number
                 </p>
                 <p className="break-all text-[13px] font-bold leading-snug text-slate-800 sm:text-[14px]">
-                  {getActualRegionalNumber(job, record) || "Not assigned"}
+                  {getActualRegionalNumber(job) || "Not assigned"}
                 </p>
               </div>
               <div className="border-t border-slate-100 pt-3">
@@ -2044,10 +1881,6 @@ export default function JobsRegisterPage() {
     state: CellState;
   } | null>(null);
   const [registerModalJob, setRegisterModalJob] = useState<Job | null>(null);
-  const registerTableTrackingOrderMap = useMemo(
-    () => getRegisterTableTrackingOrderMap(backendTrackingStages),
-    [backendTrackingStages]
-  );
 
   const isAbortError = (error: unknown) => {
     if (error instanceof DOMException) {
@@ -2369,16 +2202,14 @@ export default function JobsRegisterPage() {
       const record = resolveRegisterRecordForJob(job, registerRecords);
       const resolvedStages = resolveRegisterStages(job, record);
       const workflowProgress = getJobProgressSummary(job);
-      const workflowStepLabel = getBackendWorkflowStepLabel(
-        job,
-        backendTrackingStages
-      );
+      const backendStatusPrimary = getBackendStatusPrimaryLine(job);
+      const backendStatusSecondary = getBackendStatusSecondaryLine(job, backendTrackingStages);
       const requestedBy = getRequestedBy(job);
       const row: Record<string, string | number> = {
         "#": currentPageStartIndex + index,
         "Client Name": getRegisterName(job),
         "Requested By": requestedBy,
-        "Regional Number": getActualRegionalNumber(job, record) || job.jobId || "",
+        "Regional Number": getActualRegionalNumber(job) || job.jobId || "",
       };
 
       row["Job Production / L/S Certification"] = getRegisterStageDisplay(resolvedStages.jobProductionLsCertification.entry);
@@ -2391,9 +2222,9 @@ export default function JobsRegisterPage() {
       row["Signed Out (CSAU)"] = getRegisterStageDisplay(resolvedStages.signedOutCsau.entry);
       row["Delivered to Client"] = getRegisterStageDisplay(resolvedStages.deliveredToClient.entry);
       row["Workflow Status / Notes"] = [
-        workflowProgress.currentStatusLabel,
-        `${workflowStepLabel} (${workflowProgress.progressPercent}%)`,
-        workflowProgress.workflowLabel,
+        backendStatusPrimary,
+        backendStatusSecondary,
+        `${workflowProgress.progressPercent}% progress`,
         getRegisterReference(job),
         job.queryReason,
       ]
@@ -2561,7 +2392,6 @@ export default function JobsRegisterPage() {
         try {
           if (row.matchedJobId && row.hasChanges) {
             await registerFieldsApi.update(row.matchedJobId, {
-              actualRegionalNumber: row.hasRegionalNumber ? row.regionalNumber : undefined,
               stages: row.hasStageData ? row.stages : undefined,
             });
             updated += 1;
@@ -2588,7 +2418,6 @@ export default function JobsRegisterPage() {
             const createdJobId = createdJob.job.jobId || row.rowJobId;
             if (row.hasStageData || row.hasRegionalNumber) {
               await registerFieldsApi.update(createdJobId, {
-                actualRegionalNumber: row.hasRegionalNumber ? row.regionalNumber : undefined,
                 stages: row.hasStageData ? row.stages : undefined,
               });
             }
@@ -2649,40 +2478,6 @@ export default function JobsRegisterPage() {
     } finally {
       setImporting(false);
     }
-  };
-
-  const openRegisterModal = useCallback((job: Job) => {
-    setRegisterModalJob(job);
-
-    if (registerRecords[job.jobId]) {
-      return;
-    }
-
-    void registerFieldsApi
-      .get(job.jobId)
-      .then((response) => {
-        const record = response.record;
-        if (!record) return;
-
-        setRegisterRecords((current) => ({
-          ...current,
-          [job.jobId]: record,
-        }));
-      })
-      .catch((error) => {
-        console.error(error);
-      });
-  }, [registerRecords]);
-
-  const openWorkflowModal = (job: Job) => {
-    const stepIndex = getStepIndex(job.backendStatus ?? "1_rnr");
-    const currentStep = job.steps[Math.max(0, job.currentStep - 1)];
-    setWorkflowModal({
-      job,
-      colLabel: currentStep?.title ?? job.statusDisplay ?? "Workflow Update",
-      stepIndex,
-      state: job.status === "QUERIED" ? "queried" : job.status === "COMPLETED" ? "done" : "active",
-    });
   };
 
   const toggleJobSelection = (jobId: string) => {
@@ -2844,20 +2639,19 @@ export default function JobsRegisterPage() {
 
   return (
     <div className="jobs-register-page admin-future-bg space-y-4">
-      <div className="relative rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-white px-5 py-5 dark:border-slate-700 dark:from-slate-900 dark:via-slate-900 dark:to-slate-800 md:px-6">
+      <div className="relative rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-white px-5 py-4 dark:border-slate-700 dark:from-slate-900 dark:via-slate-900 dark:to-slate-800 md:px-6">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(37,99,235,0.14),transparent_35%),radial-gradient(circle_at_bottom_left,rgba(240,112,0,0.14),transparent_35%)] dark:bg-[radial-gradient(circle_at_top_right,rgba(59,130,246,0.2),transparent_35%),radial-gradient(circle_at_bottom_left,rgba(249,115,22,0.2),transparent_35%)]" />
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div className="relative">
             <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-white/80 px-3 py-1 text-[11px] font-[900] uppercase tracking-[0.08em] text-primary dark:bg-primary/15">
               <ClipboardList size={13} />
-              HD Register Intelligence
+              Jobs Register
             </div>
-            <h3 className="mt-2 text-[28px] font-[900] tracking-tight text-slate-900 dark:text-slate-100">Job Management Register</h3>
-            <p className="max-w-[720px] text-[13px] text-muted-foreground">
-              Presented like the physical register. Click any register cell or Edit Register to update register stages, with backend sync where supported.
+            <p className="mt-2 max-w-[760px] text-[13px] text-muted-foreground">
+              Use the table for quick lookup and open any job to manage progress and stage updates.
             </p>
           </div>
-          <div className="relative ml-auto flex shrink-0 flex-nowrap items-center justify-end gap-2.5">
+          <div className="relative ml-auto flex w-full flex-wrap items-center justify-end gap-2 xl:w-auto xl:flex-nowrap">
             <button
               onClick={() => {
                 void loadJobs();
@@ -3343,200 +3137,119 @@ export default function JobsRegisterPage() {
         </div>
       </div>
 
-      <div className="admin-surface-elevated rounded-xl border border-border overflow-hidden shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="jobs-register-table w-full text-[12px] border-collapse table-fixed min-w-[1380px] xl:min-w-0">
-            <thead>
-              <tr className="bg-[#1f2937] text-white">
-                <th rowSpan={2} className="border border-[#374151] px-2 py-2 text-center font-bold w-[40px]">
-                  <input
-                    ref={selectAllVisibleRef}
-                    type="checkbox"
-                    checked={allVisibleSelected}
-                    onChange={(e) => toggleSelectAllVisible(e.target.checked)}
-                    disabled={
-                      loading ||
-                      visibleJobs.length === 0 ||
-                      bulkDeleting ||
-                      deletingJobId !== null
-                    }
-                    aria-label="Select all visible jobs"
-                  />
-                </th>
-                <th rowSpan={2} className="border border-[#374151] px-3 py-2 text-center font-bold w-8">#</th>
-                <th rowSpan={2} className="border border-[#374151] px-3 py-2 text-left font-bold w-[200px]">Client Name</th>
-                <th rowSpan={2} className="border border-[#374151] px-3 py-2 text-left font-bold w-[150px]">Regional Number</th>
-                <th rowSpan={2} className="border border-[#374151] px-3 py-2 text-left font-bold w-[150px]">Requested By</th>
-                <th rowSpan={2} className="border border-[#374151] px-3 py-2 text-center font-bold bg-[#374151] w-[96px]">
-                  Job Production /<br />L/S Certification
-                  <span className="block mt-1 text-[10px] font-[600] text-[#cbd5e1]">
-                    {getBackendTrackingStageCaption(
-                      backendTrackingStages,
-                      registerTableTrackingOrderMap,
-                      "4_ls_cert"
-                    )}
-                  </span>
-                </th>
-                <th rowSpan={2} className="border border-[#374151] px-3 py-2 text-center font-bold bg-[#1e3a5f] w-[60px]">
-                  CSAU
-                  <span className="block mt-1 text-[10px] font-[600] text-[#cbd5e1]">
-                    {getBackendTrackingStageCaption(
-                      backendTrackingStages,
-                      registerTableTrackingOrderMap,
-                      "5_csau_payment"
-                    )}
-                  </span>
-                </th>
-                <th colSpan={2} className="border border-[#374151] px-3 py-1.5 text-center font-bold bg-[#1e3a5f]">Examination</th>
-                <th colSpan={3} className="border border-[#374151] px-3 py-1.5 text-center font-bold bg-[#374151]">Region</th>
-                <th colSpan={2} className="border border-[#374151] px-3 py-1.5 text-center font-bold bg-[#111827]">Final Handoff</th>
-              </tr>
-              <tr className="bg-[#374151] text-[#d1d5db] text-[11px]">
-                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold bg-[#1e3a5f] w-[60px]">Checking<span className="block mt-0.5 text-[10px] font-[500] text-[#9fb4d4]">{getBackendTrackingStageCaption(backendTrackingStages, registerTableTrackingOrderMap, "6_examination")}</span></th>
-                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold bg-[#1e3a5f] w-[60px]">Cert.<span className="block mt-0.5 text-[10px] font-[500] text-[#9fb4d4]">{getBackendTrackingStageCaption(backendTrackingStages, registerTableTrackingOrderMap, "6_examination")}</span></th>
-                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold w-[60px]">Checked<span className="block mt-0.5 text-[10px] font-[500] text-[#cbd5e1]">{getBackendTrackingStageCaption(backendTrackingStages, registerTableTrackingOrderMap, "7_region")}</span></th>
-                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold w-[60px]">Approved<span className="block mt-0.5 text-[10px] font-[500] text-[#cbd5e1]">{getBackendTrackingStageCaption(backendTrackingStages, registerTableTrackingOrderMap, "7_region")}</span></th>
-                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold w-[60px]">Barcode<span className="block mt-0.5 text-[10px] font-[500] text-[#cbd5e1]">{getBackendTrackingStageCaption(backendTrackingStages, registerTableTrackingOrderMap, "7_region")}</span></th>
-                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold bg-[#1f2937] w-[60px]">Sign Out<span className="block mt-0.5 text-[10px] font-[500] text-[#cbd5e1]">{getBackendTrackingStageCaption(backendTrackingStages, registerTableTrackingOrderMap, "8_signed_out_csau")}</span></th>
-                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold bg-[#1f2937] w-[60px]">Delivered<span className="block mt-0.5 text-[10px] font-[500] text-[#cbd5e1]">{getBackendTrackingStageCaption(backendTrackingStages, registerTableTrackingOrderMap, "9_delivered_to_client")}</span></th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
+      <div className="admin-surface-elevated rounded-xl border border-border p-3 shadow-sm md:p-4">
+        <div className="mb-3 flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-900/60">
+          <label className="inline-flex items-center gap-2 text-[12px] font-medium text-foreground">
+            <input
+              ref={selectAllVisibleRef}
+              type="checkbox"
+              checked={allVisibleSelected}
+              onChange={(e) => toggleSelectAllVisible(e.target.checked)}
+              disabled={
+                loading ||
+                visibleJobs.length === 0 ||
+                bulkDeleting ||
+                deletingJobId !== null
+              }
+              aria-label="Select all visible jobs"
+            />
+            Select all visible jobs
+          </label>
+          <span className="text-[11px] text-muted-foreground">{selectedJobIds.length} selected</span>
+        </div>
+
+        {loading ? (
+          <div className="text-center py-12 text-[#9ca3af]">
+            <Loader2 size={20} className="animate-spin mx-auto mb-2" />
+            Loading jobs...
+          </div>
+        ) : visibleJobs.length === 0 ? (
+          <div className="text-center py-12 text-[#9ca3af]">
+            No jobs match the current filters. <Link href="/admin/jobs/new" className="text-[#F07000] hover:underline font-semibold">Create a new job →</Link>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1040px] text-[12px]">
+              <thead className="bg-slate-900 text-slate-100">
                 <tr>
-                  <td colSpan={14} className="text-center py-12 text-[#9ca3af]">
-                    <Loader2 size={20} className="animate-spin mx-auto mb-2" />
-                    Loading jobs...
-                  </td>
+                  <th className="px-3 py-2 text-left">#</th>
+                  <th className="px-3 py-2 text-left">Regional Number</th>
+                  <th className="px-3 py-2 text-left">Title</th>
+                  <th className="px-3 py-2 text-left">Status</th>
+                  <th className="px-3 py-2 text-left">Requested By</th>
+                  <th className="px-3 py-2 text-left">Client</th>
+                  <th className="px-3 py-2 text-left">Parcel Acreage</th>
+                  <th className="px-3 py-2 text-left">Payment Amount</th>
+                  <th className="px-3 py-2 text-left">Submitted</th>
+                  <th className="px-3 py-2 text-left">Actions</th>
                 </tr>
-              ) : visibleJobs.length === 0 ? (
-                <tr>
-                  <td colSpan={14} className="text-center py-12 text-[#9ca3af]">
-                    No jobs match the current filters. <Link href="/admin/jobs/new" className="text-[#F07000] hover:underline font-semibold">Create a new job →</Link>
-                  </td>
-                </tr>
-              ) : (
-                paginatedJobs.map((job, index) => {
+              </thead>
+              <tbody>
+                {paginatedJobs.map((job, index) => {
                   const rowNumber = currentPageStartIndex + index;
-                  const isEven = (rowNumber - 1) % 2 === 0;
                   const isSelected = selectedJobIdSet.has(job.id);
                   const registerName = getRegisterName(job);
-                  const registerReference = getRegisterReference(job);
-                  const requestedBy = getRequestedBy(job);
-                  const record = resolveRegisterRecordForJob(job, registerRecords);
-                  const resolvedStages = resolveRegisterStages(job, record);
-                  const workflowProgress = getJobProgressSummary(job);
-                  const workflowStepLabel = getBackendWorkflowStepLabel(
-                    job,
-                    backendTrackingStages
-                  );
-                  const registerProgress = getRegisterProgressSummary(buildResolvedRegisterRecord(job, record));
+                  const backendStatusPrimary = getBackendStatusPrimaryLine(job);
+                  const backendStatusSecondary = getBackendStatusSecondaryLine(job, backendTrackingStages);
 
                   return (
-                    <tr key={job.id} className={`transition-colors hover:bg-orange-50/40 dark:hover:bg-orange-500/10 ${isSelected ? "bg-orange-50/70 dark:bg-orange-500/15" : isEven ? "bg-white/95 dark:bg-slate-900/60" : "bg-[#fafafa] dark:bg-slate-950/40"}`}>
-                      <td className="border border-[#e5e7eb] dark:border-border px-2 py-2 text-center align-top">
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => toggleJobSelection(job.id)}
-                          disabled={bulkDeleting || deletingJobId !== null}
-                          aria-label={`Select job ${job.jobId}`}
-                        />
+                    <tr
+                      key={job.id}
+                      className={`border-b border-slate-200 text-slate-700 dark:border-slate-700 dark:text-slate-200 ${
+                        isSelected ? "bg-orange-50/60 dark:bg-orange-500/10" : "bg-transparent"
+                      }`}
+                    >
+                      <td className="px-3 py-2 align-top">
+                        <label className="inline-flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleJobSelection(job.id)}
+                            disabled={bulkDeleting || deletingJobId !== null}
+                            aria-label={`Select job ${job.jobId}`}
+                          />
+                          <span>{rowNumber}</span>
+                        </label>
                       </td>
-                      <td className="border border-[#e5e7eb] dark:border-border px-2 py-2 text-center text-[#9ca3af] dark:text-slate-400 font-medium">{rowNumber}</td>
-                      <td className="border border-[#e5e7eb] px-3 py-2 align-top">
-                        <button
-                          type="button"
-                          onClick={() => openRegisterModal(job)}
-                          className="font-semibold text-foreground hover:text-[#F07000] transition-colors"
-                        >
-                          {registerName}
-                        </button>
-                        {registerReference && (
-                          <div className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">{registerReference}</div>
-                        )}
-                        <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-[#9ca3af]">
-                          <span>Workflow {workflowStepLabel}</span>
-                          <span>•</span>
-                          <span>{workflowProgress.currentStatusLabel}</span>
-                          <span>•</span>
-                          <span>{workflowProgress.progressPercent}% progress</span>
-                          <span>•</span>
-                          <span>{workflowProgress.workflowLabel}</span>
-                          <span>•</span>
-                          <span>Register {registerProgress.currentStepLabel}</span>
-                          <span>•</span>
-                          <span>{job.parcelSize ?? "—"} ac</span>
-                          <span>•</span>
-                          <span>{new Date(job.createdAt).toLocaleDateString()}</span>
-                          <button
-                            type="button"
-                            onClick={() => openRegisterModal(job)}
-                            className="inline-flex items-center gap-1 text-[#0f766e] hover:underline"
+                      <td className="px-3 py-2 align-top font-mono">{job.jobId || "—"}</td>
+                      <td className="px-3 py-2 align-top">{registerName || "—"}</td>
+                      <td className="px-3 py-2 align-top">
+                        <div className="font-semibold">{backendStatusPrimary}</div>
+                        {backendStatusSecondary ? (
+                          <div className="text-[10px] text-muted-foreground">{backendStatusSecondary}</div>
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-2 align-top">{getRequestedBy(job) || "—"}</td>
+                      <td className="px-3 py-2 align-top">{job.clientName || "—"}</td>
+                      <td className="px-3 py-2 align-top">{job.parcelSize || "—"}</td>
+                      <td className="px-3 py-2 align-top">{job.paymentAmount || "—"}</td>
+                      <td className="px-3 py-2 align-top">{new Date(job.createdAt).toLocaleDateString()}</td>
+                      <td className="px-3 py-2 align-top">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Link
+                            href={`/admin/jobs/${encodeURIComponent(job.id)}`}
+                            className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
                           >
-                            <PencilLine size={11} /> Edit Register
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => openWorkflowModal(job)}
-                            className="inline-flex items-center gap-1 text-[#b45309] hover:underline"
-                          >
-                            <Clock size={11} /> Workflow
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => openRegisterModal(job)}
-                            className="inline-flex items-center gap-1 text-[#F07000] hover:underline"
-                          >
-                            <Eye size={11} /> Open Register
-                          </button>
+                            <Eye size={11} /> View
+                          </Link>
                           <button
                             type="button"
                             onClick={() => handleDeleteJob(job)}
                             disabled={bulkDeleting || deletingJobId !== null}
-                            className="inline-flex items-center gap-1 text-red-600 hover:underline disabled:opacity-60 disabled:no-underline"
+                            className="inline-flex items-center gap-1 rounded-md border border-red-200 px-2 py-1 text-[11px] font-semibold text-red-600 hover:bg-red-50 disabled:opacity-60 dark:border-red-900/50 dark:hover:bg-red-950/30"
                           >
-                            {deletingJobId === job.id ? (
-                              <Loader2 size={11} className="animate-spin" />
-                            ) : (
-                              <Trash2 size={11} />
-                            )}
-                            {deletingJobId === job.id ? "Deleting..." : "Delete Job"}
+                            {deletingJobId === job.id ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />}
+                            Delete
                           </button>
                         </div>
-                        {job.queryReason && (
-                          <div className="text-[11px] text-amber-700 dark:text-amber-300 mt-1 line-clamp-2">{job.queryReason}</div>
-                        )}
                       </td>
-                      <td
-                        className="border border-[#e5e7eb] px-2 py-2 font-mono text-[#4b5563] align-top cursor-pointer hover:bg-orange-50"
-                        onClick={() => openRegisterModal(job)}
-                        title="Click to open the register entry"
-                      >
-                        {getActualRegionalNumber(job, record) || job.jobId || <span className="text-[#9ca3af] font-sans text-[11px]">Not assigned</span>}
-                      </td>
-                      <td className="border border-[#e5e7eb] px-2 py-2 text-[#4b5563] align-top">
-                        {requestedBy || <span className="text-[#9ca3af]">—</span>}
-                      </td>
-                      {REGISTER_STAGE_COLS.map((col) => {
-                        const key = col.key as RegisterStageKey;
-                        const resolvedStage = resolvedStages[key];
-                        return (
-                          <RegisterStageCell
-                            key={col.key}
-                            stage={resolvedStage.entry}
-                            source={resolvedStage.source}
-                            onClick={() => openRegisterModal(job)}
-                          />
-                        );
-                      })}
                     </tr>
                   );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {!loading && (

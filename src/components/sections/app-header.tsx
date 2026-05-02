@@ -153,7 +153,7 @@ export default function AppHeader({
 
   return (
     <header
-      className={`sticky top-0 z-40 w-full ${headerHidden ? "pointer-events-none" : ""}`}
+      className={`sticky top-0 z-30 w-full ${headerHidden ? "pointer-events-none" : ""}`}
     >
       <div
         className={`grid overflow-hidden px-2 transition-[grid-template-rows,opacity,padding-top] duration-300 ease-out motion-reduce:transition-none md:px-3 ${
