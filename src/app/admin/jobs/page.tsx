@@ -1212,47 +1212,56 @@ function getRequestedBy(job: Job): string {
   return "";
 }
 
-function normalizeTrackingStatusCode(status?: string): string {
-  const normalized = String(status ?? "").trim().toLowerCase();
-  if (normalized === "queried_ls461") return "4_ls_cert";
-  if (normalized === "queried_smd") return "6_examination";
-  if (normalized === "signed_out_csau") return "8_signed_out_csau";
-  if (normalized === "delivered_to_client") return "9_delivered_to_client";
-  return normalized;
-}
-
-function toNineStageIndexFromWorkflowStep(step: number): number {
-  if (step <= 1) return 1;
-  if (step <= 2) return 2;
-  if (step <= 3) return 3;
-  if (step <= 6) return 4;
-  if (step <= 7) return 5;
-  if (step <= 9) return 6;
-  if (step <= 12) return 7;
-  if (step <= 13) return 8;
-  return 9;
-}
-
 function getBackendWorkflowStepLabel(
   job: Job,
   backendTrackingStages: BackendTrackingStage[]
 ): string {
-  const stages = backendTrackingStages.length > 0 ? backendTrackingStages : [];
-  const total = stages.length > 0 ? stages.length : 9;
-  const normalizedStatus = normalizeTrackingStatusCode(job.backendStatus);
-  const backendIndex = stages.findIndex(
-    (stage) => stage.code.trim().toLowerCase() === normalizedStatus
+  if (backendTrackingStages.length === 0) return "—";
+  const backendStatus = String(job.backendStatus ?? "").trim().toLowerCase();
+  const backendIndex = backendTrackingStages.findIndex(
+    (stage) => stage.code.trim().toLowerCase() === backendStatus
   );
+  if (backendIndex < 0) return "—";
+  return `${backendIndex + 1}/${backendTrackingStages.length}`;
+}
 
-  if (backendIndex >= 0) {
-    return `${backendIndex + 1}/${total}`;
-  }
+const REGISTER_TABLE_TRACKING_CODES = new Set([
+  "4_ls_cert",
+  "5_csau_payment",
+  "6_examination",
+  "7_region",
+  "8_signed_out_csau",
+  "9_delivered_to_client",
+]);
 
-  const step = Number.isFinite(job.currentStep)
-    ? Math.max(1, Math.floor(job.currentStep))
-    : 1;
-  const fallbackIndex = Math.min(total, toNineStageIndexFromWorkflowStep(step));
-  return `${fallbackIndex}/${total}`;
+function stripLeadingStageNumber(label: string): string {
+  return label.replace(/^\s*\d+\s*[\.\-:)]?\s*/u, "").trim();
+}
+
+function getRegisterTableTrackingOrderMap(
+  backendTrackingStages: BackendTrackingStage[]
+): Map<string, number> {
+  const orderedCodes = backendTrackingStages
+    .map((stage) => stage.code.trim().toLowerCase())
+    .filter((code) => REGISTER_TABLE_TRACKING_CODES.has(code));
+
+  return new Map(orderedCodes.map((code, index) => [code, index + 1]));
+}
+
+function getBackendTrackingStageCaption(
+  backendTrackingStages: BackendTrackingStage[],
+  registerTableOrderMap: Map<string, number>,
+  code: string
+): string {
+  const matched = backendTrackingStages.find(
+    (stage) => stage.code.trim().toLowerCase() === code.trim().toLowerCase()
+  );
+  if (!matched) return "—";
+  const normalizedCode = matched.code.trim().toLowerCase();
+  const displayOrder = registerTableOrderMap.get(normalizedCode);
+  const cleanLabel = stripLeadingStageNumber(matched.label);
+  if (!displayOrder) return cleanLabel || "—";
+  return `${displayOrder}. ${cleanLabel}`;
 }
 
 function getActualRegionalNumber(job: Job, record?: JobRegisterRecord): string {
@@ -2035,6 +2044,10 @@ export default function JobsRegisterPage() {
     state: CellState;
   } | null>(null);
   const [registerModalJob, setRegisterModalJob] = useState<Job | null>(null);
+  const registerTableTrackingOrderMap = useMemo(
+    () => getRegisterTableTrackingOrderMap(backendTrackingStages),
+    [backendTrackingStages]
+  );
 
   const isAbortError = (error: unknown) => {
     if (error instanceof DOMException) {
@@ -3356,24 +3369,36 @@ export default function JobsRegisterPage() {
                 <th rowSpan={2} className="border border-[#374151] px-3 py-2 text-left font-bold w-[150px]">Requested By</th>
                 <th rowSpan={2} className="border border-[#374151] px-3 py-2 text-center font-bold bg-[#374151] w-[96px]">
                   Job Production /<br />L/S Certification
-                  <span className="block mt-1 text-[10px] font-[600] text-[#cbd5e1]">4_ls_cert</span>
+                  <span className="block mt-1 text-[10px] font-[600] text-[#cbd5e1]">
+                    {getBackendTrackingStageCaption(
+                      backendTrackingStages,
+                      registerTableTrackingOrderMap,
+                      "4_ls_cert"
+                    )}
+                  </span>
                 </th>
                 <th rowSpan={2} className="border border-[#374151] px-3 py-2 text-center font-bold bg-[#1e3a5f] w-[60px]">
                   CSAU
-                  <span className="block mt-1 text-[10px] font-[600] text-[#cbd5e1]">5_csau_payment</span>
+                  <span className="block mt-1 text-[10px] font-[600] text-[#cbd5e1]">
+                    {getBackendTrackingStageCaption(
+                      backendTrackingStages,
+                      registerTableTrackingOrderMap,
+                      "5_csau_payment"
+                    )}
+                  </span>
                 </th>
                 <th colSpan={2} className="border border-[#374151] px-3 py-1.5 text-center font-bold bg-[#1e3a5f]">Examination</th>
                 <th colSpan={3} className="border border-[#374151] px-3 py-1.5 text-center font-bold bg-[#374151]">Region</th>
                 <th colSpan={2} className="border border-[#374151] px-3 py-1.5 text-center font-bold bg-[#111827]">Final Handoff</th>
               </tr>
               <tr className="bg-[#374151] text-[#d1d5db] text-[11px]">
-                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold bg-[#1e3a5f] w-[60px]">Checking<span className="block mt-0.5 text-[10px] font-[500] text-[#9fb4d4]">6_1_checking</span></th>
-                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold bg-[#1e3a5f] w-[60px]">Cert.<span className="block mt-0.5 text-[10px] font-[500] text-[#9fb4d4]">6_2_certified</span></th>
-                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold w-[60px]">Checked<span className="block mt-0.5 text-[10px] font-[500] text-[#cbd5e1]">7_1_checked</span></th>
-                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold w-[60px]">Approved<span className="block mt-0.5 text-[10px] font-[500] text-[#cbd5e1]">7_2_approved</span></th>
-                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold w-[60px]">Barcode<span className="block mt-0.5 text-[10px] font-[500] text-[#cbd5e1]">7_3_barcoded</span></th>
-                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold bg-[#1f2937] w-[60px]">Sign Out<span className="block mt-0.5 text-[10px] font-[500] text-[#cbd5e1]">8_signed_out_csau</span></th>
-                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold bg-[#1f2937] w-[60px]">Delivered<span className="block mt-0.5 text-[10px] font-[500] text-[#cbd5e1]">9_delivered_to_client</span></th>
+                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold bg-[#1e3a5f] w-[60px]">Checking<span className="block mt-0.5 text-[10px] font-[500] text-[#9fb4d4]">{getBackendTrackingStageCaption(backendTrackingStages, registerTableTrackingOrderMap, "6_examination")}</span></th>
+                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold bg-[#1e3a5f] w-[60px]">Cert.<span className="block mt-0.5 text-[10px] font-[500] text-[#9fb4d4]">{getBackendTrackingStageCaption(backendTrackingStages, registerTableTrackingOrderMap, "6_examination")}</span></th>
+                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold w-[60px]">Checked<span className="block mt-0.5 text-[10px] font-[500] text-[#cbd5e1]">{getBackendTrackingStageCaption(backendTrackingStages, registerTableTrackingOrderMap, "7_region")}</span></th>
+                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold w-[60px]">Approved<span className="block mt-0.5 text-[10px] font-[500] text-[#cbd5e1]">{getBackendTrackingStageCaption(backendTrackingStages, registerTableTrackingOrderMap, "7_region")}</span></th>
+                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold w-[60px]">Barcode<span className="block mt-0.5 text-[10px] font-[500] text-[#cbd5e1]">{getBackendTrackingStageCaption(backendTrackingStages, registerTableTrackingOrderMap, "7_region")}</span></th>
+                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold bg-[#1f2937] w-[60px]">Sign Out<span className="block mt-0.5 text-[10px] font-[500] text-[#cbd5e1]">{getBackendTrackingStageCaption(backendTrackingStages, registerTableTrackingOrderMap, "8_signed_out_csau")}</span></th>
+                <th className="border border-[#4b5563] px-1 py-1.5 text-center font-semibold bg-[#1f2937] w-[60px]">Delivered<span className="block mt-0.5 text-[10px] font-[500] text-[#cbd5e1]">{getBackendTrackingStageCaption(backendTrackingStages, registerTableTrackingOrderMap, "9_delivered_to_client")}</span></th>
               </tr>
             </thead>
             <tbody>
