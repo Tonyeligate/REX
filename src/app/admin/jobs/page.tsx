@@ -2067,7 +2067,7 @@ export default function JobsRegisterPage() {
   }, [jobs, normalizedSearch, statusFilter]);
 
   const effectiveTotalJobs =
-    normalizedSearch || statusFilter ? visibleJobs.length : totalJobs;
+    totalJobs > jobs.length || currentPage > 1 ? totalJobs : visibleJobs.length;
 
   const totalPages = Math.max(1, Math.ceil(effectiveTotalJobs / pageSize));
   const safeCurrentPage = Math.min(currentPage, totalPages);
@@ -2081,12 +2081,18 @@ export default function JobsRegisterPage() {
     }
   }, [currentPage, safeCurrentPage]);
 
-  // Slice to current page (backend may return all results; this ensures pagination on frontend)
+  // If the backend has already paginated, render the returned page directly.
+  // Otherwise, slice locally for older/unpaginated backend responses.
   const paginatedJobs = useMemo(() => {
+    const backendReturnedPage = totalJobs > jobs.length || currentPage > 1;
+    if (backendReturnedPage) {
+      return visibleJobs;
+    }
+
     const start = (safeCurrentPage - 1) * pageSize;
     const end = start + pageSize;
     return visibleJobs.slice(start, end);
-  }, [visibleJobs, safeCurrentPage, pageSize]);
+  }, [currentPage, jobs.length, pageSize, safeCurrentPage, totalJobs, visibleJobs]);
 
   const selectedJobIdSet = useMemo(() => new Set(selectedJobIds), [selectedJobIds]);
 
@@ -2154,6 +2160,8 @@ export default function JobsRegisterPage() {
       "Examination Checking",
       "Examination Cert.",
       "Region Checked",
+      "Region Approved",
+      "Region Barcoded",
       "Signed Out (CSAU)",
       "Delivered to Client",
       "Workflow Status / Notes",
