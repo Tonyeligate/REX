@@ -24,7 +24,6 @@ import {
   WORKFLOW_STATUSES,
   STATUS_STEP_MAP,
   jobsApi,
-  registerFieldsApi,
   type BackendTrackingStage,
   type BackendStatus,
 } from "@/lib/api";
@@ -41,7 +40,6 @@ import {
 } from "@/lib/sweet-alert";
 import type { Job, JobStepDecision } from "@/types/job";
 import type {
-  JobRegisterRecord,
   RegisterStageEntry,
   RegisterStageKey,
   RegisterStageOutcome,
@@ -1039,40 +1037,10 @@ function toRegisterEntryFromBackendDecision(decision?: JobStepDecision): Registe
   };
 }
 
-function areEquivalentRegisterEntries(
-  a?: RegisterStageEntry,
-  b?: RegisterStageEntry
-): boolean {
-  if (!a || !b) return false;
-  const aComment = (a.comment ?? "").trim();
-  const bComment = (b.comment ?? "").trim();
-  return a.outcome === b.outcome && aComment === bComment;
-}
-
-/** True when any register stage has explicit saved data — disables coarse status fill for empty columns. */
-function hasGranularRegisterData(record?: JobRegisterRecord): boolean {
-  if (!record?.stages) return false;
-  for (const key of REGISTER_STAGE_KEYS) {
-    if (normalizeRegisterStage(record.stages[key])) return true;
-  }
-  return false;
-}
-
-/** Prefer session/local cache only; no register metadata is read from backend descriptions. */
-function resolveRegisterRecordForJob(
-  job: Job,
-  cache: Record<string, JobRegisterRecord>
-): JobRegisterRecord | undefined {
-  return cache[job.jobId];
-}
-
 function resolveRegisterStages(
-  job: Job,
-  record?: JobRegisterRecord
+  job: Job
 ): Record<RegisterStageKey, ResolvedRegisterStage> {
   const latestByStep = getLatestBackendDecisionByStep(job);
-  const clearedStageKeySet = new Set(record?.clearedStageKeys ?? []);
-  const skipCoarseStatusFill = hasGranularRegisterData(record);
   const currentStepNumber = STATUS_STEP_MAP[job.backendStatus ?? "1_rnr"] ?? 0;
   const isQueriedCurrentStatus =
     job.backendStatus === "queried_ls461" || job.backendStatus === "queried_smd";
@@ -1080,8 +1048,6 @@ function resolveRegisterStages(
   return REGISTER_STAGE_KEYS.reduce((acc, key) => {
     const backendStepCode = BACKEND_REGISTER_STEP_CODE_MAP[key];
     const backendDecision = latestByStep.get(backendStepCode);
-    const localEntry = normalizeRegisterStage(record?.stages[key]);
-    const persistedSource = record?.source ?? "local";
     let backendEntry: RegisterStageEntry | undefined;
 
     if (backendDecision) {
@@ -1094,34 +1060,12 @@ function resolveRegisterStages(
       currentStepNumber >= stageStepNumber &&
       !(isQueriedCurrentStatus && currentStepNumber === stageStepNumber);
 
-    if (!backendEntry && shouldMarkCompletedFromStatus && !skipCoarseStatusFill) {
+    if (!backendEntry && shouldMarkCompletedFromStatus) {
       backendEntry = {
         outcome: "accept",
         comment: "",
         updatedAt: job.updatedAt,
       };
-    }
-
-    if (localEntry) {
-      if (backendEntry && areEquivalentRegisterEntries(localEntry, backendEntry)) {
-        acc[key] = {
-          entry: backendEntry,
-          source: "backend",
-        };
-      } else if (persistedSource === "backend") {
-        acc[key] = { entry: localEntry, source: "backend" };
-      } else {
-        acc[key] = { entry: localEntry, source: "local" };
-      }
-      return acc;
-    }
-
-    if (clearedStageKeySet.has(key)) {
-      acc[key] = {
-        entry: undefined,
-        source: record?.source ?? "local",
-      };
-      return acc;
     }
 
     if (backendEntry) {
@@ -1333,16 +1277,14 @@ function StageModal({ job, colLabel, stepIndex, currentState, onClose, onDone }:
 
 function RegisterRowModal({
   job,
-  record,
   backendTrackingStages,
   onClose,
   onDone,
 }: {
   job: Job;
-  record?: JobRegisterRecord;
   backendTrackingStages: BackendTrackingStage[];
   onClose: () => void;
-  onDone: (record: JobRegisterRecord) => void;
+  onDone: () => void;
 }) {
   type RegisterModalStages = Record<
     RegisterStageKey,
@@ -1350,8 +1292,8 @@ function RegisterRowModal({
   >;
 
   const initialResolvedStages = useMemo(
-    () => resolveRegisterStages(job, record),
-    [job, record]
+    () => resolveRegisterStages(job),
+    [job]
   );
 
   const [stages, setStages] = useState<RegisterModalStages>(() =>
@@ -1549,32 +1491,8 @@ function RegisterRowModal({
 
       }
 
-      const stagePayload = REGISTER_STAGE_KEYS.reduce<Partial<Record<RegisterStageKey, RegisterStageEntry | null>>>((acc, key) => {
-        if (!isStageEdited(key)) {
-          return acc;
-        }
-
-        const stage = stages[key];
-        const comment = stage.comment.trim();
-
-        if (!stage.outcome) {
-          acc[key] = null;
-          return acc;
-        }
-
-        acc[key] = {
-          outcome: stage.outcome,
-          comment,
-          updatedAt: new Date().toISOString(),
-        };
-        return acc;
-      }, {});
-
-      const response = await registerFieldsApi.update(job.jobId, {
-        stages: stagePayload,
-      });
-      void showSuccessAlert("Register entry saved successfully.");
-      onDone(response.record);
+      void showSuccessAlert("Backend workflow update saved successfully.");
+      onDone();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to save register row";
       setError(message);
@@ -1858,7 +1776,6 @@ export default function JobsRegisterPage() {
   const urlSearch = searchParams.get("q") ?? "";
   const [jobs, setJobs] = useState<Job[]>([]);
   const [totalJobs, setTotalJobs] = useState(0);
-  const [registerRecords, setRegisterRecords] = useState<Record<string, JobRegisterRecord>>({});
   const [backendTrackingStages, setBackendTrackingStages] = useState<
     BackendTrackingStage[]
   >([]);
@@ -2212,8 +2129,7 @@ export default function JobsRegisterPage() {
     ];
 
     const rows = visibleJobs.map((job, index) => {
-      const record = resolveRegisterRecordForJob(job, registerRecords);
-      const resolvedStages = resolveRegisterStages(job, record);
+      const resolvedStages = resolveRegisterStages(job);
       const workflowProgress = getJobProgressSummary(job);
       const backendStatusPrimary = getBackendStatusPrimaryLine(job);
       const backendStatusSecondary = getBackendStatusSecondaryLine(job, backendTrackingStages);
@@ -2396,7 +2312,7 @@ export default function JobsRegisterPage() {
 
     setImporting(true);
     try {
-      let updated = 0;
+      const updated = 0;
       let created = 0;
       let failed = 0;
       const failedRows: ImportFailureDetail[] = [];
@@ -2404,10 +2320,12 @@ export default function JobsRegisterPage() {
       for (const row of actionableRows) {
         try {
           if (row.matchedJobId && row.hasChanges) {
-            await registerFieldsApi.update(row.matchedJobId, {
-              stages: row.hasStageData ? row.stages : undefined,
+            failed += 1;
+            failedRows.push({
+              rowNumber: String(row.rowNumber),
+              rn: row.rowJobId,
+              reason: "Stage-level import updates are disabled. Use backend workflow actions on the job detail page.",
             });
-            updated += 1;
             continue;
           }
 
@@ -2417,7 +2335,7 @@ export default function JobsRegisterPage() {
               ? `Client Name: ${row.rowClientName.trim()}`
               : "";
 
-            const createdJob = await jobsApi.create({
+            await jobsApi.create({
               rn: row.rowJobId,
               jobId: row.rowJobId,
               regionalNumber: row.regionalNumber ?? row.rowJobId,
@@ -2427,13 +2345,6 @@ export default function JobsRegisterPage() {
               description,
               skipBootstrapWorkflow: true,
             });
-
-            const createdJobId = createdJob.job.jobId || row.rowJobId;
-            if (row.hasStageData || row.hasRegionalNumber) {
-              await registerFieldsApi.update(createdJobId, {
-                stages: row.hasStageData ? row.stages : undefined,
-              });
-            }
 
             created += 1;
             continue;
@@ -2524,11 +2435,6 @@ export default function JobsRegisterPage() {
       setJobs((current) => current.filter((entry) => entry.id !== job.id));
       setTotalJobs((current) => Math.max(0, current - 1));
       setSelectedJobIds((current) => current.filter((jobId) => jobId !== job.id));
-      setRegisterRecords((current) => {
-        const next = { ...current };
-        delete next[job.jobId];
-        return next;
-      });
 
       if (registerModalJob?.jobId === job.jobId) {
         setRegisterModalJob(null);
@@ -2579,13 +2485,6 @@ export default function JobsRegisterPage() {
       if (deletedIds.size > 0) {
         setJobs((current) => current.filter((job) => !deletedIds.has(job.id)));
         setTotalJobs((current) => Math.max(0, current - deletedIds.size));
-        setRegisterRecords((current) => {
-          const next = { ...current };
-          for (const jobId of deletedJobIds) {
-            delete next[jobId];
-          }
-          return next;
-        });
       }
 
       setSelectedJobIds((current) =>
@@ -3274,12 +3173,10 @@ export default function JobsRegisterPage() {
       {registerModalJob && (
         <RegisterRowModal
           job={registerModalJob}
-          record={resolveRegisterRecordForJob(registerModalJob, registerRecords)}
           backendTrackingStages={backendTrackingStages}
           onClose={() => setRegisterModalJob(null)}
-          onDone={(record) => {
+          onDone={() => {
             const canonicalJobId = registerModalJob.jobId;
-            setRegisterRecords((current) => ({ ...current, [canonicalJobId]: { ...record, jobId: canonicalJobId } }));
             setRegisterModalJob(null);
             void refreshJob(canonicalJobId);
           }}
