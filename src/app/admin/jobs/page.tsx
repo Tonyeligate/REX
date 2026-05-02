@@ -1173,6 +1173,17 @@ function getRequestedBy(job: Job): string {
   return "";
 }
 
+function getBackendStageLabel(
+  key: RegisterStageKey,
+  backendTrackingStages: BackendTrackingStage[]
+): string {
+  const stageCode = BACKEND_REGISTER_STEP_CODE_MAP[key]?.trim().toLowerCase();
+  const match = backendTrackingStages.find(
+    (stage) => stage.code.trim().toLowerCase() === stageCode
+  );
+  return match?.label?.trim() || REGISTER_STAGE_LABELS[key];
+}
+
 /** Human-facing status line — prefer Django `status_display`, never invent labels. */
 function getBackendStatusPrimaryLine(job: Job): string {
   const display = String(job.statusDisplay ?? "").trim();
@@ -1323,11 +1334,13 @@ function StageModal({ job, colLabel, stepIndex, currentState, onClose, onDone }:
 function RegisterRowModal({
   job,
   record,
+  backendTrackingStages,
   onClose,
   onDone,
 }: {
   job: Job;
   record?: JobRegisterRecord;
+  backendTrackingStages: BackendTrackingStage[];
   onClose: () => void;
   onDone: (record: JobRegisterRecord) => void;
 }) {
@@ -1449,11 +1462,11 @@ function RegisterRowModal({
       const comment = stage.comment.trim();
 
       if (comment && !stage.outcome) {
-        return `Choose an action for ${REGISTER_STAGE_LABELS[key]} before saving the comment.`;
+        return `Choose an action for ${getBackendStageLabel(key, backendTrackingStages)} before saving the comment.`;
       }
 
       if ((stage.outcome === "query" || stage.outcome === "reject") && !comment) {
-        return `Add a comment for ${REGISTER_STAGE_LABELS[key]} when it is query or pending.`;
+        return `Add a comment for ${getBackendStageLabel(key, backendTrackingStages)} when it is query or pending.`;
       }
     }
 
@@ -1506,7 +1519,7 @@ function RegisterRowModal({
         }
 
         const comment = item.stage.comment.trim();
-        const label = REGISTER_STAGE_LABELS[item.key];
+        const label = getBackendStageLabel(item.key, backendTrackingStages);
         const notes = comment
           ? `REGISTER APPROVED (${label}): ${comment}`
           : `REGISTER APPROVED (${label})`;
@@ -1649,7 +1662,7 @@ function RegisterRowModal({
             <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-3 py-3 sm:px-4 sm:py-4">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600 sm:text-[12px]">
-                  Book stages
+                  Backend register stages (starts at step 4)
                 </p>
                 <button
                   type="button"
@@ -1692,7 +1705,7 @@ function RegisterRowModal({
                     >
                       <div className="mb-2 flex items-start justify-between gap-2">
                         <span className="text-[12px] font-semibold leading-snug text-slate-800 sm:text-[13px]">
-                          {REGISTER_STAGE_LABELS[key]}
+                          {getBackendStageLabel(key, backendTrackingStages)}
                         </span>
                         {showClearButton && (
                           <button
@@ -3262,6 +3275,7 @@ export default function JobsRegisterPage() {
         <RegisterRowModal
           job={registerModalJob}
           record={resolveRegisterRecordForJob(registerModalJob, registerRecords)}
+          backendTrackingStages={backendTrackingStages}
           onClose={() => setRegisterModalJob(null)}
           onDone={(record) => {
             const canonicalJobId = registerModalJob.jobId;
