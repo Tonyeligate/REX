@@ -3,10 +3,38 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Loader2 } from "lucide-react";
-import { jobsApi, type BackendTrackingStage } from "@/lib/api";
+import { ArrowLeft, CheckCircle, Clock, Loader2, Save, XCircle } from "lucide-react";
+import { jobsApi, type BackendStatus, type BackendTrackingStage } from "@/lib/api";
 import type { Job, JobStatus } from "@/types/job";
 import type { JobStepDecision } from "@/types/job";
+
+type StepDecisionAction = "approved" | "rejected" | "pending";
+
+const STEP_DECISION_OPTIONS: Array<{
+  value: StepDecisionAction;
+  label: string;
+  helper: string;
+  Icon: typeof CheckCircle;
+}> = [
+  {
+    value: "approved",
+    label: "Approve",
+    helper: "Stage accepted and ready to progress.",
+    Icon: CheckCircle,
+  },
+  {
+    value: "rejected",
+    label: "Rejected",
+    helper: "Stage failed review and needs correction.",
+    Icon: XCircle,
+  },
+  {
+    value: "pending",
+    label: "Pending",
+    helper: "Stage is held for follow-up or missing information.",
+    Icon: Clock,
+  },
+];
 
 function stripLeadingStageNumber(label: string): string {
   return label.replace(/^\s*\d+\s*[\.\-:)]?\s*/u, "").trim();
@@ -17,10 +45,27 @@ function decisionTileClasses(decisionText: string): string {
   if (normalized.includes("accept") || normalized.includes("approve") || normalized.includes("certif")) {
     return "border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-100";
   }
-  if (normalized.includes("query")) {
+  if (normalized.includes("query") || normalized.includes("pending")) {
     return "border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100";
   }
   return "border-rose-200 bg-rose-50 text-rose-950 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-100";
+}
+
+function decisionButtonClasses(value: StepDecisionAction, selected: boolean): string {
+  const base = "rounded-lg border px-3 py-2 text-left transition-colors";
+  if (value === "approved") {
+    return selected
+      ? `${base} border-emerald-500 bg-emerald-50 text-emerald-800 ring-2 ring-emerald-500/15`
+      : `${base} border-slate-200 bg-white text-slate-600 hover:border-emerald-300 hover:bg-emerald-50/50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200`;
+  }
+  if (value === "rejected") {
+    return selected
+      ? `${base} border-rose-500 bg-rose-50 text-rose-800 ring-2 ring-rose-500/15`
+      : `${base} border-slate-200 bg-white text-slate-600 hover:border-rose-300 hover:bg-rose-50/50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200`;
+  }
+  return selected
+    ? `${base} border-amber-500 bg-amber-50 text-amber-800 ring-2 ring-amber-500/15`
+    : `${base} border-slate-200 bg-white text-slate-600 hover:border-amber-300 hover:bg-amber-50/50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200`;
 }
 
 function getDecisionLabel(decision?: JobStepDecision): string {
@@ -54,6 +99,9 @@ export default function JobDetailPage() {
   const [error, setError] = useState("");
   const [backendTrackingStages, setBackendTrackingStages] = useState<BackendTrackingStage[]>([]);
   const [selectedStageCode, setSelectedStageCode] = useState("");
+  const [decisionAction, setDecisionAction] = useState<StepDecisionAction>("approved");
+  const [decisionComment, setDecisionComment] = useState("");
+  const [savingDecision, setSavingDecision] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -102,6 +150,11 @@ export default function JobDetailPage() {
     return { line: code || "—", code };
   }, [job, workflowCurrentIndex, backendTrackingStages]);
 
+  useEffect(() => {
+    if (selectedStageCode || !currentStageSummary.code) return;
+    setSelectedStageCode(currentStageSummary.code);
+  }, [currentStageSummary.code, selectedStageCode]);
+
   const latestDecisionByStep = useMemo(() => {
     const byStep = new Map<string, JobStepDecision>();
     for (const decision of job?.stepDecisions ?? []) {
@@ -147,6 +200,35 @@ export default function JobDetailPage() {
     if (!selectedStageCode) return null;
     return latestDecisionByStep.get(selectedStageCode.trim().toLowerCase()) ?? null;
   }, [selectedStageCode, latestDecisionByStep]);
+
+  const handleSaveDecision = async () => {
+    if (!job || !selectedStageCode) {
+      setError("Select a job stage before saving a decision.");
+      return;
+    }
+
+    const comment = decisionComment.trim();
+    if ((decisionAction === "rejected" || decisionAction === "pending") && !comment) {
+      setError("Add a comment for rejected or pending decisions.");
+      return;
+    }
+
+    setSavingDecision(true);
+    setError("");
+    try {
+      const { job: updatedJob } = await jobsApi.saveStepDecision(job.jobId, {
+        stage: selectedStageCode as BackendStatus,
+        decision: decisionAction,
+        notes: comment,
+      });
+      setJob(updatedJob);
+      setDecisionComment("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save step decision.");
+    } finally {
+      setSavingDecision(false);
+    }
+  };
 
   const readOnlyRequestedBy = useMemo(() => {
     if (!job) return "—";
@@ -240,9 +322,9 @@ export default function JobDetailPage() {
         </div>
 
         <h3 className="mb-2 mt-4 text-[12px] font-semibold uppercase tracking-wide text-slate-500">
-          Backend step decision lookup
+          Enter stage decision
         </h3>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.9fr)]">
           <label className="text-[12px]">
             <span className="mb-1 block text-slate-500">Stage</span>
             <select
@@ -258,7 +340,54 @@ export default function JobDetailPage() {
               ))}
             </select>
           </label>
+
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            {STEP_DECISION_OPTIONS.map(({ value, label, helper, Icon }) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setDecisionAction(value)}
+                className={decisionButtonClasses(value, decisionAction === value)}
+              >
+                <span className="flex items-center gap-2 text-[12px] font-bold">
+                  <Icon size={14} />
+                  {label}
+                </span>
+                <span className="mt-1 block text-[10px] leading-snug opacity-75">
+                  {helper}
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
+
+        <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+          <label className="text-[12px]">
+            <span className="mb-1 block text-slate-500">
+              Comment {decisionAction === "approved" ? "(optional)" : "(required)"}
+            </span>
+            <textarea
+              value={decisionComment}
+              onChange={(event) => setDecisionComment(event.target.value)}
+              rows={3}
+              placeholder="Add notes for this stage decision..."
+              className="w-full resize-none rounded-md border border-slate-300 bg-white px-3 py-2 text-[12px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#F07000]/20 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={handleSaveDecision}
+            disabled={savingDecision || !selectedStageCode}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#F07000] px-4 text-[12px] font-semibold text-white shadow-sm hover:bg-[#D06000] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {savingDecision ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+            Save Decision
+          </button>
+        </div>
+
+        <h3 className="mb-2 mt-4 text-[12px] font-semibold uppercase tracking-wide text-slate-500">
+          Selected stage decision
+        </h3>
 
         {selectedStageCode ? (
           <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-[12px] dark:border-slate-700 dark:bg-slate-800/50">

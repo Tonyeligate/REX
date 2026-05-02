@@ -25,6 +25,7 @@ const LOCAL_URL = "/api"; // Local Next.js API routes
 /* ── Member metadata helper (extra fields not in backend Clients schema) ── */
 const MEMBER_META_KEY = "_member_meta_by_client_id";
 const REGISTER_FIELDS_KEY = "_register_fields_by_job_id";
+const STEP_DECISIONS_KEY = "_job_step_decisions_by_job_id";
 
 interface BackendClient {
   id: number;
@@ -118,6 +119,51 @@ function readRegisterFieldsMap(): Record<string, JobRegisterRecord> {
 function writeRegisterFieldsMap(data: Record<string, JobRegisterRecord>) {
   if (typeof window === "undefined") return;
   localStorage.setItem(REGISTER_FIELDS_KEY, JSON.stringify(data));
+}
+
+function readLocalStepDecisionMap(): Record<string, JobStepDecision[]> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(STEP_DECISIONS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeLocalStepDecisionMap(data: Record<string, JobStepDecision[]>) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(STEP_DECISIONS_KEY, JSON.stringify(data));
+}
+
+function upsertLocalStepDecision(jobIds: string[], decision: JobStepDecision) {
+  const keys = Array.from(
+    new Set(jobIds.map((value) => value.trim()).filter(Boolean))
+  );
+  if (keys.length === 0) return;
+
+  const records = readLocalStepDecisionMap();
+  const timestamp = new Date().toISOString();
+  const nextDecision = {
+    ...decision,
+    id: decision.id || -Date.now(),
+    createdAt: decision.createdAt || timestamp,
+    updatedAt: timestamp,
+  };
+
+  for (const key of keys) {
+    const existing = records[key] ?? [];
+    records[key] = [
+      ...existing.filter(
+        (item) => item.step.trim().toLowerCase() !== nextDecision.step.trim().toLowerCase()
+      ),
+      nextDecision,
+    ];
+  }
+
+  writeLocalStepDecisionMap(records);
 }
 
 function extractMemberMetaFromPayload(
@@ -756,6 +802,15 @@ export function mapBackendJob(
     createdAt: decision.created_at,
     updatedAt: decision.updated_at,
   }));
+  const localDecisionRecords = readLocalStepDecisionMap();
+  const localDecisionKeys = [String(bj.id), bj.rn, bj.regional_number ?? ""]
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const localStepDecisions = localDecisionKeys.flatMap(
+    (key) => localDecisionRecords[key] ?? []
+  );
+  const allMappedStepDecisions = [...mappedStepDecisions, ...localStepDecisions];
+
   for (const decision of stepDecisions) {
     const decisionStepNumber = STATUS_STEP_MAP[decision.step];
     if (!decisionStepNumber) continue;
@@ -879,7 +934,7 @@ export function mapBackendJob(
     batchName: detail.batch_name || undefined,
     description: detail.description || undefined,
     documents: detail.documents || undefined,
-    stepDecisions: mappedStepDecisions,
+    stepDecisions: allMappedStepDecisions,
     steps,
     timeline,
     createdAt: bj.created_at,
@@ -1359,7 +1414,13 @@ function mapListItemToFallbackJob(item: BackendJobListItem) {
 
 async function transitionJobStatus(
   rnOrId: string,
-  payload: { status: BackendStatus; notes?: string; query_reason?: string }
+  payload: {
+    status: BackendStatus;
+    notes?: string;
+    query_reason?: string;
+    step?: BackendStatus;
+    decision?: "approved" | "rejected" | "pending";
+  }
 ): Promise<void> {
   const lookupKey = await resolveBackendJobRnForWrite(rnOrId);
   const candidates = await getResolvedJobPathCandidates(lookupKey);
@@ -1823,6 +1884,56 @@ export const jobsApi = {
       });
     }
     return jobsApi.get(rnOrId);
+  },
+
+  saveStepDecision: async (
+    rnOrId: string,
+    payload: {
+      stage: BackendStatus;
+      decision: "approved" | "rejected" | "pending";
+      notes?: string;
+    }
+  ) => {
+    const notes = payload.notes?.trim() ?? "";
+    const lookupKey = await resolveBackendJobRnForWrite(rnOrId);
+    const updated = await requestJobEndpoint<BackendJobDetail>(
+      lookupKey,
+      "/",
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          status: payload.stage,
+          ...(payload.decision === "approved" ? {} : { query_reason: notes }),
+        }),
+      }
+    );
+
+    upsertLocalStepDecision(
+      [
+        rnOrId,
+        lookupKey,
+        String(updated.id),
+        updated.rn,
+        updated.regional_number ?? "",
+      ],
+      {
+        id: -Date.now(),
+        step: payload.stage,
+        stepDisplay: payload.stage.replace(/_/g, " "),
+        decision: payload.decision,
+        decisionDisplay:
+          payload.decision === "approved"
+            ? "Approved"
+            : payload.decision === "rejected"
+              ? "Rejected"
+              : "Pending",
+        comment: notes || undefined,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }
+    );
+
+    return { job: mapBackendJob(updated) };
   },
 
   addTimeline: async (
