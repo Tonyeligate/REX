@@ -18,7 +18,12 @@ import {
   XCircle,
   type LucideIcon,
 } from "lucide-react";
-import { jobsApi, type BackendStatus, type BackendTrackingStage } from "@/lib/api";
+import {
+  getStepDecisionAliasesForStatus,
+  jobsApi,
+  type BackendStatus,
+  type BackendTrackingStage,
+} from "@/lib/api";
 import { showErrorAlert, showSuccessAlert } from "@/lib/sweet-alert";
 import type { Job, JobStatus } from "@/types/job";
 import type { JobStepDecision } from "@/types/job";
@@ -116,6 +121,17 @@ function getDecisionState(decision?: JobStepDecision): DecisionState {
   if (normalized.includes("pending") || normalized.includes("query")) return "pending";
   if (normalized.includes("approve") || normalized.includes("accept") || normalized.includes("certif")) return "approved";
   return "none";
+}
+
+function getLatestDecisionForStage(
+  decisionsByStep: Map<string, JobStepDecision>,
+  stageCode: string
+): JobStepDecision | undefined {
+  for (const alias of getStepDecisionAliasesForStatus(stageCode)) {
+    const decision = decisionsByStep.get(alias.trim().toLowerCase());
+    if (decision) return decision;
+  }
+  return undefined;
 }
 
 function backendStatusBannerClasses(status: JobStatus): string {
@@ -258,7 +274,7 @@ export default function JobDetailPage() {
       return workflowCurrentIndex;
     }
     const blockingIndex = backendTrackingStages.findIndex((stage) => {
-      const decision = latestDecisionByStep.get(stage.code.trim().toLowerCase());
+      const decision = getLatestDecisionForStage(latestDecisionByStep, stage.code);
       const state = getDecisionState(decision);
       return state === "pending" || state === "rejected";
     });
@@ -295,7 +311,7 @@ export default function JobDetailPage() {
   const backendDecisionTiles = useMemo(() => {
     return backendTrackingStages
       .map((stage) => {
-        const decision = latestDecisionByStep.get(stage.code.trim().toLowerCase());
+        const decision = getLatestDecisionForStage(latestDecisionByStep, stage.code);
         if (!decision) return null;
         return {
           code: stage.code,
@@ -316,7 +332,7 @@ export default function JobDetailPage() {
 
   const selectedStageDecision = useMemo(() => {
     if (!selectedStageCode) return null;
-    return latestDecisionByStep.get(selectedStageCode.trim().toLowerCase()) ?? null;
+    return getLatestDecisionForStage(latestDecisionByStep, selectedStageCode) ?? null;
   }, [selectedStageCode, latestDecisionByStep]);
 
   const stageRuleViolation = useCallback(
@@ -330,21 +346,21 @@ export default function JobDetailPage() {
       if (targetIndex < 0) return "Select a valid workflow stage before saving a decision.";
 
       const blockingIndex = backendTrackingStages.findIndex((stage) => {
-        const decision = latestDecisionByStep.get(stage.code.trim().toLowerCase());
+        const decision = getLatestDecisionForStage(latestDecisionByStep, stage.code);
         const state = getDecisionState(decision);
         return state === "pending" || state === "rejected";
       });
 
       if (blockingIndex >= 0 && blockingIndex !== targetIndex) {
         const blockingStage = backendTrackingStages[blockingIndex];
-        const blockingDecision = latestDecisionByStep.get(blockingStage.code.trim().toLowerCase());
+        const blockingDecision = getLatestDecisionForStage(latestDecisionByStep, blockingStage.code);
         const state = getDecisionState(blockingDecision);
         return `${getStageDisplayName(blockingStage)} is ${state}. Resolve that stage before moving to another stage.`;
       }
 
       for (let index = 0; index < targetIndex; index += 1) {
         const previousStage = backendTrackingStages[index];
-        const previousDecision = latestDecisionByStep.get(previousStage.code.trim().toLowerCase());
+        const previousDecision = getLatestDecisionForStage(latestDecisionByStep, previousStage.code);
         const previousState =
           getDecisionState(previousDecision) === "none" && index < workflowCurrentIndex
             ? "approved"
@@ -409,7 +425,8 @@ export default function JobDetailPage() {
       });
       setJob(updatedJob);
       setDecisionComment("");
-      void showSuccessAlert("Stage decision saved successfully.");
+      await showSuccessAlert("Stage decision saved successfully.");
+      await load();
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Failed to save stage decision.";
       setError(errorMessage);
@@ -548,7 +565,7 @@ export default function JobDetailPage() {
               backendTrackingStages.map((stage, index) => {
                 const isCompleted = workflowDisplayIndex >= 0 && index < workflowDisplayIndex;
                 const isCurrent = workflowDisplayIndex >= 0 && index === workflowDisplayIndex;
-                const decision = latestDecisionByStep.get(stage.code.trim().toLowerCase());
+                const decision = getLatestDecisionForStage(latestDecisionByStep, stage.code);
                 const stageName = getStageDisplayName(stage);
 
                 return (
