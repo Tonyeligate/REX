@@ -277,6 +277,31 @@ async function parseResponsePayload(res: Response): Promise<unknown> {
   }
 }
 
+function flattenPayloadMessages(payload: unknown): string[] {
+  if (typeof payload === "string") {
+    const trimmed = payload.trim();
+    return trimmed ? [trimmed] : [];
+  }
+
+  if (Array.isArray(payload)) {
+    return payload.flatMap(flattenPayloadMessages);
+  }
+
+  if (payload && typeof payload === "object") {
+    return Object.entries(payload as Record<string, unknown>).flatMap(([key, value]) => {
+      const nested = flattenPayloadMessages(value);
+      if (nested.length === 0) return [];
+      if (key === "non_field_errors" || key === "detail" || key === "error" || key === "message") {
+        return nested;
+      }
+      return nested.map((message) => `${key}: ${message}`);
+    });
+  }
+
+  const value = String(payload ?? "").trim();
+  return value ? [value] : [];
+}
+
 function extractPayloadMessage(payload: unknown, status: number): string {
   if (payload && typeof payload === "object") {
     const body = payload as Record<string, unknown>;
@@ -288,11 +313,7 @@ function extractPayloadMessage(payload: unknown, status: number): string {
 
     if (direct) return direct;
 
-    const flattened = Object.values(body)
-      .flatMap((value) => (Array.isArray(value) ? value : [value]))
-      .map((value) => String(value ?? "").trim())
-      .filter(Boolean)
-      .join(", ");
+    const flattened = flattenPayloadMessages(body).join(", ");
 
     if (flattened) return flattened;
   }
@@ -1432,13 +1453,18 @@ async function postJobStepDecision(
         i === candidates.length - 1 && j === encodedVariants.length - 1;
 
       try {
+        const step = getBackendStepDecisionSlug(payload.step);
         // Use Railway Django via rewrite (`/backend-api`), not `/api` — there is no
         // Next.js route for step-decisions (unlike `/api/jobs/[id]/transition`).
         const detail = await backendRequest<BackendJobDetail>(
           `/jobs/${encodedCandidate}/step-decisions/`,
           {
             method: "POST",
-            body: JSON.stringify(payload),
+            body: JSON.stringify({
+              ...payload,
+              step,
+              comment: payload.notes ?? "",
+            }),
           }
         );
         return detail;
@@ -1543,7 +1569,11 @@ const BACKEND_STEP_DECISION_SLUG_BY_STAGE: Partial<Record<BackendStatus, string>
   delivered_to_client: "9_delivered_to_client",
 };
 
-function getStepDecisionAliasesForStatus(status: BackendStatus): string[] {
+function getBackendStepDecisionSlug(status: BackendStatus): BackendStatus {
+  return (BACKEND_STEP_DECISION_SLUG_BY_STAGE[status] ?? status) as BackendStatus;
+}
+
+export function getStepDecisionAliasesForStatus(status: BackendStatus | string): string[] {
   const aliases = new Set<string>();
   const add = (value: string) => {
     const v = value.trim().toLowerCase();
@@ -1551,7 +1581,7 @@ function getStepDecisionAliasesForStatus(status: BackendStatus): string[] {
   };
 
   add(status);
-  const normalized = BACKEND_STEP_DECISION_SLUG_BY_STAGE[status];
+  const normalized = BACKEND_STEP_DECISION_SLUG_BY_STAGE[status as BackendStatus];
   if (normalized) add(normalized);
 
   if (status === "6_examination") {
