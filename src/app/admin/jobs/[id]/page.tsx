@@ -3,12 +3,33 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, CheckCircle, Clock, Loader2, Save, XCircle } from "lucide-react";
+import {
+  ArrowLeft,
+  BriefcaseBusiness,
+  CalendarDays,
+  CheckCircle,
+  ClipboardList,
+  Clock,
+  Hash,
+  Loader2,
+  MapPin,
+  Save,
+  UserRound,
+  XCircle,
+  type LucideIcon,
+} from "lucide-react";
 import { jobsApi, type BackendStatus, type BackendTrackingStage } from "@/lib/api";
 import type { Job, JobStatus } from "@/types/job";
 import type { JobStepDecision } from "@/types/job";
 
 type StepDecisionAction = "approved" | "rejected" | "pending";
+
+type DetailItemProps = {
+  icon: LucideIcon;
+  label: string;
+  value?: string;
+  mono?: boolean;
+};
 
 const STEP_DECISION_OPTIONS: Array<{
   value: StepDecisionAction;
@@ -87,6 +108,62 @@ function backendStatusBannerClasses(status: JobStatus): string {
     return "border-slate-300 bg-slate-100 text-slate-800 dark:border-slate-600 dark:bg-slate-800/80 dark:text-slate-100";
   }
   return "border-sky-200 bg-sky-50 text-sky-950 dark:border-sky-900/50 dark:bg-sky-950/35 dark:text-sky-100";
+}
+
+function statusPillClasses(status: JobStatus): string {
+  if (status === "COMPLETED") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-200";
+  }
+  if (status === "QUERIED") {
+    return "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200";
+  }
+  if (status === "CANCELLED") {
+    return "border-slate-300 bg-slate-100 text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200";
+  }
+  return "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-900/50 dark:bg-orange-950/35 dark:text-orange-200";
+}
+
+function formatDate(value?: string): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function formatDateTime(value?: string): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function DetailItem({ icon: Icon, label, value, mono = false }: DetailItemProps) {
+  return (
+    <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-700 dark:bg-slate-900/50">
+      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        <Icon size={13} />
+        {label}
+      </div>
+      <p
+        className={`mt-2 min-h-[20px] truncate text-[13px] font-semibold text-foreground ${
+          mono ? "font-mono" : ""
+        }`}
+        title={value || "—"}
+      >
+        {value || "—"}
+      </p>
+    </div>
+  );
 }
 
 export default function JobDetailPage() {
@@ -235,6 +312,19 @@ export default function JobDetailPage() {
     return job.requestedByName?.trim() || "—";
   }, [job]);
 
+  const progressPercent = useMemo(() => {
+    if (workflowCurrentIndex < 0 || backendTrackingStages.length === 0) return 0;
+    return Math.round(((workflowCurrentIndex + 1) / backendTrackingStages.length) * 100);
+  }, [workflowCurrentIndex, backendTrackingStages.length]);
+
+  const selectedStageLabel = useMemo(() => {
+    if (!selectedStageCode) return "";
+    const stage = backendTrackingStages.find(
+      (item) => item.code.trim().toLowerCase() === selectedStageCode.trim().toLowerCase()
+    );
+    return stage ? stripLeadingStageNumber(stage.label) || stage.code : selectedStageCode;
+  }, [selectedStageCode, backendTrackingStages]);
+
   if (loading) {
     return (
       <div className="p-6 text-center text-muted-foreground">
@@ -256,180 +346,278 @@ export default function JobDetailPage() {
   }
 
   return (
-    <div className="space-y-4 p-4 md:p-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <button
-          type="button"
-          onClick={() => router.push("/admin/jobs")}
-          className="inline-flex items-center gap-2 rounded-md border border-slate-300 px-3 py-1.5 text-[12px] font-semibold hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-800"
-        >
-          <ArrowLeft size={14} />
-          Back to jobs
-        </button>
-        <h1 className="text-[18px] font-bold text-foreground">Job {job.jobId}</h1>
-      </div>
-
-      {error && <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700">{error}</div>}
-
-      <div className={`rounded-xl border px-4 py-3 ${backendStatusBannerClasses(job.status)}`}>
-        <p className="text-[11px] font-semibold uppercase tracking-wide opacity-90">Job status (backend)</p>
-        <p className="mt-1 text-[15px] font-bold">{job.statusDisplay?.trim() || "—"}</p>
-        <p className="mt-1 text-[12px] leading-snug opacity-90">{currentStageSummary.line}</p>
-        <p className="mt-2 text-[10px] font-mono opacity-70">
-          Code: {String(job.backendStatus ?? "").trim() || "—"}
-        </p>
-      </div>
-
-      <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900/70">
-        <h2 className="mb-3 text-[14px] font-semibold">Job Summary</h2>
-        <div className="grid grid-cols-1 gap-2 text-[12px] text-slate-700 dark:text-slate-200 md:grid-cols-3">
-          <p><span className="text-slate-400">Client:</span> {job.clientName || "—"}</p>
-          <p><span className="text-slate-400">Regional Number:</span> {job.regionalNumber || "—"}</p>
-          <p><span className="text-slate-400">Requested By:</span> {readOnlyRequestedBy}</p>
-          <p><span className="text-slate-400">Created:</span> {new Date(job.createdAt).toLocaleDateString()}</p>
-        </div>
-      </section>
-
-      <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900/70">
-        <h2 className="mb-3 text-[14px] font-semibold">Progress</h2>
-        <p className="mb-3 text-[12px] text-muted-foreground">
-          Stage list and decisions below now come directly from backend tracking stages and backend step decisions.
-        </p>
-        <div className="overflow-x-auto pb-1">
-          <div className="inline-flex min-w-full items-center gap-2">
-            {backendTrackingStages.map((stage, index) => {
-              const state =
-                workflowCurrentIndex < 0
-                  ? "upcoming"
-                  : index <= workflowCurrentIndex
-                    ? "completed"
-                    : "upcoming";
-              return (
-                <span
-                  key={stage.code}
-                  className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] ${
-                    state === "completed"
-                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                      : "border-slate-200 bg-white text-slate-500"
-                  }`}
-                >
-                  <span className="font-semibold">{stage.order}.</span>
-                  <span>{stage.label}</span>
-                </span>
-              );
-            })}
-          </div>
-        </div>
-
-        <h3 className="mb-2 mt-4 text-[12px] font-semibold uppercase tracking-wide text-slate-500">
-          Enter stage decision
-        </h3>
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.9fr)]">
-          <label className="text-[12px]">
-            <span className="mb-1 block text-slate-500">Stage</span>
-            <select
-              value={selectedStageCode}
-              onChange={(e) => setSelectedStageCode(e.target.value)}
-              className="h-9 w-full rounded-md border border-slate-300 bg-white px-2 text-[12px] dark:border-slate-600 dark:bg-slate-800"
+    <div className="admin-future-bg space-y-4">
+      <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.07)] dark:border-slate-700 dark:bg-slate-900/80 md:px-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <button
+              type="button"
+              onClick={() => router.push("/admin/jobs")}
+              className="mb-3 inline-flex h-9 items-center gap-2 rounded-full border border-slate-300 bg-white px-3 text-[12px] font-semibold text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
             >
-              <option value="">Select backend stage…</option>
-              {backendTrackingStages.map((stage) => (
-                <option key={stage.code} value={stage.code}>
-                  {stage.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-            {STEP_DECISION_OPTIONS.map(({ value, label, helper, Icon }) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setDecisionAction(value)}
-                className={decisionButtonClasses(value, decisionAction === value)}
-              >
-                <span className="flex items-center gap-2 text-[12px] font-bold">
-                  <Icon size={14} />
-                  {label}
-                </span>
-                <span className="mt-1 block text-[10px] leading-snug opacity-75">
-                  {helper}
-                </span>
-              </button>
-            ))}
+              <ArrowLeft size={14} />
+              Back to jobs
+            </button>
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <h1 className="min-w-0 truncate text-[22px] font-[900] leading-tight text-foreground">
+                Job {job.jobId}
+              </h1>
+              <span className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-1 text-[11px] font-bold ${statusPillClasses(job.status)}`}>
+                {job.statusDisplay?.trim() || job.status}
+              </span>
+            </div>
+            <p className="mt-2 max-w-3xl text-[13px] leading-relaxed text-muted-foreground">
+              {job.description?.trim() || "No job description has been recorded."}
+            </p>
           </div>
-        </div>
 
-        <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-          <label className="text-[12px]">
-            <span className="mb-1 block text-slate-500">
-              Comment {decisionAction === "approved" ? "(optional)" : "(required)"}
-            </span>
-            <textarea
-              value={decisionComment}
-              onChange={(event) => setDecisionComment(event.target.value)}
-              rows={3}
-              placeholder="Add notes for this stage decision..."
-              className="w-full resize-none rounded-md border border-slate-300 bg-white px-3 py-2 text-[12px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#F07000]/20 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-            />
-          </label>
-          <button
-            type="button"
-            onClick={handleSaveDecision}
-            disabled={savingDecision || !selectedStageCode}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#F07000] px-4 text-[12px] font-semibold text-white shadow-sm hover:bg-[#D06000] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {savingDecision ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-            Save Decision
-          </button>
-        </div>
-
-        <h3 className="mb-2 mt-4 text-[12px] font-semibold uppercase tracking-wide text-slate-500">
-          Selected stage decision
-        </h3>
-
-        {selectedStageCode ? (
-          <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-[12px] dark:border-slate-700 dark:bg-slate-800/50">
-            {selectedStageDecision ? (
-              <>
-                <p><span className="text-slate-500">Decision:</span> {getDecisionLabel(selectedStageDecision)}</p>
-                <p className="mt-1"><span className="text-slate-500">Comment:</span> {selectedStageDecision.comment?.trim() || "—"}</p>
-                <p className="mt-1"><span className="text-slate-500">Updated:</span> {selectedStageDecision.updatedAt || selectedStageDecision.createdAt || "—"}</p>
-              </>
-            ) : (
-              <p className="text-muted-foreground">No backend step decision has been recorded for this stage yet.</p>
-            )}
-          </div>
-        ) : null}
-
-        {backendDecisionTiles.length > 0 ? (
-          <div className="mt-4">
-            <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              Backend step decisions
-            </h4>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-              {backendDecisionTiles.map((tile) => (
-                <div
-                  key={tile.code}
-                  className={`rounded-lg border p-3 text-[12px] ${decisionTileClasses(tile.decisionLabel)}`}
-                >
-                  <p className="font-semibold leading-tight">{tile.label}</p>
-                  <p className="mt-1 text-[11px] font-bold uppercase tracking-wide opacity-90">
-                    {tile.decisionLabel}
-                  </p>
-                  <p className="mt-2 text-[11px] leading-relaxed opacity-95">
-                    {tile.comment || "—"}
-                  </p>
-                  {tile.decidedAt ? (
-                    <p className="mt-2 text-[10px] opacity-70">Updated: {tile.decidedAt}</p>
-                  ) : null}
-                </div>
-              ))}
+          <div className={`w-full rounded-xl border px-4 py-3 lg:max-w-[360px] ${backendStatusBannerClasses(job.status)}`}>
+            <p className="text-[11px] font-semibold uppercase tracking-wide opacity-80">Current backend stage</p>
+            <p className="mt-1 text-[15px] font-bold">{currentStageSummary.line}</p>
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/60 dark:bg-black/20">
+              <div
+                className="h-full rounded-full bg-current transition-all"
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
+            <div className="mt-2 flex items-center justify-between gap-3 text-[10px] font-mono opacity-75">
+              <span className="truncate">{String(job.backendStatus ?? "").trim() || "no_code"}</span>
+              <span>{progressPercent}%</span>
             </div>
           </div>
-        ) : null}
+        </div>
+      </div>
+
+      {error && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-[12px] font-semibold text-red-700 dark:border-red-900/50 dark:bg-red-950/35 dark:text-red-200">
+          {error}
+        </div>
+      )}
+
+      <section className="admin-surface-elevated rounded-2xl p-4 md:p-5">
+        <div className="mb-4 flex items-center gap-2">
+          <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-orange-50 text-[#F07000] dark:bg-orange-950/35 dark:text-orange-200">
+            <BriefcaseBusiness size={17} />
+          </span>
+          <div>
+            <h2 className="text-[15px] font-bold text-foreground">Job Summary</h2>
+            <p className="text-[12px] text-muted-foreground">Key identifiers and ownership details.</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <DetailItem icon={UserRound} label="Client" value={job.clientName} />
+          <DetailItem icon={MapPin} label="Regional number" value={job.regionalNumber} mono />
+          <DetailItem icon={ClipboardList} label="Requested by" value={readOnlyRequestedBy} />
+          <DetailItem icon={CalendarDays} label="Created" value={formatDate(job.createdAt)} />
+          <DetailItem icon={Hash} label="Job ID" value={job.jobId} mono />
+          <DetailItem icon={BriefcaseBusiness} label="Job type" value={job.jobType} />
+          <DetailItem icon={Clock} label="Updated" value={formatDateTime(job.updatedAt)} />
+          <DetailItem icon={CheckCircle} label="Recorded decisions" value={String(backendDecisionTiles.length)} />
+        </div>
       </section>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
+        <section className="admin-surface-elevated rounded-2xl p-4 md:p-5">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 className="text-[15px] font-bold text-foreground">Workflow Progress</h2>
+              <p className="mt-1 text-[12px] text-muted-foreground">
+                Backend tracking stages are shown in order with the current stage highlighted.
+              </p>
+            </div>
+            <span className="inline-flex w-fit items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-bold text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+              {backendTrackingStages.length} stages
+            </span>
+          </div>
+
+          <div className="space-y-2">
+            {backendTrackingStages.length > 0 ? (
+              backendTrackingStages.map((stage, index) => {
+                const isCompleted = workflowCurrentIndex >= 0 && index < workflowCurrentIndex;
+                const isCurrent = workflowCurrentIndex >= 0 && index === workflowCurrentIndex;
+                const decision = latestDecisionByStep.get(stage.code.trim().toLowerCase());
+                const stageName = stripLeadingStageNumber(stage.label) || stage.code;
+
+                return (
+                  <div
+                    key={stage.code}
+                    className={`grid grid-cols-[32px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border px-3 py-3 text-[12px] transition-colors ${
+                      isCurrent
+                        ? "border-orange-300 bg-orange-50/80 dark:border-orange-900/60 dark:bg-orange-950/30"
+                        : isCompleted
+                          ? "border-emerald-200 bg-emerald-50/60 dark:border-emerald-900/50 dark:bg-emerald-950/20"
+                          : "border-slate-200 bg-white/70 dark:border-slate-700 dark:bg-slate-900/45"
+                    }`}
+                  >
+                    <span
+                      className={`inline-flex h-8 w-8 items-center justify-center rounded-full text-[11px] font-[900] ${
+                        isCurrent
+                          ? "bg-[#F07000] text-white"
+                          : isCompleted
+                            ? "bg-emerald-600 text-white"
+                            : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300"
+                      }`}
+                    >
+                      {isCompleted ? <CheckCircle size={15} /> : stage.order}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate font-bold text-foreground" title={stageName}>
+                        {stageName}
+                      </p>
+                      <p className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">
+                        {stage.code}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {decision ? (
+                        <span className={`hidden rounded-full border px-2 py-0.5 text-[10px] font-bold sm:inline-flex ${decisionTileClasses(getDecisionLabel(decision))}`}>
+                          {getDecisionLabel(decision)}
+                        </span>
+                      ) : null}
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                          isCurrent
+                            ? "bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-200"
+                            : isCompleted
+                              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200"
+                              : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300"
+                        }`}
+                      >
+                        {isCurrent ? "Current" : isCompleted ? "Passed" : "Pending"}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-[13px] text-muted-foreground dark:border-slate-700 dark:bg-slate-900/40">
+                Backend tracking stages are not available.
+              </div>
+            )}
+          </div>
+        </section>
+
+        <aside className="space-y-4">
+          <section className="admin-surface-elevated rounded-2xl p-4 md:p-5">
+            <div className="mb-4">
+              <h2 className="text-[15px] font-bold text-foreground">Stage Decision</h2>
+              <p className="mt-1 text-[12px] text-muted-foreground">Record the latest review outcome for a backend stage.</p>
+            </div>
+
+            <label className="block text-[12px]">
+              <span className="mb-1.5 block font-semibold text-slate-600 dark:text-slate-300">Stage</span>
+              <select
+                value={selectedStageCode}
+                onChange={(e) => setSelectedStageCode(e.target.value)}
+                className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-[12px] text-foreground outline-none transition focus:ring-2 focus:ring-[#F07000]/20 dark:border-slate-600 dark:bg-slate-900"
+              >
+                <option value="">Select backend stage…</option>
+                {backendTrackingStages.map((stage) => (
+                  <option key={stage.code} value={stage.code}>
+                    {stage.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="mt-3 grid grid-cols-1 gap-2">
+              {STEP_DECISION_OPTIONS.map(({ value, label, helper, Icon }) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setDecisionAction(value)}
+                  className={decisionButtonClasses(value, decisionAction === value)}
+                >
+                  <span className="flex items-center gap-2 text-[12px] font-bold">
+                    <Icon size={14} />
+                    {label}
+                  </span>
+                  <span className="mt-1 block text-[10px] leading-snug opacity-75">{helper}</span>
+                </button>
+              ))}
+            </div>
+
+            <label className="mt-3 block text-[12px]">
+              <span className="mb-1.5 block font-semibold text-slate-600 dark:text-slate-300">
+                Comment {decisionAction === "approved" ? "(optional)" : "(required)"}
+              </span>
+              <textarea
+                value={decisionComment}
+                onChange={(event) => setDecisionComment(event.target.value)}
+                rows={4}
+                placeholder="Add notes for this stage decision..."
+                className="w-full resize-none rounded-lg border border-slate-300 bg-white px-3 py-2 text-[12px] text-foreground outline-none transition focus:ring-2 focus:ring-[#F07000]/20 dark:border-slate-600 dark:bg-slate-900"
+              />
+            </label>
+
+            <button
+              type="button"
+              onClick={handleSaveDecision}
+              disabled={savingDecision || !selectedStageCode}
+              className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#F07000] px-4 text-[12px] font-semibold text-white shadow-sm transition-colors hover:bg-[#D06000] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {savingDecision ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+              Save Decision
+            </button>
+          </section>
+
+          <section className="admin-surface-elevated rounded-2xl p-4 md:p-5">
+            <h2 className="text-[15px] font-bold text-foreground">Selected Stage</h2>
+            <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/80 p-3 text-[12px] dark:border-slate-700 dark:bg-slate-900/45">
+              {selectedStageCode ? (
+                selectedStageDecision ? (
+                  <div className="space-y-2">
+                    <p className="font-bold text-foreground">{selectedStageLabel}</p>
+                    <p>
+                      <span className="text-muted-foreground">Decision:</span>{" "}
+                      <span className="font-semibold">{getDecisionLabel(selectedStageDecision)}</span>
+                    </p>
+                    <p className="leading-relaxed">
+                      <span className="text-muted-foreground">Comment:</span>{" "}
+                      {selectedStageDecision.comment?.trim() || "—"}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Updated {formatDateTime(selectedStageDecision.updatedAt || selectedStageDecision.createdAt)}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground">
+                    No backend step decision has been recorded for {selectedStageLabel || "this stage"} yet.
+                  </p>
+                )
+              ) : (
+                <p className="text-muted-foreground">Select a stage to review its latest decision.</p>
+              )}
+            </div>
+          </section>
+
+          {backendDecisionTiles.length > 0 ? (
+            <section className="admin-surface-elevated rounded-2xl p-4 md:p-5">
+              <h2 className="text-[15px] font-bold text-foreground">Decision History</h2>
+              <div className="mt-3 space-y-2">
+                {backendDecisionTiles.map((tile) => (
+                  <div
+                    key={tile.code}
+                    className={`rounded-xl border p-3 text-[12px] ${decisionTileClasses(tile.decisionLabel)}`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="min-w-0 font-semibold leading-tight">{tile.label}</p>
+                      <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide opacity-90">
+                        {tile.decisionLabel}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-[11px] leading-relaxed opacity-95">{tile.comment || "—"}</p>
+                    {tile.decidedAt ? (
+                      <p className="mt-2 text-[10px] opacity-70">Updated {formatDateTime(tile.decidedAt)}</p>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
+        </aside>
+      </div>
     </div>
   );
 }

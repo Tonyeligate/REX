@@ -20,6 +20,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     () => pathname === "/admin/jobs" || pathname === "/admin/jobs/tracking",
     [pathname]
   );
+  const isJobDetailPage = useMemo(
+    () =>
+      pathname.startsWith("/admin/jobs/") &&
+      pathname !== "/admin/jobs/new" &&
+      pathname !== "/admin/jobs/tracking",
+    [pathname]
+  );
+  const sidebarMode = isWideRegisterPage || isJobDetailPage ? "drawer" : "persistent";
   const hideFooterOnPage = useMemo(() => pathname === "/admin/jobs", [pathname]);
 
   useEffect(() => {
@@ -58,20 +66,26 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <button
           type="button"
           aria-label="Close sidebar"
-          className="fixed inset-0 z-[55] bg-black/30 backdrop-blur-[1px] md:hidden"
+          className={`fixed inset-0 z-[55] bg-black/30 backdrop-blur-[1px] ${
+            sidebarMode === "drawer" ? "" : "md:hidden"
+          }`}
           onClick={() => setSidebarOpen(false)}
         />
       )}
       <div
         className={`fixed left-0 top-0 z-[60] h-screen w-[280px] transition-transform duration-200 ease-out ${
-          sidebarOpen ? "translate-x-0" : "-translate-x-full"
+          sidebarOpen
+            ? "translate-x-0"
+            : sidebarMode === "drawer"
+              ? "-translate-x-full"
+              : "-translate-x-full md:translate-x-0"
         }`}
       >
         <AppSidebar onClose={() => setSidebarOpen(false)} />
       </div>
       <div
-        className={`flex min-h-screen flex-1 flex-col app-main-panel transition-[margin] duration-200 ease-out ${
-          sidebarOpen ? "md:ml-[280px]" : "ml-0"
+        className={`ml-0 flex min-h-screen flex-1 flex-col app-main-panel transition-[margin] duration-200 ease-out ${
+          sidebarMode === "drawer" ? "" : "md:ml-[280px]"
         }`}
       >
         <AppHeader
