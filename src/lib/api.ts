@@ -1407,6 +1407,58 @@ async function transitionJobStatus(
     : new Error("Unable to transition job.");
 }
 
+/** Persist StepDecision + optional status (ls-portal POST /jobs/<rn>/step-decisions/). */
+async function postJobStepDecision(
+  rnOrId: string,
+  payload: {
+    status: BackendStatus;
+    notes?: string;
+    query_reason?: string;
+    step: BackendStatus;
+    decision: "approved" | "rejected" | "pending";
+  }
+): Promise<BackendJobDetail> {
+  const lookupKey = await resolveBackendJobRnForWrite(rnOrId);
+  const candidates = await getResolvedJobPathCandidates(lookupKey);
+  let lastError: unknown;
+
+  for (let i = 0; i < candidates.length; i += 1) {
+    const candidate = candidates[i];
+    const encodedVariants = getEncodedJobPathVariants(candidate);
+
+    for (let j = 0; j < encodedVariants.length; j += 1) {
+      const encodedCandidate = encodedVariants[j];
+      const isLastAttempt =
+        i === candidates.length - 1 && j === encodedVariants.length - 1;
+
+      try {
+        // Use Railway Django via rewrite (`/backend-api`), not `/api` — there is no
+        // Next.js route for step-decisions (unlike `/api/jobs/[id]/transition`).
+        const detail = await backendRequest<BackendJobDetail>(
+          `/jobs/${encodedCandidate}/step-decisions/`,
+          {
+            method: "POST",
+            body: JSON.stringify(payload),
+          }
+        );
+        return detail;
+      } catch (err) {
+        lastError = err;
+        const message = err instanceof Error ? err.message : "";
+        const shouldTryNext =
+          isLikelyNotFoundError(message) || isMethodNotAllowedError(message);
+        if (isLastAttempt || !shouldTryNext) {
+          throw err;
+        }
+      }
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Unable to save step decision.");
+}
+
 const PATCHABLE_WORKFLOW_STATUSES = new Set<BackendStatus>([
   "1_rnr",
   "2_regional_number",
@@ -1465,20 +1517,77 @@ function getNextPatchStatusForWorkflow(current: BackendStatus): BackendStatus | 
   return PATCH_STATUS_FLOW[currentIndex + 1];
 }
 
+/**
+ * After POST, Django stores `StepDecision.step` as a fine-grained StepIdentifier
+ * (see ls-portal `jobs.services._STEP_RESOLUTION_MAP`). UI stages often send
+ * coarse/legacy slugs — include both so verification matches the DB row.
+ */
+const BACKEND_STEP_DECISION_SLUG_BY_STAGE: Partial<Record<BackendStatus, string>> = {
+  "6_examination": "6_1_checking",
+  "7_region": "7_1_checked",
+  request_received: "1_rnr",
+  rn_assigned: "2_regional_number",
+  in_production: "3_job_production",
+  submitted_to_ls461: "4_ls_cert",
+  examination_ls461: "4_ls_cert",
+  certified_ls461: "4_ls_cert",
+  queried_ls461: "4_ls_cert",
+  at_csau_payment: "5_csau_payment",
+  forwarded_to_smd: "6_1_checking",
+  examination_smd: "6_1_checking",
+  certified_smd: "6_2_certified",
+  queried_smd: "6_1_checking",
+  batched_for_region: "7_3_barcoded",
+  at_region: "7_1_checked",
+  signed_out_csau: "8_signed_out_csau",
+  delivered_to_client: "9_delivered_to_client",
+};
+
 function getStepDecisionAliasesForStatus(status: BackendStatus): string[] {
-  if (status === "6_examination") return ["6_examination", "6_1_checking", "6_2_certified"];
-  if (status === "7_region") return ["7_region", "7_1_checked", "7_2_approved", "7_3_barcoded"];
-  if (status === "submitted_to_ls461" || status === "examination_ls461" || status === "certified_ls461") {
-    return [status, "4_ls_cert"];
+  const aliases = new Set<string>();
+  const add = (value: string) => {
+    const v = value.trim().toLowerCase();
+    if (v) aliases.add(v);
+  };
+
+  add(status);
+  const normalized = BACKEND_STEP_DECISION_SLUG_BY_STAGE[status];
+  if (normalized) add(normalized);
+
+  if (status === "6_examination") {
+    add("6_examination");
+    add("6_1_checking");
+    add("6_2_certified");
   }
-  if (status === "at_csau_payment") return [status, "5_csau_payment"];
-  if (status === "examination_smd" || status === "certified_smd") {
-    return [status, "6_1_checking", "6_2_certified"];
+  if (status === "7_region") {
+    add("7_region");
+    add("7_1_checked");
+    add("7_2_approved");
+    add("7_3_barcoded");
+  }
+  if (
+    status === "submitted_to_ls461" ||
+    status === "examination_ls461" ||
+    status === "certified_ls461" ||
+    status === "queried_ls461"
+  ) {
+    add("4_ls_cert");
+  }
+  if (status === "at_csau_payment") add("5_csau_payment");
+  if (status === "examination_smd" || status === "certified_smd" || status === "queried_smd") {
+    add("6_1_checking");
+    add("6_2_certified");
+  }
+  if (status === "forwarded_to_smd") {
+    add("6_1_checking");
   }
   if (status === "at_region" || status === "batched_for_region") {
-    return [status, "7_1_checked", "7_2_approved", "7_3_barcoded"];
+    add("7_1_checked");
+    add("7_2_approved");
+    add("7_3_barcoded");
   }
-  return [status];
+
+  return Array.from(aliases);
 }
 
 function hasPersistedStepDecision(
@@ -1881,7 +1990,7 @@ export const jobsApi = {
     }
   ) => {
     const notes = payload.notes?.trim() ?? "";
-    await transitionJobStatus(rnOrId, {
+    const postedDetail = await postJobStepDecision(rnOrId, {
       status: payload.stage,
       step: payload.stage,
       decision: payload.decision,
@@ -1890,7 +1999,10 @@ export const jobsApi = {
     });
 
     const response = await jobsApi.get(rnOrId);
-    if (!hasPersistedStepDecision(response.job, payload.stage, payload.decision)) {
+    const jobFromPost = mapBackendJob(postedDetail);
+    const okPost = hasPersistedStepDecision(jobFromPost, payload.stage, payload.decision);
+    const okGet = hasPersistedStepDecision(response.job, payload.stage, payload.decision);
+    if (!okPost && !okGet) {
       throw new Error(
         "The backend updated the workflow status, but did not create a Step Decision record. Please expose a writable StepDecision API before go-live."
       );

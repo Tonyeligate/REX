@@ -229,30 +229,6 @@ export default function JobDetailPage() {
     return backendTrackingStages.findIndex((stage) => stage.code.trim().toLowerCase() === code);
   }, [job, backendTrackingStages]);
 
-  const currentStageSummary = useMemo(() => {
-    if (!job) return { line: "—", code: "" as string };
-    const code = (job.backendStatus ?? "").trim();
-    if (workflowCurrentIndex >= 0 && backendTrackingStages.length > 0) {
-      const stage = backendTrackingStages[workflowCurrentIndex];
-      const pos = workflowCurrentIndex + 1;
-      const total = backendTrackingStages.length;
-      const label = getStageDisplayName(stage);
-      return {
-        line: `Step ${pos} of ${total} — ${label}`,
-        code: stage.code,
-      };
-    }
-    if (job.statusDisplay?.trim()) {
-      return { line: job.statusDisplay.trim(), code };
-    }
-    return { line: getStageDisplayName(undefined, code), code };
-  }, [job, workflowCurrentIndex, backendTrackingStages]);
-
-  useEffect(() => {
-    if (selectedStageCode || !currentStageSummary.code) return;
-    setSelectedStageCode(currentStageSummary.code);
-  }, [currentStageSummary.code, selectedStageCode]);
-
   const latestDecisionByStep = useMemo(() => {
     const byStep = new Map<string, JobStepDecision>();
     for (const decision of job?.stepDecisions ?? []) {
@@ -271,6 +247,50 @@ export default function JobDetailPage() {
     }
     return byStep;
   }, [job]);
+
+  /**
+   * Highlight the stage the user is effectively "at": prefer the first stage with a
+   * blocking rejected/pending decision when it sits ahead of `job.backendStatus`,
+   * so the list matches the register (e.g. LS Cert rejected while status is still 3_job_production).
+   */
+  const workflowDisplayIndex = useMemo(() => {
+    if (!job || backendTrackingStages.length === 0) {
+      return workflowCurrentIndex;
+    }
+    const blockingIndex = backendTrackingStages.findIndex((stage) => {
+      const decision = latestDecisionByStep.get(stage.code.trim().toLowerCase());
+      const state = getDecisionState(decision);
+      return state === "pending" || state === "rejected";
+    });
+    if (blockingIndex >= 0) {
+      return blockingIndex;
+    }
+    return workflowCurrentIndex;
+  }, [job, backendTrackingStages, latestDecisionByStep, workflowCurrentIndex]);
+
+  const currentStageSummary = useMemo(() => {
+    if (!job) return { line: "—", code: "" as string };
+    const code = (job.backendStatus ?? "").trim();
+    if (workflowDisplayIndex >= 0 && backendTrackingStages.length > 0) {
+      const stage = backendTrackingStages[workflowDisplayIndex];
+      const pos = workflowDisplayIndex + 1;
+      const total = backendTrackingStages.length;
+      const label = getStageDisplayName(stage);
+      return {
+        line: `Step ${pos} of ${total} — ${label}`,
+        code: stage.code,
+      };
+    }
+    if (job.statusDisplay?.trim()) {
+      return { line: job.statusDisplay.trim(), code };
+    }
+    return { line: getStageDisplayName(undefined, code), code };
+  }, [job, workflowDisplayIndex, backendTrackingStages]);
+
+  useEffect(() => {
+    if (selectedStageCode || !currentStageSummary.code) return;
+    setSelectedStageCode(currentStageSummary.code);
+  }, [currentStageSummary.code, selectedStageCode]);
 
   const backendDecisionTiles = useMemo(() => {
     return backendTrackingStages
@@ -405,9 +425,9 @@ export default function JobDetailPage() {
   }, [job]);
 
   const progressPercent = useMemo(() => {
-    if (workflowCurrentIndex < 0 || backendTrackingStages.length === 0) return 0;
-    return Math.round(((workflowCurrentIndex + 1) / backendTrackingStages.length) * 100);
-  }, [workflowCurrentIndex, backendTrackingStages.length]);
+    if (workflowDisplayIndex < 0 || backendTrackingStages.length === 0) return 0;
+    return Math.round(((workflowDisplayIndex + 1) / backendTrackingStages.length) * 100);
+  }, [workflowDisplayIndex, backendTrackingStages.length]);
 
   const selectedStageLabel = useMemo(() => {
     if (!selectedStageCode) return "";
@@ -526,8 +546,8 @@ export default function JobDetailPage() {
           <div className="space-y-2">
             {backendTrackingStages.length > 0 ? (
               backendTrackingStages.map((stage, index) => {
-                const isCompleted = workflowCurrentIndex >= 0 && index < workflowCurrentIndex;
-                const isCurrent = workflowCurrentIndex >= 0 && index === workflowCurrentIndex;
+                const isCompleted = workflowDisplayIndex >= 0 && index < workflowDisplayIndex;
+                const isCurrent = workflowDisplayIndex >= 0 && index === workflowDisplayIndex;
                 const decision = latestDecisionByStep.get(stage.code.trim().toLowerCase());
                 const stageName = getStageDisplayName(stage);
 
