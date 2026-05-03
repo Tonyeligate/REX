@@ -28,7 +28,6 @@ type DetailItemProps = {
   icon: LucideIcon;
   label: string;
   value?: string;
-  mono?: boolean;
 };
 
 const STEP_DECISION_OPTIONS: Array<{
@@ -59,6 +58,17 @@ const STEP_DECISION_OPTIONS: Array<{
 
 function stripLeadingStageNumber(label: string): string {
   return label.replace(/^\s*\d+\s*[\.\-:)]?\s*/u, "").trim();
+}
+
+function getStageDisplayName(stage?: BackendTrackingStage, fallback?: string): string {
+  if (stage) return stripLeadingStageNumber(stage.label) || stage.label || "Stage";
+  const cleaned = String(fallback ?? "")
+    .trim()
+    .replace(/^\d+[_\-\s]*/u, "")
+    .replace(/[_-]+/g, " ")
+    .trim();
+  if (!cleaned) return "Stage";
+  return cleaned.replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 function decisionTileClasses(decisionText: string): string {
@@ -147,7 +157,7 @@ function formatDateTime(value?: string): string {
   });
 }
 
-function DetailItem({ icon: Icon, label, value, mono = false }: DetailItemProps) {
+function DetailItem({ icon: Icon, label, value }: DetailItemProps) {
   return (
     <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-700 dark:bg-slate-900/50">
       <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -155,9 +165,7 @@ function DetailItem({ icon: Icon, label, value, mono = false }: DetailItemProps)
         {label}
       </div>
       <p
-        className={`mt-2 min-h-[20px] truncate text-[13px] font-semibold text-foreground ${
-          mono ? "font-mono" : ""
-        }`}
+        className="mt-2 min-h-[20px] truncate text-[13px] font-semibold text-foreground"
         title={value || "—"}
       >
         {value || "—"}
@@ -215,7 +223,7 @@ export default function JobDetailPage() {
       const stage = backendTrackingStages[workflowCurrentIndex];
       const pos = workflowCurrentIndex + 1;
       const total = backendTrackingStages.length;
-      const label = stripLeadingStageNumber(stage.label) || stage.code;
+      const label = getStageDisplayName(stage);
       return {
         line: `Step ${pos} of ${total} — ${label}`,
         code: stage.code,
@@ -224,7 +232,7 @@ export default function JobDetailPage() {
     if (job.statusDisplay?.trim()) {
       return { line: job.statusDisplay.trim(), code };
     }
-    return { line: code || "—", code };
+    return { line: getStageDisplayName(undefined, code), code };
   }, [job, workflowCurrentIndex, backendTrackingStages]);
 
   useEffect(() => {
@@ -258,7 +266,7 @@ export default function JobDetailPage() {
         if (!decision) return null;
         return {
           code: stage.code,
-          label: stripLeadingStageNumber(stage.label) || stage.code,
+          label: getStageDisplayName(stage),
           decisionLabel: getDecisionLabel(decision),
           comment: String(decision.comment ?? "").trim(),
           decidedAt: decision.updatedAt ?? decision.createdAt ?? "",
@@ -322,7 +330,7 @@ export default function JobDetailPage() {
     const stage = backendTrackingStages.find(
       (item) => item.code.trim().toLowerCase() === selectedStageCode.trim().toLowerCase()
     );
-    return stage ? stripLeadingStageNumber(stage.label) || stage.code : selectedStageCode;
+    return getStageDisplayName(stage, selectedStageCode);
   }, [selectedStageCode, backendTrackingStages]);
 
   if (loading) {
@@ -372,7 +380,7 @@ export default function JobDetailPage() {
           </div>
 
           <div className={`w-full rounded-xl border px-4 py-3 lg:max-w-[360px] ${backendStatusBannerClasses(job.status)}`}>
-            <p className="text-[11px] font-semibold uppercase tracking-wide opacity-80">Current backend stage</p>
+            <p className="text-[11px] font-semibold uppercase tracking-wide opacity-80">Current workflow stage</p>
             <p className="mt-1 text-[15px] font-bold">{currentStageSummary.line}</p>
             <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/60 dark:bg-black/20">
               <div
@@ -380,8 +388,8 @@ export default function JobDetailPage() {
                 style={{ width: `${progressPercent}%` }}
               />
             </div>
-            <div className="mt-2 flex items-center justify-between gap-3 text-[10px] font-mono opacity-75">
-              <span className="truncate">{String(job.backendStatus ?? "").trim() || "no_code"}</span>
+            <div className="mt-2 flex items-center justify-between gap-3 text-[10px] font-semibold opacity-75">
+              <span className="truncate">Live workflow stage</span>
               <span>{progressPercent}%</span>
             </div>
           </div>
@@ -407,10 +415,10 @@ export default function JobDetailPage() {
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <DetailItem icon={UserRound} label="Client" value={job.clientName} />
-          <DetailItem icon={MapPin} label="Regional number" value={job.regionalNumber} mono />
+          <DetailItem icon={MapPin} label="Regional number" value={job.regionalNumber} />
           <DetailItem icon={ClipboardList} label="Requested by" value={readOnlyRequestedBy} />
           <DetailItem icon={CalendarDays} label="Created" value={formatDate(job.createdAt)} />
-          <DetailItem icon={Hash} label="Job ID" value={job.jobId} mono />
+          <DetailItem icon={Hash} label="Job ID" value={job.jobId} />
           <DetailItem icon={BriefcaseBusiness} label="Job type" value={job.jobType} />
           <DetailItem icon={Clock} label="Updated" value={formatDateTime(job.updatedAt)} />
           <DetailItem icon={CheckCircle} label="Recorded decisions" value={String(backendDecisionTiles.length)} />
@@ -423,7 +431,7 @@ export default function JobDetailPage() {
             <div>
               <h2 className="text-[15px] font-bold text-foreground">Workflow Progress</h2>
               <p className="mt-1 text-[12px] text-muted-foreground">
-                Backend tracking stages are shown in order with the current stage highlighted.
+                Workflow stages are shown in order with the current stage highlighted.
               </p>
             </div>
             <span className="inline-flex w-fit items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-bold text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
@@ -437,7 +445,7 @@ export default function JobDetailPage() {
                 const isCompleted = workflowCurrentIndex >= 0 && index < workflowCurrentIndex;
                 const isCurrent = workflowCurrentIndex >= 0 && index === workflowCurrentIndex;
                 const decision = latestDecisionByStep.get(stage.code.trim().toLowerCase());
-                const stageName = stripLeadingStageNumber(stage.label) || stage.code;
+                const stageName = getStageDisplayName(stage);
 
                 return (
                   <div
@@ -465,8 +473,8 @@ export default function JobDetailPage() {
                       <p className="truncate font-bold text-foreground" title={stageName}>
                         {stageName}
                       </p>
-                      <p className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">
-                        {stage.code}
+                      <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                        Step {stage.order} in the approval workflow
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
@@ -502,7 +510,7 @@ export default function JobDetailPage() {
           <section className="admin-surface-elevated rounded-2xl p-4 md:p-5">
             <div className="mb-4">
               <h2 className="text-[15px] font-bold text-foreground">Stage Decision</h2>
-              <p className="mt-1 text-[12px] text-muted-foreground">Record the latest review outcome for a backend stage.</p>
+              <p className="mt-1 text-[12px] text-muted-foreground">Record the latest review outcome for a workflow stage.</p>
             </div>
 
             <label className="block text-[12px]">
@@ -512,10 +520,10 @@ export default function JobDetailPage() {
                 onChange={(e) => setSelectedStageCode(e.target.value)}
                 className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-[12px] text-foreground outline-none transition focus:ring-2 focus:ring-[#F07000]/20 dark:border-slate-600 dark:bg-slate-900"
               >
-                <option value="">Select backend stage…</option>
+                <option value="">Select workflow stage...</option>
                 {backendTrackingStages.map((stage) => (
                   <option key={stage.code} value={stage.code}>
-                    {stage.label}
+                    {getStageDisplayName(stage)}
                   </option>
                 ))}
               </select>
@@ -583,7 +591,7 @@ export default function JobDetailPage() {
                   </div>
                 ) : (
                   <p className="text-muted-foreground">
-                    No backend step decision has been recorded for {selectedStageLabel || "this stage"} yet.
+                    No stage decision has been recorded for {selectedStageLabel || "this stage"} yet.
                   </p>
                 )
               ) : (
