@@ -156,13 +156,13 @@ export default function AppHeader({
       className={`sticky top-0 z-30 w-full ${headerHidden ? "pointer-events-none" : ""}`}
     >
       <div
-        className={`grid overflow-hidden px-2 transition-[grid-template-rows,opacity,padding-top] duration-300 ease-out motion-reduce:transition-none md:px-3 ${
+        className={`grid px-2 transition-[grid-template-rows,opacity,padding-top] duration-300 ease-out motion-reduce:transition-none md:px-3 ${
           headerHidden
-            ? "grid-rows-[0fr] pt-0 opacity-0 pointer-events-none"
-            : "grid-rows-[1fr] pt-2 opacity-100 pointer-events-auto"
+            ? "grid-rows-[0fr] overflow-hidden pt-0 opacity-0 pointer-events-none"
+            : "grid-rows-[1fr] overflow-visible pt-2 opacity-100 pointer-events-auto"
         }`}
       >
-      <div className="min-h-0 overflow-hidden">
+      <div className={`min-h-0 ${headerHidden ? "overflow-hidden" : "overflow-visible"}`}>
       <div className="app-topbar-shell rounded-2xl overflow-visible">
         <div className="flex items-center justify-between w-full px-4 py-2">
         {/* Left: Brand */}

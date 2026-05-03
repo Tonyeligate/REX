@@ -25,7 +25,6 @@ const LOCAL_URL = "/api"; // Local Next.js API routes
 /* ── Member metadata helper (extra fields not in backend Clients schema) ── */
 const MEMBER_META_KEY = "_member_meta_by_client_id";
 const REGISTER_FIELDS_KEY = "_register_fields_by_job_id";
-const STEP_DECISIONS_KEY = "_job_step_decisions_by_job_id";
 
 interface BackendClient {
   id: number;
@@ -119,51 +118,6 @@ function readRegisterFieldsMap(): Record<string, JobRegisterRecord> {
 function writeRegisterFieldsMap(data: Record<string, JobRegisterRecord>) {
   if (typeof window === "undefined") return;
   localStorage.setItem(REGISTER_FIELDS_KEY, JSON.stringify(data));
-}
-
-function readLocalStepDecisionMap(): Record<string, JobStepDecision[]> {
-  if (typeof window === "undefined") return {};
-  try {
-    const raw = localStorage.getItem(STEP_DECISIONS_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-function writeLocalStepDecisionMap(data: Record<string, JobStepDecision[]>) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(STEP_DECISIONS_KEY, JSON.stringify(data));
-}
-
-function upsertLocalStepDecision(jobIds: string[], decision: JobStepDecision) {
-  const keys = Array.from(
-    new Set(jobIds.map((value) => value.trim()).filter(Boolean))
-  );
-  if (keys.length === 0) return;
-
-  const records = readLocalStepDecisionMap();
-  const timestamp = new Date().toISOString();
-  const nextDecision = {
-    ...decision,
-    id: decision.id || -Date.now(),
-    createdAt: decision.createdAt || timestamp,
-    updatedAt: timestamp,
-  };
-
-  for (const key of keys) {
-    const existing = records[key] ?? [];
-    records[key] = [
-      ...existing.filter(
-        (item) => item.step.trim().toLowerCase() !== nextDecision.step.trim().toLowerCase()
-      ),
-      nextDecision,
-    ];
-  }
-
-  writeLocalStepDecisionMap(records);
 }
 
 function extractMemberMetaFromPayload(
@@ -802,14 +756,6 @@ export function mapBackendJob(
     createdAt: decision.created_at,
     updatedAt: decision.updated_at,
   }));
-  const localDecisionRecords = readLocalStepDecisionMap();
-  const localDecisionKeys = [String(bj.id), bj.rn, bj.regional_number ?? ""]
-    .map((value) => value.trim())
-    .filter(Boolean);
-  const localStepDecisions = localDecisionKeys.flatMap(
-    (key) => localDecisionRecords[key] ?? []
-  );
-  const allMappedStepDecisions = [...mappedStepDecisions, ...localStepDecisions];
 
   for (const decision of stepDecisions) {
     const decisionStepNumber = STATUS_STEP_MAP[decision.step];
@@ -934,7 +880,7 @@ export function mapBackendJob(
     batchName: detail.batch_name || undefined,
     description: detail.description || undefined,
     documents: detail.documents || undefined,
-    stepDecisions: allMappedStepDecisions,
+    stepDecisions: mappedStepDecisions,
     steps,
     timeline,
     createdAt: bj.created_at,
@@ -1428,21 +1374,30 @@ async function transitionJobStatus(
 
   for (let i = 0; i < candidates.length; i += 1) {
     const candidate = candidates[i];
-    try {
-      await localRequest<Record<string, unknown>>(
-        `/jobs/${encodeURIComponent(candidate)}/transition`,
-        {
-          method: "POST",
-          body: JSON.stringify(payload),
+    const encodedVariants = getEncodedJobPathVariants(candidate);
+
+    for (let j = 0; j < encodedVariants.length; j += 1) {
+      const encodedCandidate = encodedVariants[j];
+      const isLastAttempt =
+        i === candidates.length - 1 && j === encodedVariants.length - 1;
+
+      try {
+        await localRequest<Record<string, unknown>>(
+          `/jobs/${encodedCandidate}/transition`,
+          {
+            method: "POST",
+            body: JSON.stringify(payload),
+          }
+        );
+        return;
+      } catch (err) {
+        lastError = err;
+        const message = err instanceof Error ? err.message : "";
+        const shouldTryNext =
+          isLikelyNotFoundError(message) || isMethodNotAllowedError(message);
+        if (isLastAttempt || !shouldTryNext) {
+          throw err;
         }
-      );
-      return;
-    } catch (err) {
-      lastError = err;
-      const message = err instanceof Error ? err.message : "";
-      const isLast = i === candidates.length - 1;
-      if (isLast || !isLikelyNotFoundError(message)) {
-        throw err;
       }
     }
   }
@@ -1450,6 +1405,58 @@ async function transitionJobStatus(
   throw lastError instanceof Error
     ? lastError
     : new Error("Unable to transition job.");
+}
+
+/** Persist StepDecision + optional status (ls-portal POST /jobs/<rn>/step-decisions/). */
+async function postJobStepDecision(
+  rnOrId: string,
+  payload: {
+    status: BackendStatus;
+    notes?: string;
+    query_reason?: string;
+    step: BackendStatus;
+    decision: "approved" | "rejected" | "pending";
+  }
+): Promise<BackendJobDetail> {
+  const lookupKey = await resolveBackendJobRnForWrite(rnOrId);
+  const candidates = await getResolvedJobPathCandidates(lookupKey);
+  let lastError: unknown;
+
+  for (let i = 0; i < candidates.length; i += 1) {
+    const candidate = candidates[i];
+    const encodedVariants = getEncodedJobPathVariants(candidate);
+
+    for (let j = 0; j < encodedVariants.length; j += 1) {
+      const encodedCandidate = encodedVariants[j];
+      const isLastAttempt =
+        i === candidates.length - 1 && j === encodedVariants.length - 1;
+
+      try {
+        // Use Railway Django via rewrite (`/backend-api`), not `/api` — there is no
+        // Next.js route for step-decisions (unlike `/api/jobs/[id]/transition`).
+        const detail = await backendRequest<BackendJobDetail>(
+          `/jobs/${encodedCandidate}/step-decisions/`,
+          {
+            method: "POST",
+            body: JSON.stringify(payload),
+          }
+        );
+        return detail;
+      } catch (err) {
+        lastError = err;
+        const message = err instanceof Error ? err.message : "";
+        const shouldTryNext =
+          isLikelyNotFoundError(message) || isMethodNotAllowedError(message);
+        if (isLastAttempt || !shouldTryNext) {
+          throw err;
+        }
+      }
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Unable to save step decision.");
 }
 
 const PATCHABLE_WORKFLOW_STATUSES = new Set<BackendStatus>([
@@ -1508,6 +1515,94 @@ function getNextPatchStatusForWorkflow(current: BackendStatus): BackendStatus | 
     return null;
   }
   return PATCH_STATUS_FLOW[currentIndex + 1];
+}
+
+/**
+ * After POST, Django stores `StepDecision.step` as a fine-grained StepIdentifier
+ * (see ls-portal `jobs.services._STEP_RESOLUTION_MAP`). UI stages often send
+ * coarse/legacy slugs — include both so verification matches the DB row.
+ */
+const BACKEND_STEP_DECISION_SLUG_BY_STAGE: Partial<Record<BackendStatus, string>> = {
+  "6_examination": "6_1_checking",
+  "7_region": "7_1_checked",
+  request_received: "1_rnr",
+  rn_assigned: "2_regional_number",
+  in_production: "3_job_production",
+  submitted_to_ls461: "4_ls_cert",
+  examination_ls461: "4_ls_cert",
+  certified_ls461: "4_ls_cert",
+  queried_ls461: "4_ls_cert",
+  at_csau_payment: "5_csau_payment",
+  forwarded_to_smd: "6_1_checking",
+  examination_smd: "6_1_checking",
+  certified_smd: "6_2_certified",
+  queried_smd: "6_1_checking",
+  batched_for_region: "7_3_barcoded",
+  at_region: "7_1_checked",
+  signed_out_csau: "8_signed_out_csau",
+  delivered_to_client: "9_delivered_to_client",
+};
+
+function getStepDecisionAliasesForStatus(status: BackendStatus): string[] {
+  const aliases = new Set<string>();
+  const add = (value: string) => {
+    const v = value.trim().toLowerCase();
+    if (v) aliases.add(v);
+  };
+
+  add(status);
+  const normalized = BACKEND_STEP_DECISION_SLUG_BY_STAGE[status];
+  if (normalized) add(normalized);
+
+  if (status === "6_examination") {
+    add("6_examination");
+    add("6_1_checking");
+    add("6_2_certified");
+  }
+  if (status === "7_region") {
+    add("7_region");
+    add("7_1_checked");
+    add("7_2_approved");
+    add("7_3_barcoded");
+  }
+  if (
+    status === "submitted_to_ls461" ||
+    status === "examination_ls461" ||
+    status === "certified_ls461" ||
+    status === "queried_ls461"
+  ) {
+    add("4_ls_cert");
+  }
+  if (status === "at_csau_payment") add("5_csau_payment");
+  if (status === "examination_smd" || status === "certified_smd" || status === "queried_smd") {
+    add("6_1_checking");
+    add("6_2_certified");
+  }
+  if (status === "forwarded_to_smd") {
+    add("6_1_checking");
+  }
+  if (status === "at_region" || status === "batched_for_region") {
+    add("7_1_checked");
+    add("7_2_approved");
+    add("7_3_barcoded");
+  }
+
+  return Array.from(aliases);
+}
+
+function hasPersistedStepDecision(
+  job: Job,
+  status: BackendStatus,
+  decision: "approved" | "rejected" | "pending"
+): boolean {
+  const aliases = new Set(
+    getStepDecisionAliasesForStatus(status).map((value) => value.trim().toLowerCase())
+  );
+  return (job.stepDecisions ?? []).some((item) => {
+    const step = String(item.step ?? "").trim().toLowerCase();
+    const savedDecision = String(item.decision ?? item.decisionDisplay ?? "").trim().toLowerCase();
+    return aliases.has(step) && savedDecision.includes(decision);
+  });
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -1895,45 +1990,25 @@ export const jobsApi = {
     }
   ) => {
     const notes = payload.notes?.trim() ?? "";
-    const lookupKey = await resolveBackendJobRnForWrite(rnOrId);
-    const updated = await requestJobEndpoint<BackendJobDetail>(
-      lookupKey,
-      "/",
-      {
-        method: "PATCH",
-        body: JSON.stringify({
-          status: payload.stage,
-          ...(payload.decision === "approved" ? {} : { query_reason: notes }),
-        }),
-      }
-    );
+    const postedDetail = await postJobStepDecision(rnOrId, {
+      status: payload.stage,
+      step: payload.stage,
+      decision: payload.decision,
+      notes,
+      query_reason: payload.decision === "approved" ? undefined : notes,
+    });
 
-    upsertLocalStepDecision(
-      [
-        rnOrId,
-        lookupKey,
-        String(updated.id),
-        updated.rn,
-        updated.regional_number ?? "",
-      ],
-      {
-        id: -Date.now(),
-        step: payload.stage,
-        stepDisplay: payload.stage.replace(/_/g, " "),
-        decision: payload.decision,
-        decisionDisplay:
-          payload.decision === "approved"
-            ? "Approved"
-            : payload.decision === "rejected"
-              ? "Rejected"
-              : "Pending",
-        comment: notes || undefined,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      }
-    );
+    const response = await jobsApi.get(rnOrId);
+    const jobFromPost = mapBackendJob(postedDetail);
+    const okPost = hasPersistedStepDecision(jobFromPost, payload.stage, payload.decision);
+    const okGet = hasPersistedStepDecision(response.job, payload.stage, payload.decision);
+    if (!okPost && !okGet) {
+      throw new Error(
+        "The backend updated the workflow status, but did not create a Step Decision record. Please expose a writable StepDecision API before go-live."
+      );
+    }
 
-    return { job: mapBackendJob(updated) };
+    return response;
   },
 
   addTimeline: async (
