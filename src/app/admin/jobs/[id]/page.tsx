@@ -19,10 +19,12 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { jobsApi, type BackendStatus, type BackendTrackingStage } from "@/lib/api";
+import { showErrorAlert, showSuccessAlert } from "@/lib/sweet-alert";
 import type { Job, JobStatus } from "@/types/job";
 import type { JobStepDecision } from "@/types/job";
 
 type StepDecisionAction = "approved" | "rejected" | "pending";
+type DecisionState = StepDecisionAction | "none";
 
 type DetailItemProps = {
   icon: LucideIcon;
@@ -105,6 +107,15 @@ function getDecisionLabel(decision?: JobStepDecision): string {
   const raw = String(decision?.decision ?? "").trim();
   if (!raw) return "No decision";
   return raw.replace(/_/g, " ");
+}
+
+function getDecisionState(decision?: JobStepDecision): DecisionState {
+  const normalized = `${decision?.decision ?? ""} ${decision?.decisionDisplay ?? ""}`.trim().toLowerCase();
+  if (!normalized) return "none";
+  if (normalized.includes("reject")) return "rejected";
+  if (normalized.includes("pending") || normalized.includes("query")) return "pending";
+  if (normalized.includes("approve") || normalized.includes("accept") || normalized.includes("certif")) return "approved";
+  return "none";
 }
 
 function backendStatusBannerClasses(status: JobStatus): string {
@@ -200,7 +211,9 @@ export default function JobDetailPage() {
       setJob(loadedJob);
       setBackendTrackingStages(stagesResponse);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load job.");
+      const errorMessage = err instanceof Error ? err.message : "Failed to load job.";
+      setError(errorMessage);
+      void showErrorAlert(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -286,15 +299,83 @@ export default function JobDetailPage() {
     return latestDecisionByStep.get(selectedStageCode.trim().toLowerCase()) ?? null;
   }, [selectedStageCode, latestDecisionByStep]);
 
+  const stageRuleViolation = useCallback(
+    (targetStageCode: string): string | null => {
+      const normalizedTarget = targetStageCode.trim().toLowerCase();
+      if (!normalizedTarget) return "Select a workflow stage before saving a decision.";
+
+      const targetIndex = backendTrackingStages.findIndex(
+        (stage) => stage.code.trim().toLowerCase() === normalizedTarget
+      );
+      if (targetIndex < 0) return "Select a valid workflow stage before saving a decision.";
+
+      const blockingIndex = backendTrackingStages.findIndex((stage) => {
+        const decision = latestDecisionByStep.get(stage.code.trim().toLowerCase());
+        const state = getDecisionState(decision);
+        return state === "pending" || state === "rejected";
+      });
+
+      if (blockingIndex >= 0 && blockingIndex !== targetIndex) {
+        const blockingStage = backendTrackingStages[blockingIndex];
+        const blockingDecision = latestDecisionByStep.get(blockingStage.code.trim().toLowerCase());
+        const state = getDecisionState(blockingDecision);
+        return `${getStageDisplayName(blockingStage)} is ${state}. Resolve that stage before moving to another stage.`;
+      }
+
+      for (let index = 0; index < targetIndex; index += 1) {
+        const previousStage = backendTrackingStages[index];
+        const previousDecision = latestDecisionByStep.get(previousStage.code.trim().toLowerCase());
+        const previousState =
+          getDecisionState(previousDecision) === "none" && index < workflowCurrentIndex
+            ? "approved"
+            : getDecisionState(previousDecision);
+        if (previousState !== "approved") {
+          return `${getStageDisplayName(previousStage)} must be approved before ${getStageDisplayName(
+            backendTrackingStages[targetIndex]
+          )} can be updated.`;
+        }
+      }
+
+      return null;
+    },
+    [backendTrackingStages, latestDecisionByStep, workflowCurrentIndex]
+  );
+
+  const showRuleError = useCallback((message: string) => {
+    setError(message);
+    void showErrorAlert(message, "Workflow blocked");
+  }, []);
+
+  const handleStageSelectionChange = useCallback(
+    (nextStageCode: string) => {
+      const message = stageRuleViolation(nextStageCode);
+      if (message) {
+        showRuleError(message);
+        return;
+      }
+      setError("");
+      setSelectedStageCode(nextStageCode);
+    },
+    [showRuleError, stageRuleViolation]
+  );
+
   const handleSaveDecision = async () => {
     if (!job || !selectedStageCode) {
-      setError("Select a job stage before saving a decision.");
+      showRuleError("Select a workflow stage before saving a decision.");
       return;
     }
 
     const comment = decisionComment.trim();
     if ((decisionAction === "rejected" || decisionAction === "pending") && !comment) {
-      setError("Add a comment for rejected or pending decisions.");
+      const message = "Add a comment for rejected or pending decisions.";
+      setError(message);
+      void showErrorAlert(message, "Comment required");
+      return;
+    }
+
+    const message = stageRuleViolation(selectedStageCode);
+    if (message) {
+      showRuleError(message);
       return;
     }
 
@@ -308,8 +389,11 @@ export default function JobDetailPage() {
       });
       setJob(updatedJob);
       setDecisionComment("");
+      void showSuccessAlert("Stage decision saved successfully.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save step decision.");
+      const errorMessage = err instanceof Error ? err.message : "Failed to save stage decision.";
+      setError(errorMessage);
+      void showErrorAlert(errorMessage);
     } finally {
       setSavingDecision(false);
     }
@@ -517,7 +601,7 @@ export default function JobDetailPage() {
               <span className="mb-1.5 block font-semibold text-slate-600 dark:text-slate-300">Stage</span>
               <select
                 value={selectedStageCode}
-                onChange={(e) => setSelectedStageCode(e.target.value)}
+                onChange={(e) => handleStageSelectionChange(e.target.value)}
                 className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-[12px] text-foreground outline-none transition focus:ring-2 focus:ring-[#F07000]/20 dark:border-slate-600 dark:bg-slate-900"
               >
                 <option value="">Select workflow stage...</option>
