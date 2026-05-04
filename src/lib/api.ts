@@ -2242,14 +2242,6 @@ export interface UserRow {
   createdAt: string;
 }
 
-const FRONTEND_TO_BACKEND_ROLE: Record<string, string> = {
-  LICENSED_SURVEYOR: "employees",
-  CSAU_OFFICER: "employees",
-  SMD_EXAMINER: "employees",
-  SMD_REGIONAL: "employees",
-  ADMIN: "admin",
-};
-
 function mapBackendUserRoleToFrontend(role?: string): string {
   const normalized = String(role ?? "").trim().toLowerCase();
   if (normalized === "system_admin") return "SUPER_ADMIN";
@@ -2321,30 +2313,22 @@ export const usersApi = {
   },
 
   invite: async (payload: {
+    username: string;
+    fullName: string;
     email: string;
-    role: string;
-    firstName?: string;
-    lastName?: string;
   }) => {
-    const backendRole = FRONTEND_TO_BACKEND_ROLE[payload.role];
-    if (!backendRole) {
-      throw new Error(
-        "Selected role is not supported by the backend employee invite endpoint."
-      );
-    }
     const created = await backendRequest<{
       message?: string;
       user: BackendUser;
-      invite_expires_at?: string;
+      default_password?: string;
     }>(
       "/auth/admin/employees/",
       {
         method: "POST",
         body: JSON.stringify({
+          username: payload.username,
+          full_name: payload.fullName,
           email: payload.email,
-          first_name: payload.firstName ?? "",
-          last_name: payload.lastName ?? "",
-          role: backendRole,
         }),
       }
     );
@@ -2353,11 +2337,12 @@ export const usersApi = {
         id: String(created.user.id),
         name: `${created.user.first_name} ${created.user.last_name}`.trim(),
         email: created.user.email,
-        role: payload.role,
+        role: mapBackendUserRoleToFrontend(created.user.profile?.role),
         isActive: true,
         lastLogin: "—",
         createdAt: created.user.profile?.created_at ?? new Date().toISOString(),
       } as UserRow,
+      defaultPassword: created.default_password ?? "",
     };
   },
 };

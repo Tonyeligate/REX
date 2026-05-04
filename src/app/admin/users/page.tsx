@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { UserPlus, Mail, Loader2, Search, MoreHorizontal } from "lucide-react";
+import { UserPlus, Loader2, Search, MoreHorizontal, Copy } from "lucide-react";
 import { ShieldCheckIcon, UsersIcon } from "@heroicons/react/24/outline";
 import { usersApi } from "@/lib/api";
 import type { UserRow } from "@/lib/api";
@@ -22,10 +22,12 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [showInvite, setShowInvite] = useState(false);
+  const [username, setUsername] = useState("");
+  const [fullName, setFullName] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState("CLIENT");
   const [inviting, setInviting] = useState(false);
   const [inviteError, setInviteError] = useState("");
+  const [createdPassword, setCreatedPassword] = useState("");
   const [loadError, setLoadError] = useState("");
   const [usersUnavailable, setUsersUnavailable] = useState(false);
 
@@ -76,13 +78,20 @@ export default function UsersPage() {
     e.preventDefault();
     setInviting(true);
     setInviteError("");
+    setCreatedPassword("");
     try {
-      await usersApi.invite({ email: inviteEmail, role: inviteRole });
-      setShowInvite(false);
+      const response = await usersApi.invite({
+        username,
+        fullName,
+        email: inviteEmail,
+      });
+      setCreatedPassword(response.defaultPassword);
       setInviteEmail("");
+      setUsername("");
+      setFullName("");
       fetchUsers(search);
     } catch (err: unknown) {
-      setInviteError(err instanceof Error ? err.message : "Failed to invite user");
+      setInviteError(err instanceof Error ? err.message : "Failed to create user");
     } finally {
       setInviting(false);
     }
@@ -120,11 +129,15 @@ export default function UsersPage() {
           </div>
           <div className="flex items-center justify-end">
             <button
-              onClick={() => setShowInvite(true)}
+              onClick={() => {
+                setInviteError("");
+                setCreatedPassword("");
+                setShowInvite(true);
+              }}
               disabled={usersUnavailable}
               className="inline-flex items-center gap-2 h-10 px-4 rounded-full bg-primary text-primary-foreground text-[12px] font-semibold transition-colors hover:brightness-95 disabled:opacity-60"
             >
-              <UserPlus size={14} /> Invite User
+              <UserPlus size={14} /> Create User
             </button>
           </div>
         </div>
@@ -142,27 +155,44 @@ export default function UsersPage() {
         </div>
       )}
 
-      {/* Invite Modal */}
+      {/* Create User Modal */}
       {showInvite && !usersUnavailable && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
           <div className="bg-popover border border-border rounded-xl shadow-xl w-full max-w-sm p-6 m-4">
-            <h4 className="text-[16px] font-bold text-foreground mb-4">Invite User</h4>
+            <h4 className="text-[16px] font-bold text-foreground mb-4">Create User</h4>
             <form onSubmit={handleInvite} className="space-y-3">
+              <div>
+                <label className="block text-[12px] font-semibold text-foreground/85 mb-1">Username</label>
+                <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} required placeholder="username" className="w-full h-[38px] px-3 border border-border bg-card rounded-lg text-[13px] text-foreground" />
+              </div>
+              <div>
+                <label className="block text-[12px] font-semibold text-foreground/85 mb-1">Full Name</label>
+                <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} required placeholder="John Doe" className="w-full h-[38px] px-3 border border-border bg-card rounded-lg text-[13px] text-foreground" />
+              </div>
               <div>
                 <label className="block text-[12px] font-semibold text-foreground/85 mb-1">Email</label>
                 <input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} required placeholder="user@example.com" className="w-full h-[38px] px-3 border border-border bg-card rounded-lg text-[13px] text-foreground" />
               </div>
-              <div>
-                <label className="block text-[12px] font-semibold text-foreground/85 mb-1">Role</label>
-                <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value)} className="w-full h-[38px] px-3 border border-border bg-card rounded-lg text-[13px] text-foreground">
-                  {Object.keys(roleColors).map((r) => <option key={r} value={r}>{r.replace(/_/g, " ")}</option>)}
-                </select>
-              </div>
               {inviteError && <p className="text-[12px] text-red-600 font-semibold">{inviteError}</p>}
+              {createdPassword && (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] text-emerald-800">
+                  <p className="font-semibold">Default password: <span className="font-bold">{createdPassword}</span></p>
+                  <p className="mt-1 text-emerald-700">Share this with the user and ask them to change it after first login.</p>
+                </div>
+              )}
               <div className="flex justify-end gap-2 pt-2">
-                <button type="button" onClick={() => { setShowInvite(false); setInviteError(""); }} className="h-[36px] px-4 border border-border bg-card rounded-lg text-[12px] font-semibold text-foreground/85 hover:bg-muted">Cancel</button>
+                <button type="button" onClick={() => { setShowInvite(false); setInviteError(""); setCreatedPassword(""); }} className="h-[36px] px-4 border border-border bg-card rounded-lg text-[12px] font-semibold text-foreground/85 hover:bg-muted">Close</button>
+                {createdPassword && (
+                  <button
+                    type="button"
+                    onClick={() => navigator.clipboard.writeText(createdPassword)}
+                    className="flex items-center gap-1.5 h-[36px] px-4 border border-emerald-300 bg-white rounded-lg text-[12px] font-semibold text-emerald-700"
+                  >
+                    <Copy size={13} /> Copy Password
+                  </button>
+                )}
                 <button type="submit" disabled={inviting} className="flex items-center gap-1.5 h-[36px] px-4 bg-[#F07000] text-white rounded-lg text-[12px] font-semibold disabled:opacity-50">
-                  {inviting ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />} Send Invite
+                  {inviting ? <Loader2 size={14} className="animate-spin" /> : <UserPlus size={14} />} Create User
                 </button>
               </div>
             </form>
