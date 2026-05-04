@@ -2317,21 +2317,65 @@ export const usersApi = {
     fullName: string;
     email: string;
   }) => {
-    const created = await backendRequest<{
+    const fullName = payload.fullName.trim();
+    const nameParts = fullName.split(/\s+/).filter(Boolean);
+    const firstName = nameParts[0] ?? "";
+    const lastName = nameParts.slice(1).join(" ");
+    const baseBody = {
+      username: payload.username.trim(),
+      full_name: fullName,
+      email: payload.email.trim(),
+      role: "employees",
+    };
+
+    let created: {
       message?: string;
       user: BackendUser;
       default_password?: string;
-    }>(
-      "/auth/admin/employees/",
-      {
-        method: "POST",
-        body: JSON.stringify({
-          username: payload.username,
-          full_name: payload.fullName,
-          email: payload.email,
-        }),
+    };
+
+    try {
+      created = await backendRequest<{
+        message?: string;
+        user: BackendUser;
+        default_password?: string;
+      }>(
+        "/auth/admin/employees/",
+        {
+          method: "POST",
+          body: JSON.stringify(baseBody),
+        }
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message.toLowerCase() : "";
+      const mayBeLegacyContract =
+        message.includes("full_name") ||
+        message.includes("username") ||
+        message.includes("not allowed") ||
+        message.includes("required");
+
+      if (!mayBeLegacyContract) {
+        throw error;
       }
-    );
+
+      created = await backendRequest<{
+        message?: string;
+        user: BackendUser;
+        default_password?: string;
+      }>(
+        "/auth/admin/employees/",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            email: payload.email.trim(),
+            first_name: firstName,
+            last_name: lastName,
+            role: "employees",
+          }),
+        }
+      );
+    }
+
     return {
       user: {
         id: String(created.user.id),
