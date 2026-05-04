@@ -25,6 +25,7 @@ export default function UsersPage() {
   const [username, setUsername] = useState("");
   const [fullName, setFullName] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
+  const [createRole, setCreateRole] = useState<"employees" | "admin">("employees");
   const [inviting, setInviting] = useState(false);
   const [inviteError, setInviteError] = useState("");
   const [createdPassword, setCreatedPassword] = useState("");
@@ -84,11 +85,13 @@ export default function UsersPage() {
         username,
         fullName,
         email: inviteEmail,
+        role: createRole,
       });
       setCreatedPassword(response.defaultPassword);
       setInviteEmail("");
       setUsername("");
       setFullName("");
+      setCreateRole("employees");
       fetchUsers(search);
     } catch (err: unknown) {
       setInviteError(err instanceof Error ? err.message : "Failed to create user");
@@ -173,6 +176,17 @@ export default function UsersPage() {
                 <label className="block text-[12px] font-semibold text-foreground/85 mb-1">Email</label>
                 <input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} required placeholder="user@example.com" className="w-full h-[38px] px-3 border border-border bg-card rounded-lg text-[13px] text-foreground" />
               </div>
+              <div>
+                <label className="block text-[12px] font-semibold text-foreground/85 mb-1">User Type</label>
+                <select
+                  value={createRole}
+                  onChange={(e) => setCreateRole(e.target.value as "employees" | "admin")}
+                  className="w-full h-[38px] px-3 border border-border bg-card rounded-lg text-[13px] text-foreground"
+                >
+                  <option value="employees">Employee</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
               {inviteError && <p className="text-[12px] text-red-600 font-semibold">{inviteError}</p>}
               {createdPassword && (
                 <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] text-emerald-800">
@@ -181,7 +195,18 @@ export default function UsersPage() {
                 </div>
               )}
               <div className="flex justify-end gap-2 pt-2">
-                <button type="button" onClick={() => { setShowInvite(false); setInviteError(""); setCreatedPassword(""); }} className="h-[36px] px-4 border border-border bg-card rounded-lg text-[12px] font-semibold text-foreground/85 hover:bg-muted">Close</button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowInvite(false);
+                    setInviteError("");
+                    setCreatedPassword("");
+                    setCreateRole("employees");
+                  }}
+                  className="h-[36px] px-4 border border-border bg-card rounded-lg text-[12px] font-semibold text-foreground/85 hover:bg-muted"
+                >
+                  Close
+                </button>
                 {createdPassword && (
                   <button
                     type="button"
