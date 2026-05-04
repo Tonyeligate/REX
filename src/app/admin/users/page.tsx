@@ -25,6 +25,7 @@ export default function UsersPage() {
   const [username, setUsername] = useState("");
   const [fullName, setFullName] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
+  const [createRole, setCreateRole] = useState<"employees" | "admin">("employees");
   const [inviting, setInviting] = useState(false);
   const [inviteError, setInviteError] = useState("");
   const [createdPassword, setCreatedPassword] = useState("");
@@ -84,11 +85,13 @@ export default function UsersPage() {
         username,
         fullName,
         email: inviteEmail,
+        role: createRole,
       });
       setCreatedPassword(response.defaultPassword);
       setInviteEmail("");
       setUsername("");
       setFullName("");
+      setCreateRole("employees");
       fetchUsers(search);
     } catch (err: unknown) {
       setInviteError(err instanceof Error ? err.message : "Failed to create user");
@@ -157,8 +160,8 @@ export default function UsersPage() {
 
       {/* Create User Modal */}
       {showInvite && !usersUnavailable && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-          <div className="bg-popover border border-border rounded-xl shadow-xl w-full max-w-sm p-6 m-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4 overflow-y-auto overscroll-contain">
+          <div className="bg-popover border border-border rounded-xl shadow-xl w-full max-w-md max-h-[min(90vh,720px)] overflow-y-auto p-6 my-auto shrink-0">
             <h4 className="text-[16px] font-bold text-foreground mb-4">Create User</h4>
             <form onSubmit={handleInvite} className="space-y-3">
               <div>
@@ -169,6 +172,31 @@ export default function UsersPage() {
                 <label className="block text-[12px] font-semibold text-foreground/85 mb-1">Full Name</label>
                 <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} required placeholder="John Doe" className="w-full h-[38px] px-3 border border-border bg-card rounded-lg text-[13px] text-foreground" />
               </div>
+              <fieldset className="rounded-lg border border-border bg-card/50 px-3 py-2.5">
+                <legend className="px-1 text-[12px] font-semibold text-foreground/85">User type</legend>
+                <div className="mt-1 flex flex-col gap-2 sm:flex-row sm:gap-4">
+                  <label className="flex cursor-pointer items-center gap-2 text-[13px] text-foreground">
+                    <input
+                      type="radio"
+                      name="create-user-role"
+                      className="h-4 w-4 accent-[#F07000]"
+                      checked={createRole === "employees"}
+                      onChange={() => setCreateRole("employees")}
+                    />
+                    Employee
+                  </label>
+                  <label className="flex cursor-pointer items-center gap-2 text-[13px] text-foreground">
+                    <input
+                      type="radio"
+                      name="create-user-role"
+                      className="h-4 w-4 accent-[#F07000]"
+                      checked={createRole === "admin"}
+                      onChange={() => setCreateRole("admin")}
+                    />
+                    Admin
+                  </label>
+                </div>
+              </fieldset>
               <div>
                 <label className="block text-[12px] font-semibold text-foreground/85 mb-1">Email</label>
                 <input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} required placeholder="user@example.com" className="w-full h-[38px] px-3 border border-border bg-card rounded-lg text-[13px] text-foreground" />
@@ -181,7 +209,18 @@ export default function UsersPage() {
                 </div>
               )}
               <div className="flex justify-end gap-2 pt-2">
-                <button type="button" onClick={() => { setShowInvite(false); setInviteError(""); setCreatedPassword(""); }} className="h-[36px] px-4 border border-border bg-card rounded-lg text-[12px] font-semibold text-foreground/85 hover:bg-muted">Close</button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowInvite(false);
+                    setInviteError("");
+                    setCreatedPassword("");
+                    setCreateRole("employees");
+                  }}
+                  className="h-[36px] px-4 border border-border bg-card rounded-lg text-[12px] font-semibold text-foreground/85 hover:bg-muted"
+                >
+                  Close
+                </button>
                 {createdPassword && (
                   <button
                     type="button"

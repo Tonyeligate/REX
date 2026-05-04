@@ -2316,6 +2316,7 @@ export const usersApi = {
     username: string;
     fullName: string;
     email: string;
+    role: "employees" | "admin";
   }) => {
     const fullName = payload.fullName.trim();
     const nameParts = fullName.split(/\s+/).filter(Boolean);
@@ -2325,7 +2326,7 @@ export const usersApi = {
       username: payload.username.trim(),
       full_name: fullName,
       email: payload.email.trim(),
-      role: "employees",
+      role: payload.role,
     };
 
     let created: {
@@ -2370,7 +2371,7 @@ export const usersApi = {
             email: payload.email.trim(),
             first_name: firstName,
             last_name: lastName,
-            role: "employees",
+            role: payload.role,
           }),
         }
       );
