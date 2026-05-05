@@ -345,6 +345,16 @@ export default function JobDetailPage() {
       );
       if (targetIndex < 0) return "Select a valid workflow stage before saving a decision.";
 
+      // Workflow is forward-only: once a stage is reached, do not allow decisions
+      // that target any earlier stage.
+      if (workflowCurrentIndex >= 0 && targetIndex < workflowCurrentIndex) {
+        const reachedStage = backendTrackingStages[workflowCurrentIndex];
+        const targetStage = backendTrackingStages[targetIndex];
+        return `Workflow is already at ${getStageDisplayName(
+          reachedStage
+        )}. You cannot move back to ${getStageDisplayName(targetStage)}.`;
+      }
+
       const blockingIndex = backendTrackingStages.findIndex((stage) => {
         const decision = getLatestDecisionForStage(latestDecisionByStep, stage.code);
         const state = getDecisionState(decision);
@@ -412,6 +422,16 @@ export default function JobDetailPage() {
     const message = stageRuleViolation(selectedStageCode);
     if (message) {
       showRuleError(message);
+      return;
+    }
+
+    const selectedIndex = backendTrackingStages.findIndex(
+      (stage) => stage.code.trim().toLowerCase() === selectedStageCode.trim().toLowerCase()
+    );
+    const isLastStage = selectedIndex >= 0 && selectedIndex === backendTrackingStages.length - 1;
+    const selectedState = getDecisionState(selectedStageDecision ?? undefined);
+    if (job.status === "COMPLETED" && isLastStage && decisionAction === "approved" && selectedState === "approved") {
+      await showSuccessAlert("This job is already fully completed.");
       return;
     }
 
@@ -565,6 +585,10 @@ export default function JobDetailPage() {
               backendTrackingStages.map((stage, index) => {
                 const isCompleted = workflowDisplayIndex >= 0 && index < workflowDisplayIndex;
                 const isCurrent = workflowDisplayIndex >= 0 && index === workflowDisplayIndex;
+                const isFinalStage = index === backendTrackingStages.length - 1;
+                const isFinalStageCompleted = job.status === "COMPLETED" && isFinalStage;
+                const displayAsCompleted = isCompleted || isFinalStageCompleted;
+                const displayAsCurrent = isCurrent && !displayAsCompleted;
                 const decision = getLatestDecisionForStage(latestDecisionByStep, stage.code);
                 const stageName = getStageDisplayName(stage);
 
@@ -572,23 +596,23 @@ export default function JobDetailPage() {
                   <div
                     key={stage.code}
                     className={`grid grid-cols-[32px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border px-3 py-3 text-[12px] transition-colors ${
-                      isCurrent
+                      displayAsCurrent
                         ? "border-orange-300 bg-orange-50/80 dark:border-orange-900/60 dark:bg-orange-950/30"
-                        : isCompleted
+                        : displayAsCompleted
                           ? "border-emerald-200 bg-emerald-50/60 dark:border-emerald-900/50 dark:bg-emerald-950/20"
                           : "border-slate-200 bg-white/70 dark:border-slate-700 dark:bg-slate-900/45"
                     }`}
                   >
                     <span
                       className={`inline-flex h-8 w-8 items-center justify-center rounded-full text-[11px] font-[900] ${
-                        isCurrent
+                        displayAsCurrent
                           ? "bg-[#F07000] text-white"
-                          : isCompleted
+                          : displayAsCompleted
                             ? "bg-emerald-600 text-white"
                             : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300"
                       }`}
                     >
-                      {isCompleted ? <CheckCircle size={15} /> : stage.order}
+                      {displayAsCompleted ? <CheckCircle size={15} /> : stage.order}
                     </span>
                     <div className="min-w-0">
                       <p className="truncate font-bold text-foreground" title={stageName}>
@@ -606,14 +630,14 @@ export default function JobDetailPage() {
                       ) : null}
                       <span
                         className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                          isCurrent
+                          displayAsCurrent
                             ? "bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-200"
-                            : isCompleted
+                            : displayAsCompleted
                               ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200"
                               : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300"
                         }`}
                       >
-                        {isCurrent ? "Current" : isCompleted ? "Passed" : "Pending"}
+                        {displayAsCurrent ? "Current" : displayAsCompleted ? "Passed" : "Pending"}
                       </span>
                     </div>
                   </div>
